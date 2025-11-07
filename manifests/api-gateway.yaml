@@ -872,7 +872,7 @@ spec:
           echo "🔐 Generating random encryption keys for APISIX data encryption..."
           APISIX_ENCRYPTION_KEY_1="$(openssl rand -hex 16)"
           APISIX_ENCRYPTION_KEY_2="$(openssl rand -hex 16)"
-          echo "✅ Generated encryption keys: ${APISIX_ENCRYPTION_KEY_1:0:8}..., ${APISIX_ENCRYPTION_KEY_2:0:8}..."
+          echo "✅ Generated encryption keys successfully"
           
           echo "📋 Default config contents:"
           cat /usr/local/apisix/conf/config-default.yaml | head -20
