@@ -448,13 +448,12 @@ data:
       disable_sync_configuration_during_start: false
       worker_startup_time_threshold: 60
       
-      data_encryption:
-        enable_encrypt_fields: true
-        keyring:
-          - qeddd145sfvddff3
-          - edd1c9f0985e76a2
-      
-      events:
+  data_encryption:
+    enable_encrypt_fields: true
+    keyring:
+      - PLACEHOLDER_KEY_1_WILL_BE_REPLACED
+      - PLACEHOLDER_KEY_2_WILL_BE_REPLACED
+    events:
         module: lua-resty-events
 
     nginx_config:
@@ -884,8 +883,8 @@ spec:
           mv config-default.yaml config-default.yaml.bak
           
           # Replace placeholder encryption keys with real ones from Vault
-          sed -e "s/qeddd145sfvddff3/$APISIX_ENCRYPTION_KEY_1/g" \
-              -e "s/edd1c9f0985e76a2/$APISIX_ENCRYPTION_KEY_2/g" \
+          sed -e "s/PLACEHOLDER_KEY_1_WILL_BE_REPLACED/$APISIX_ENCRYPTION_KEY_1/g" \
+              -e "s/PLACEHOLDER_KEY_2_WILL_BE_REPLACED/$APISIX_ENCRYPTION_KEY_2/g" \
               config.yaml > config-default.yaml
           
           echo "🔐 Updated encryption keys in configuration"
