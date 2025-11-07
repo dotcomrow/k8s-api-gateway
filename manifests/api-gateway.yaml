@@ -622,6 +622,7 @@ spec:
         - --default-apisix-cluster-admin-key=edd1c9f034335f136f87ad84b625c8f1
         - --default-apisix-cluster-base-url=http://apisix.k8s-api-gateway.svc.cluster.local:9091/apisix/admin
         - --ingress-class=apisix-internal
+        - --config-path=/dev/null
         env:
         - name: POD_NAMESPACE
           valueFrom:
