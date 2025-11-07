@@ -1236,11 +1236,11 @@ spec:
           mountPath: /app
         resources:
           requests:
-            cpu: "3000m"
-            memory: "2Gi"
-          limits:
-            cpu: "6000m"
+            cpu: "2000m"
             memory: "4Gi"
+          limits:
+            cpu: "8000m"
+            # Remove memory limit to allow unlimited memory for Backstage build
       containers:
       - name: backstage
         image: node:18-alpine
