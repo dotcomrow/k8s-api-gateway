@@ -449,6 +449,21 @@ data:
         client_body_timeout: "60s"
         send_timeout: "10s"
         underscores_in_headers: "on"
+        real_ip_from:
+          - "127.0.0.1"
+          - "::1"
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+        real_ip_header: "X-Forwarded-For"
+      lua_shared_dict:
+        internal-status: 10m
+        plugin-limit-req: 10m
+        plugin-limit-count: 10m
+        prometheus-metrics: 10m
+        plugin-limit-conn: 10m
+        upstream-healthcheck: 10m
+        worker-events: 10m
 
     plugin_attr:
       prometheus:
