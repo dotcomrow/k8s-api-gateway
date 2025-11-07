@@ -545,121 +545,121 @@ data:
               ocsp-stapling: 10m
               mcp-session: 10m
 
-        plugin_attr:
-          prometheus:
-            export_uri: /apisix/prometheus/metrics
-            metric_prefix: apisix_
-            enable_export_server: true
-            export_addr:
-              ip: 0.0.0.0
-              port: 9091
-            refresh_interval: 15
+    plugin_attr:
+      prometheus:
+        export_uri: /apisix/prometheus/metrics
+        metric_prefix: apisix_
+        enable_export_server: true
+        export_addr:
+          ip: 0.0.0.0
+          port: 9091
+        refresh_interval: 15
 
-        deployment:
-          role: data_plane
-          role_data_plane:
-            config_provider: etcd
-          admin:
-            admin_key_required: true
-            admin_key:
-              - name: "admin"
-                key: edd1c9f034335f136f87ad84b625c8f1
-                role: admin
-            enable_admin_cors: true
-            enable_admin_ui: true
-            allow_admin:
-              - 127.0.0.0/24
-            admin_listen:
-              ip: "0.0.0.0"
-              port: 9180
-            admin_api_version: v3
-          etcd:
-            host:
-              - "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
-            prefix: /apisix
-            timeout: 30
-            watch_timeout: 50
-            startup_retry: 2
-            tls:
-              verify: true
-        
-        plugins:
-          - real-ip
-          - client-control
-          - proxy-control
-          - request-id
-          - zipkin
-          - ext-plugin-pre-req
-          - fault-injection
-          - mocking
-          - serverless-pre-function
-          - cors
-          - ip-restriction
-          - ua-restriction
-          - referer-restriction
-          - csrf
-          - uri-blocker
-          - request-validation
-          - openid-connect
-          - authz-casbin
-          - authz-casdoor
-          - wolf-rbac
-          - ldap-auth
-          - hmac-auth
-          - basic-auth
-          - jwt-auth
-          - key-auth
-          - consumer-restriction
-          - forward-auth
-          - authz-keycloak
-          - proxy-cache
-          - body-transformer
-          - proxy-mirror
-          - proxy-rewrite
-          - api-breaker
-          - limit-conn
-          - limit-count
-          - limit-req
-          - gzip
-          - traffic-split
-          - redirect
-          - response-rewrite
-          - degraphql
-          - grpc-transcode
-          - grpc-web
-          - public-api
-          - prometheus
-          - datadog
-          - loki-logger
-          - elasticsearch-logger
-          - echo
-          - loggly
-          - http-logger
-          - splunk-hec-logging
-          - skywalking-logger
-          - google-cloud-logging
-          - sls-logger
-          - tcp-logger
-          - kafka-logger
-          - rocketmq-logger
-          - syslog
-          - udp-logger
-          - file-logger
-          - clickhouse-logger
-          - tencent-cloud-cls
-          - aws-lambda
-          - azure-functions
-          - openwhisk
-          - openfunction
-          - serverless-post-function
-          - ext-plugin-post-req
-          - ext-plugin-post-resp
+    deployment:
+      role: data_plane
+      role_data_plane:
+        config_provider: etcd
+      admin:
+        admin_key_required: true
+        admin_key:
+          - name: "admin"
+            key: edd1c9f034335f136f87ad84b625c8f1
+            role: admin
+        enable_admin_cors: true
+        enable_admin_ui: true
+        allow_admin:
+          - 127.0.0.0/24
+        admin_listen:
+          ip: "0.0.0.0"
+          port: 9180
+        admin_api_version: v3
+      etcd:
+        host:
+          - "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
+        prefix: /apisix
+        timeout: 30
+        watch_timeout: 50
+        startup_retry: 2
+        tls:
+          verify: true
+    
+    plugins:
+      - real-ip
+      - client-control
+      - proxy-control
+      - request-id
+      - zipkin
+      - ext-plugin-pre-req
+      - fault-injection
+      - mocking
+      - serverless-pre-function
+      - cors
+      - ip-restriction
+      - ua-restriction
+      - referer-restriction
+      - csrf
+      - uri-blocker
+      - request-validation
+      - openid-connect
+      - authz-casbin
+      - authz-casdoor
+      - wolf-rbac
+      - ldap-auth
+      - hmac-auth
+      - basic-auth
+      - jwt-auth
+      - key-auth
+      - consumer-restriction
+      - forward-auth
+      - authz-keycloak
+      - proxy-cache
+      - body-transformer
+      - proxy-mirror
+      - proxy-rewrite
+      - api-breaker
+      - limit-conn
+      - limit-count
+      - limit-req
+      - gzip
+      - traffic-split
+      - redirect
+      - response-rewrite
+      - degraphql
+      - grpc-transcode
+      - grpc-web
+      - public-api
+      - prometheus
+      - datadog
+      - loki-logger
+      - elasticsearch-logger
+      - echo
+      - loggly
+      - http-logger
+      - splunk-hec-logging
+      - skywalking-logger
+      - google-cloud-logging
+      - sls-logger
+      - tcp-logger
+      - kafka-logger
+      - rocketmq-logger
+      - syslog
+      - udp-logger
+      - file-logger
+      - clickhouse-logger
+      - tencent-cloud-cls
+      - aws-lambda
+      - azure-functions
+      - openwhisk
+      - openfunction
+      - serverless-post-function
+      - ext-plugin-post-req
+      - ext-plugin-post-resp
 
-        stream_plugins:
-          - ip-restriction
-          - limit-conn
-          - mqtt-proxy
-          - syslog
+    stream_plugins:
+      - ip-restriction
+      - limit-conn
+      - mqtt-proxy
+      - syslog
 ---
 # APISIX etcd Deployment
 apiVersion: apps/v1
