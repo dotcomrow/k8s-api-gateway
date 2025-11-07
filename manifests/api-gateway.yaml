@@ -394,6 +394,11 @@ metadata:
   namespace: k8s-api-gateway
 data:
   config.yaml: |
+    deployment:
+      role: data_plane
+      role_data_plane:
+        config_provider: etcd
+    
     apisix:
       node_listen: 9080
       enable_ipv6: false
@@ -407,6 +412,7 @@ data:
         - "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
       prefix: "/apisix"
       timeout: 30
+      startup_retry: 2
     
     plugins:
       - real-ip
@@ -665,8 +671,7 @@ spec:
         - containerPort: 9443
         volumeMounts:
         - name: apisix-config
-          mountPath: /usr/local/apisix/conf/config.yaml
-          subPath: config.yaml
+          mountPath: /usr/local/apisix/conf
         env:
         - name: APISIX_STAND_ALONE
           value: "false"
