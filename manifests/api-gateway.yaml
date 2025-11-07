@@ -434,20 +434,6 @@ data:
         ssl_ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384"
         ssl_prefer_server_ciphers: true
 
-    nginx_config:
-      error_log: "/dev/stderr"
-      error_log_level: "warn"
-      event:
-        worker_connections: 1024
-      http:
-        access_log: "/dev/stdout"
-        real_ip_from:
-          - "127.0.0.1"
-          - "10.0.0.0/8"
-          - "172.16.0.0/12" 
-          - "192.168.0.0/16"
-        real_ip_header: "X-Forwarded-For"
-
     plugin_attr:
       prometheus:
         export_addr:
