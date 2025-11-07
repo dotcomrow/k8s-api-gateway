@@ -681,8 +681,16 @@ spec:
         - -c
         - |
           echo "🔧 Starting APISIX with custom configuration..."
-          echo "📋 Config file contents:"
+          echo "📋 Default config contents:"
+          cat /usr/local/apisix/conf/config-default.yaml | head -20
+          echo "📋 Our custom config contents:"
           cat /usr/local/apisix/conf/config.yaml
+          
+          echo "🔄 Backing up default config and using our config..."
+          cd /usr/local/apisix/conf
+          mv config-default.yaml config-default.yaml.bak
+          cp config.yaml config-default.yaml
+          
           echo "🚀 Initializing APISIX..."
           cd /usr/local/apisix
           /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua init
