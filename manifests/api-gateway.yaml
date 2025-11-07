@@ -1301,7 +1301,30 @@ spec:
           
           echo "Starting Backstage backend..."
           cd /app
-          exec node packages/backend/dist/index.js
+          
+          # Debug: Show directory structure
+          echo "Checking /app directory structure..."
+          find /app -type f -name "index.js" | head -10
+          
+          # Check for backend files in expected locations
+          if [ -f "/app/packages/backend/dist/index.js" ]; then
+            echo "Found backend at packages/backend/dist/index.js"
+            exec node packages/backend/dist/index.js
+          elif [ -f "/app/dist/packages/backend/dist/index.js" ]; then
+            echo "Found backend at dist/packages/backend/dist/index.js"
+            exec node dist/packages/backend/dist/index.js
+          elif [ -f "/app/packages/backend/index.js" ]; then
+            echo "Found backend at packages/backend/index.js"
+            exec node packages/backend/index.js
+          else
+            echo "❌ Backend not found, listing /app contents:"
+            ls -la /app/
+            echo "❌ Listing packages directory:"
+            ls -la /app/packages/ 2>/dev/null || echo "packages directory not found"
+            echo "❌ Looking for any index.js files:"
+            find /app -name "index.js" -type f
+            exit 1
+          fi
         volumeMounts:
         - name: backstage-data
           mountPath: /app
