@@ -394,21 +394,19 @@ metadata:
   namespace: k8s-api-gateway
 data:
   config.yaml: |
-    deployment:
-      role: data_plane
-      role_data_plane:
-        config_provider: etcd
-    
     apisix:
       node_listen: 9080
       enable_ipv6: false
+      admin_key:
+        - name: "admin"
+          key: edd1c9f034335f136f87ad84b625c8f1
+          role: admin
       
     etcd:
       host:
         - "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
       prefix: "/apisix"
       timeout: 30
-      startup_retry: 2
     
     plugins:
       - real-ip
@@ -678,6 +676,20 @@ spec:
       containers:
       - name: apisix
         image: apache/apisix:3.6.0-debian
+        command: ["/bin/sh"]
+        args: 
+        - -c
+        - |
+          echo "🔧 Starting APISIX with custom configuration..."
+          echo "📋 Config file contents:"
+          cat /usr/local/apisix/conf/config.yaml
+          echo "🚀 Initializing APISIX..."
+          cd /usr/local/apisix
+          /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua init
+          echo "🔗 Initializing etcd..."
+          /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua init_etcd
+          echo "▶️ Starting APISIX..."
+          exec /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua start
         ports:
         - containerPort: 9080
         - containerPort: 9091
@@ -689,12 +701,6 @@ spec:
         env:
         - name: APISIX_STAND_ALONE
           value: "false"
-        - name: APISIX_DEPLOYMENT_ETCD_HOST
-          value: "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
-        - name: APISIX_DEPLOYMENT_ETCD_PREFIX
-          value: "/apisix"
-        - name: APISIX_DEPLOYMENT_ETCD_TIMEOUT
-          value: "30"
         resources:
           requests:
             cpu: "200m"
