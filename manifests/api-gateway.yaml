@@ -1304,27 +1304,57 @@ spec:
           echo "Starting Backstage backend..."
           cd /app
           
-          # Debug: Show directory structure
-          echo "Checking /app directory structure..."
-          find /app -type f -name "index.js" | head -10
+          # Debug: Show current directory structure
+          echo "Current /app structure:"
+          ls -la /app/
           
-          # Check for backend files in expected locations
-          if [ -f "/app/packages/backend/dist/index.js" ]; then
-            echo "Found backend at packages/backend/dist/index.js"
-            exec node packages/backend/dist/index.js
-          elif [ -f "/app/dist/packages/backend/dist/index.js" ]; then
-            echo "Found backend at dist/packages/backend/dist/index.js"
-            exec node dist/packages/backend/dist/index.js
-          elif [ -f "/app/packages/backend/index.js" ]; then
-            echo "Found backend at packages/backend/index.js"
-            exec node packages/backend/index.js
+          # Check if backend package exists and build it if needed
+          if [ -d "/app/packages/backend" ]; then
+            echo "Found backend package, checking build status..."
+            ls -la /app/packages/backend/
+            
+            # Try to build the backend if dist doesn't exist
+            if [ ! -f "/app/packages/backend/dist/index.js" ]; then
+              echo "Backend not built, attempting to build..."
+              yarn workspace backend build || {
+                echo "Build failed, trying alternative build command..."
+                cd /app/packages/backend && yarn build || {
+                  echo "Alternative build also failed, trying to run TypeScript directly..."
+                  cd /app/packages/backend
+                  if [ -f "src/index.ts" ]; then
+                    echo "Found TypeScript source, running with ts-node..."
+                    exec npx ts-node src/index.ts
+                  else
+                    echo "No TypeScript source found, listing backend contents:"
+                    ls -la /app/packages/backend/
+                    find /app/packages/backend -name "*.ts" -o -name "*.js" | head -10
+                    exit 1
+                  fi
+                }
+              }
+            fi
+            
+            # Check for built backend file
+            if [ -f "/app/packages/backend/dist/index.js" ]; then
+              echo "✅ Found built backend at packages/backend/dist/index.js"
+              exec node packages/backend/dist/index.js
+            elif [ -f "/app/dist/packages/backend/index.js" ]; then
+              echo "✅ Found backend at dist/packages/backend/index.js"
+              exec node dist/packages/backend/index.js
+            elif [ -f "/app/packages/backend/src/index.ts" ]; then
+              echo "✅ Running TypeScript backend directly with ts-node"
+              cd /app/packages/backend
+              exec npx ts-node src/index.ts
+            else
+              echo "❌ No runnable backend found after build attempt"
+              echo "Backend package contents:"
+              find /app/packages/backend -type f | head -20
+              exit 1
+            fi
           else
-            echo "❌ Backend not found, listing /app contents:"
-            ls -la /app/
-            echo "❌ Listing packages directory:"
+            echo "❌ No backend package found"
+            echo "Available packages:"
             ls -la /app/packages/ 2>/dev/null || echo "packages directory not found"
-            echo "❌ Looking for any index.js files:"
-            find /app -name "index.js" -type f
             exit 1
           fi
         volumeMounts:
