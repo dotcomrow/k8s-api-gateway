@@ -1223,10 +1223,10 @@ spec:
           mountPath: /app
         resources:
           requests:
-            cpu: "500m"
-            memory: "1Gi"
+            cpu: "3000m"
+            memory: "2Gi"
           limits:
-            cpu: "2000m"
+            cpu: "6000m"
             memory: "4Gi"
       containers:
       - name: backstage
