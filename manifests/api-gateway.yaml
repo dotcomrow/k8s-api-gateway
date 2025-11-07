@@ -1307,7 +1307,15 @@ spec:
           # Enable corepack and use project yarn version
           echo "🔧 Setting up proper Yarn version..."
           corepack enable
-          export PATH="/app/.yarn/releases:$PATH"
+          
+          # Check if yarn binary exists and make it executable
+          if [ -f "/app/yarn-4.4.1.cjs" ]; then
+            chmod +x /app/yarn-4.4.1.cjs
+            echo "✅ Found yarn binary at /app/yarn-4.4.1.cjs"
+          else
+            echo "❌ Yarn binary not found, listing /app contents:"
+            ls -la /app/ | grep yarn
+          fi
           
           # Debug: Show current directory structure
           echo "Current /app structure:"
@@ -1324,11 +1332,11 @@ spec:
             else
               echo "🔨 Backend not built, attempting to build..."
               
-              # Use the project's yarn version via corepack
-              ./yarn-4.4.1.cjs workspace backend build || {
+              # Use the project's yarn version with correct path
+              /app/yarn-4.4.1.cjs workspace backend build || {
                 echo "⚠️  Workspace build failed, trying direct backend build..."
                 cd /app/packages/backend
-                ../../yarn-4.4.1.cjs build || {
+                /app/yarn-4.4.1.cjs build || {
                   echo "⚠️  Direct build failed, trying with npx tsc..."
                   cd /app/packages/backend
                   npx tsc || {
@@ -1353,14 +1361,38 @@ spec:
             elif [ -f "/app/packages/backend/src/index.ts" ]; then
               echo "✅ Running TypeScript backend directly"
               cd /app/packages/backend
-              # Try to use project's ts-node or install it locally
+              
+              # Install ts-node locally if not available
+              echo "🔧 Ensuring ts-node is available..."
+              if ! npm list -g ts-node >/dev/null 2>&1 && ! npm list ts-node >/dev/null 2>&1; then
+                echo "Installing ts-node locally..."
+                /app/yarn-4.4.1.cjs add --dev ts-node typescript @types/node || {
+                  echo "Yarn add failed, trying npm install..."
+                  npm install --no-save ts-node typescript @types/node
+                }
+              fi
+              
+              # Try different ways to run ts-node
+              echo "Attempting to run TypeScript backend..."
               if command -v npx >/dev/null 2>&1; then
                 echo "Using npx ts-node..."
                 exec npx ts-node src/index.ts
+              elif [ -f "node_modules/.bin/ts-node" ]; then
+                echo "Using local ts-node..."
+                exec ./node_modules/.bin/ts-node src/index.ts
+              elif [ -f "/app/node_modules/.bin/ts-node" ]; then
+                echo "Using root ts-node..."
+                exec /app/node_modules/.bin/ts-node src/index.ts
               else
-                echo "Installing ts-node locally and running..."
-                ../yarn-4.4.1.cjs add --dev ts-node
-                exec npx ts-node src/index.ts
+                echo "❌ ts-node still not found, trying Node.js directly with precompiled JS..."
+                # Last resort: look for any .js files in dist
+                if [ -f "dist/index.js" ]; then
+                  echo "Found precompiled JavaScript, running it..."
+                  exec node dist/index.js
+                else
+                  echo "❌ No executable backend found"
+                  exit 1
+                fi
               fi
             else
               echo "❌ No runnable backend found after build attempts"
