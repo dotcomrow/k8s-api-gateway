@@ -1304,6 +1304,11 @@ spec:
           echo "Starting Backstage backend..."
           cd /app
           
+          # Enable corepack and use project yarn version
+          echo "🔧 Setting up proper Yarn version..."
+          corepack enable
+          export PATH="/app/.yarn/releases:$PATH"
+          
           # Debug: Show current directory structure
           echo "Current /app structure:"
           ls -la /app/
@@ -1313,42 +1318,60 @@ spec:
             echo "Found backend package, checking build status..."
             ls -la /app/packages/backend/
             
-            # Try to build the backend if dist doesn't exist
-            if [ ! -f "/app/packages/backend/dist/index.js" ]; then
-              echo "Backend not built, attempting to build..."
-              yarn workspace backend build || {
-                echo "Build failed, trying alternative build command..."
-                cd /app/packages/backend && yarn build || {
-                  echo "Alternative build also failed, trying to run TypeScript directly..."
+            # Check if backend is already built
+            if [ -f "/app/packages/backend/dist/index.js" ]; then
+              echo "✅ Backend already built"
+            else
+              echo "🔨 Backend not built, attempting to build..."
+              
+              # Use the project's yarn version via corepack
+              ./yarn-4.4.1.cjs workspace backend build || {
+                echo "⚠️  Workspace build failed, trying direct backend build..."
+                cd /app/packages/backend
+                ../../yarn-4.4.1.cjs build || {
+                  echo "⚠️  Direct build failed, trying with npx tsc..."
                   cd /app/packages/backend
-                  if [ -f "src/index.ts" ]; then
-                    echo "Found TypeScript source, running with ts-node..."
-                    exec npx ts-node src/index.ts
-                  else
-                    echo "No TypeScript source found, listing backend contents:"
-                    ls -la /app/packages/backend/
-                    find /app/packages/backend -name "*.ts" -o -name "*.js" | head -10
-                    exit 1
-                  fi
+                  npx tsc || {
+                    echo "⚠️  TypeScript compilation failed, checking for built files anyway..."
+                    ls -la /app/packages/backend/dist/ 2>/dev/null || echo "No dist directory created"
+                  }
                 }
               }
             fi
             
-            # Check for built backend file
+            # Check for built backend file and run it
+            echo "🔍 Looking for runnable backend files..."
+            
             if [ -f "/app/packages/backend/dist/index.js" ]; then
               echo "✅ Found built backend at packages/backend/dist/index.js"
+              cd /app
               exec node packages/backend/dist/index.js
             elif [ -f "/app/dist/packages/backend/index.js" ]; then
-              echo "✅ Found backend at dist/packages/backend/index.js"
+              echo "✅ Found backend at dist/packages/backend/index.js" 
+              cd /app
               exec node dist/packages/backend/index.js
             elif [ -f "/app/packages/backend/src/index.ts" ]; then
-              echo "✅ Running TypeScript backend directly with ts-node"
+              echo "✅ Running TypeScript backend directly"
               cd /app/packages/backend
-              exec npx ts-node src/index.ts
+              # Try to use project's ts-node or install it locally
+              if command -v npx >/dev/null 2>&1; then
+                echo "Using npx ts-node..."
+                exec npx ts-node src/index.ts
+              else
+                echo "Installing ts-node locally and running..."
+                ../yarn-4.4.1.cjs add --dev ts-node
+                exec npx ts-node src/index.ts
+              fi
             else
-              echo "❌ No runnable backend found after build attempt"
-              echo "Backend package contents:"
-              find /app/packages/backend -type f | head -20
+              echo "❌ No runnable backend found after build attempts"
+              echo "Contents of packages/backend/:"
+              ls -la /app/packages/backend/
+              echo "Contents of packages/backend/dist/ (if exists):"
+              ls -la /app/packages/backend/dist/ 2>/dev/null || echo "No dist directory"
+              echo "Available TypeScript files:"
+              find /app/packages/backend -name "*.ts" | head -10
+              echo "Available JavaScript files:"
+              find /app/packages/backend -name "*.js" | head -10
               exit 1
             fi
           else
