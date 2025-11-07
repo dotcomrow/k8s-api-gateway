@@ -398,6 +398,15 @@ data:
       role: data_plane
       role_data_plane:
         config_provider: etcd
+      admin:
+        admin_key:
+          - name: "admin"
+            key: edd1c9f034335f136f87ad84b625c8f1
+            role: admin
+        enable_admin_cors: true
+        admin_listen:
+          ip: "0.0.0.0"
+          port: 9180
       etcd:
         host:
           - "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
@@ -407,10 +416,6 @@ data:
     apisix:
       node_listen: 9080
       enable_ipv6: false
-      admin_key:
-        - name: "admin"
-          key: edd1c9f034335f136f87ad84b625c8f1
-          role: admin
       
     etcd:
       host:
@@ -710,7 +715,7 @@ spec:
           exec /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua start
         ports:
         - containerPort: 9080
-        - containerPort: 9091
+        - containerPort: 9180
         - containerPort: 9443
         volumeMounts:
         - name: apisix-config
