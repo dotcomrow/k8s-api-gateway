@@ -1190,8 +1190,14 @@ spec:
           # Install Backstage CLI globally
           npm install -g @backstage/create-app@latest
           
-          # Create Backstage app
-          echo "yes" | npx @backstage/create-app@latest --skip-install backstage-app
+          # Clean up any existing directories
+          rm -rf backstage-app yes || true
+          
+          # Create Backstage app (non-interactive with explicit app name)
+          printf "backstage-app\n" | npx @backstage/create-app@latest --skip-install || {
+            echo "Create app failed, trying alternative approach..."
+            npx create-backstage-app@latest --name backstage-app --skip-install || true
+          }
           
           # Copy the generated app structure
           cp -r backstage-app/* /app/
