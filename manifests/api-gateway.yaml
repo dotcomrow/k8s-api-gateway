@@ -595,23 +595,19 @@ metadata:
   namespace: k8s-api-gateway
 data:
   config.yaml: |
-    apisix:
-      base_url: "http://apisix.k8s-api-gateway.svc.cluster.local:9091/apisix/admin"
-      admin_key: "edd1c9f034335f136f87ad84b625c8f1"
-    
     log_level: "info"
     log_output: "stderr"
-    
     http_listen: ":8080"
     https_listen: ":8443"
+    ingress_class: "apisix-internal"
     
-    ingress:
-      publish_service: ""
-      status_publish_interval: "60s"
-      
+    apisix:
+      default_cluster_base_url: "http://apisix.k8s-api-gateway.svc.cluster.local:9091/apisix/admin"
+      default_cluster_admin_key: "edd1c9f034335f136f87ad84b625c8f1"
+      default_cluster_name: "internal"
+    
     kubernetes:
       namespace_selector: ["k8s-api-gateway"]
-      ingress_class: "apisix-internal"
       
     apisix_resource_sync_interval: "200ms"
 ---
