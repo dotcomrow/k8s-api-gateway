@@ -442,14 +442,14 @@ data:
       worker_shutdown_timeout: "240s"
       event:
         worker_connections: 10620
-      http_configuration_snippet: |
-        lua_shared_dict internal-status 10m;
-        lua_shared_dict plugin-limit-req 10m;
-        lua_shared_dict plugin-limit-count 10m;
-        lua_shared_dict prometheus-metrics 10m;
-        lua_shared_dict plugin-limit-conn 10m;
-        lua_shared_dict upstream-healthcheck 10m;
-        lua_shared_dict worker-events 10m;
+      lua_shared_dict:
+        internal-status: 10m
+        plugin-limit-req: 10m
+        plugin-limit-count: 10m
+        prometheus-metrics: 10m
+        plugin-limit-conn: 10m
+        upstream-healthcheck: 10m
+        worker-events: 10m
       http:
         access_log: "/dev/stdout"
         keepalive_timeout: "60s"
