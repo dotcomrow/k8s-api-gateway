@@ -867,15 +867,28 @@ spec:
         - -c
         - |
           echo "🔧 Starting APISIX with custom configuration..."
+          
+          # Generate random encryption keys directly in container
+          echo "🔐 Generating random encryption keys for APISIX data encryption..."
+          APISIX_ENCRYPTION_KEY_1="$(openssl rand -hex 16)"
+          APISIX_ENCRYPTION_KEY_2="$(openssl rand -hex 16)"
+          echo "✅ Generated encryption keys: ${APISIX_ENCRYPTION_KEY_1:0:8}..., ${APISIX_ENCRYPTION_KEY_2:0:8}..."
+          
           echo "📋 Default config contents:"
           cat /usr/local/apisix/conf/config-default.yaml | head -20
           echo "📋 Our custom config contents:"
           cat /usr/local/apisix/conf/config.yaml
           
-          echo "🔄 Backing up default config and using our config..."
+          echo "🔄 Backing up default config and injecting encryption keys..."
           cd /usr/local/apisix/conf
           mv config-default.yaml config-default.yaml.bak
-          cp config.yaml config-default.yaml
+          
+          # Replace placeholder encryption keys with real ones from Vault
+          sed -e "s/qeddd145sfvddff3/$APISIX_ENCRYPTION_KEY_1/g" \
+              -e "s/edd1c9f0985e76a2/$APISIX_ENCRYPTION_KEY_2/g" \
+              config.yaml > config-default.yaml
+          
+          echo "🔐 Updated encryption keys in configuration"
           
           echo "🚀 Initializing APISIX..."
           cd /usr/local/apisix
@@ -1168,6 +1181,7 @@ spec:
       labels:
         app: backstage
       annotations:
+        linkerd.io/skip-outbound-ports: "8200"
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "backstage"
         vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/backstage-app"
