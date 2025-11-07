@@ -1128,7 +1128,7 @@ data:
             rule: IS_ENTITY_OWNER
             resourceType: catalog-entity
             params:
-              claims: ['group:default/backstage_admin_access']
+              claims: ['group:default/$GITHUB_TEAM']
 
     scaffolder:
       defaultAuthor:
@@ -1278,6 +1278,8 @@ spec:
           value: "backstage"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
+        - name: GITHUB_TEAM
+          value: "backstage_admin_access"
         workingDir: /app
         command:
         - sh
