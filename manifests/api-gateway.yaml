@@ -6,9 +6,9 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: internal-api-gateway
+  name: k8s-api-gateway
   labels:
-    name: internal-api-gateway
+    name: k8s-api-gateway
     tier: internal
 ---
 # Service Accounts
@@ -16,13 +16,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: apisix
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: backstage
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 ---
 # RBAC for APISIX (needed for service discovery and CRD management)
 apiVersion: rbac.authorization.k8s.io/v1
@@ -60,14 +60,14 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: apisix
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 ---
 # APISIX YugabyteDB Setup Job
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: apisix-yugabyte-config
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 spec:
   backoffLimit: 0
   template:
@@ -190,7 +190,7 @@ spec:
 
               vault write auth/kubernetes/role/apisix \
                 bound_service_account_names="apisix" \
-                bound_service_account_namespaces="internal-api-gateway" \
+                bound_service_account_namespaces="k8s-api-gateway" \
                 policies="apisix" \
                 ttl="48h"
 
@@ -213,7 +213,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: backstage-yugabyte-config
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 spec:
   backoffLimit: 0
   template:
@@ -344,7 +344,7 @@ spec:
 
               vault write auth/kubernetes/role/backstage \
                 bound_service_account_names="backstage" \
-                bound_service_account_namespaces="internal-api-gateway" \
+                bound_service_account_namespaces="k8s-api-gateway" \
                 policies="backstage" \
                 ttl="48h"
 
@@ -367,7 +367,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: apisix-config
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 data:
   config.yaml: |
     apisix:
@@ -457,7 +457,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: apisix-etcd
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 spec:
   replicas: 1
   selector:
@@ -499,7 +499,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: apisix-etcd
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 spec:
   ports:
   - port: 2379
@@ -516,7 +516,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: apisix
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 spec:
   replicas: 2
   selector:
@@ -593,7 +593,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: apisix-ingress-controller-internal
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
   labels:
     app: apisix-ingress-controller-internal
     tier: internal
@@ -620,7 +620,7 @@ spec:
         - --https-listen=:8443
         - --default-apisix-cluster-name=internal
         - --default-apisix-cluster-admin-key=edd1c9f034335f136f87ad84b625c8f1
-        - --default-apisix-cluster-base-url=http://apisix.internal-api-gateway.svc.cluster.local:9091/apisix/admin
+        - --default-apisix-cluster-base-url=http://apisix.k8s-api-gateway.svc.cluster.local:9091/apisix/admin
         - --ingress-class=apisix-internal
         - --apisix-route-version=apisix.apache.org/v2
         env:
@@ -666,7 +666,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: apisix
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
   annotations:
     # Internal API Gateway - not exposed externally
     service.beta.kubernetes.io/aws-load-balancer-internal: "true"
@@ -690,12 +690,12 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: backstage-config
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 data:
   app-config.yaml: |
     app:
       title: Platform Portal
-      baseUrl: http://backstage.internal-api-gateway.svc.cluster.local:7007
+      baseUrl: http://backstage.k8s-api-gateway.svc.cluster.local:7007
 
     organization:
       name: Platform Team
@@ -704,7 +704,7 @@ data:
       auth:
         keys:
           - secret: $BACKEND_SECRET
-      baseUrl: http://backstage.internal-api-gateway.svc.cluster.local:7007
+      baseUrl: http://backstage.k8s-api-gateway.svc.cluster.local:7007
       listen:
         port: 7007
       csp:
@@ -794,7 +794,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backstage
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 spec:
   replicas: 1
   selector:
@@ -892,7 +892,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backstage
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 spec:
   ports:
   - port: 80
@@ -906,7 +906,7 @@ apiVersion: apisix.apache.org/v2
 kind: ApisixUpstream
 metadata:
   name: backstage-upstream
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 spec:
   ports:
   - port: 80
@@ -922,10 +922,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backstage-proxy
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
 spec:
   type: ExternalName
-  externalName: backstage.internal-api-gateway.svc.cluster.local
+  externalName: backstage.k8s-api-gateway.svc.cluster.local
   ports:
   - port: 80
     targetPort: 80
@@ -941,7 +941,7 @@ apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: backstage-management
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
   annotations:
     # Target this specific internal APISIX cluster
     apisix.ingress.kubernetes.io/apisix-cluster: "internal"
@@ -983,7 +983,7 @@ apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: backstage-api-internal
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
   annotations:
     # Target this specific internal APISIX cluster
     apisix.ingress.kubernetes.io/apisix-cluster: "internal"
@@ -1026,7 +1026,7 @@ apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: internal-services
-  namespace: internal-api-gateway
+  namespace: k8s-api-gateway
   annotations:
     apisix.ingress.kubernetes.io/apisix-cluster: "internal"
 spec:
@@ -1057,7 +1057,7 @@ spec:
 ---
 # Internal API Gateway - No external ingress needed
 # This APISIX instance is for internal service-to-service communication only
-# Access via: apisix.apisix.svc.cluster.local:80 (from within cluster)
+# Access via: apisix.k8s-api-gateway.svc.cluster.local:80 (from within cluster)
 # 
 # If you need external access for testing, uncomment the ingress below:
 # ---
@@ -1065,14 +1065,14 @@ spec:
 # kind: Ingress
 # metadata:
 #   name: api-gateway-ingress-internal
-#   namespace: apisix
+#   namespace: k8s-api-gateway
 #   annotations:
 #     kubernetes.io/ingress.class: "nginx"
 #     nginx.ingress.kubernetes.io/ssl-redirect: "false"
 #     # Internal testing only
 # spec:
 #   rules:
-#   - host: internal-api-gateway.local
+#   - host: k8s-api-gateway.local
 #     http:
 #       paths:
 #       - path: /
