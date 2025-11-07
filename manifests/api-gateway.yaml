@@ -1,0 +1,1084 @@
+---
+# Note: APISIX CRDs are assumed to be already installed cluster-wide
+# If needed, they can be installed with: kubectl apply -f https://raw.githubusercontent.com/apache/apisix-ingress-controller/master/samples/deploy/crd/v1/ApisixRoute.yaml
+---
+# Namespace for Internal API Gateway Platform
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: internal-api-gateway
+  labels:
+    name: internal-api-gateway
+    tier: internal
+---
+# Service Accounts
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: apisix
+  namespace: internal-api-gateway
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backstage
+  namespace: internal-api-gateway
+---
+# RBAC for APISIX (needed for service discovery and CRD management)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: apisix
+rules:
+- apiGroups: [""]
+  resources: ["endpoints", "services", "secrets", "configmaps", "pods", "nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["*"]
+- apiGroups: ["discovery.k8s.io"]
+  resources: ["endpointslices"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apisix.apache.org"]
+  resources: ["apisixroutes", "apisixupstreams", "apisixtlses", "apisixconsumers", "apisixpluginconfigs", "apisixglobalrules"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses", "ingressclasses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: apisix
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: apisix
+subjects:
+- kind: ServiceAccount
+  name: apisix
+  namespace: internal-api-gateway
+---
+# APISIX YugabyteDB Setup Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: apisix-yugabyte-config
+  namespace: internal-api-gateway
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        linkerd.io/inject: "disabled"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: default
+      volumes:
+        - name: root-token
+          secret:
+            secretName: vault-root-token
+      containers:
+        - name: setup-role
+          image: hashicorp/vault:1.15.4
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              set -eu
+
+              PGHOST=yb-tserver-service.yugabyte.svc.cluster.local
+              PGPORT=5433
+              DB=apisix
+              ROLE_GROUP=apisix
+              ROLE_OWNER=apisix_app
+              VAULTADMIN_USER=vaultadmin
+
+              apk add --no-cache postgresql15-client jq netcat-openbsd curl
+
+              export PATH="$PATH:/vault-bin"
+              export VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
+
+              while [ ! -f /vault-token/VAULT_TOKEN ]; do
+                echo "🔁 Waiting for Vault token file..."
+                sleep 2
+              done
+              export VAULT_TOKEN="$(cat /vault-token/VAULT_TOKEN)"
+
+              echo "🧩 Ensuring KV v2 at 'secret/'..."
+              while :; do
+                if vault secrets list -format=json 2>/dev/null \
+                  | jq -e '."secret/".type=="kv" and ."secret/".options.version=="2"' >/dev/null; then
+                  echo "✅ 'secret/' is KVv2"; break
+                fi
+                if vault secrets list -format=json 2>/dev/null | jq -e 'has("secret/")' >/dev/null; then
+                  echo "❌ 'secret/' exists but is not KVv2; please migrate manually."; exit 1
+                fi
+                vault secrets enable -path=secret -version=2 kv && break
+                sleep 2
+              done
+
+              until getent hosts "$PGHOST" >/dev/null 2>&1; do echo "🔄 Waiting for DNS for $PGHOST..."; sleep 3; done
+              until nc -z -w1 "$PGHOST" "$PGPORT"; do echo "⏳ Waiting for DB $PGHOST:$PGPORT..."; sleep 3; done
+              echo "✅ Yugabyte reachable"
+
+              echo "🔐 Waiting for secret/$VAULTADMIN_USER..."
+              VAULTADMIN_PASS=""
+              while :; do
+                OUT="$(vault kv get -format=json "secret/$VAULTADMIN_USER" 2>/dev/null || true)"
+                if [ -n "$OUT" ]; then
+                  VAULTADMIN_PASS="$(printf '%s' "$OUT" | jq -r '.data.data.password // .data.data.value // empty')"
+                  [ -n "$VAULTADMIN_PASS" ] && [ "$VAULTADMIN_PASS" != "null" ] && break
+                fi
+                sleep 5
+              done
+              export PGPASSWORD="$VAULTADMIN_PASS"
+
+              while :; do
+                DB_EXISTS="$(psql -h "$PGHOST" -p "$PGPORT" -U "$VAULTADMIN_USER" -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='$DB'" 2>/dev/null || true)"
+                [ "$DB_EXISTS" = "1" ] && { echo "✅ DB '$DB' exists"; break; }
+                echo "📦 Creating DB '$DB'..."
+                createdb -h "$PGHOST" -p "$PGPORT" -U "$VAULTADMIN_USER" -O "$VAULTADMIN_USER" "$DB" 2>/dev/null && { echo "✅ DB created"; break; }
+                sleep 3
+              done
+
+              psql -h "$PGHOST" -p "$PGPORT" -U "$VAULTADMIN_USER" -d yugabyte <<EOSQL
+              DO \$\$
+              BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$ROLE_GROUP') THEN
+                  CREATE ROLE $ROLE_GROUP NOLOGIN;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$ROLE_OWNER') THEN
+                  CREATE ROLE $ROLE_OWNER LOGIN INHERIT;
+                END IF;
+              END
+              \$\$;
+              GRANT $ROLE_GROUP TO $ROLE_OWNER;
+              GRANT $ROLE_OWNER TO $VAULTADMIN_USER;
+              EOSQL
+
+              psql -h "$PGHOST" -p "$PGPORT" -U "$VAULTADMIN_USER" -d "$DB" <<EOSQL
+              CREATE SCHEMA IF NOT EXISTS apisix AUTHORIZATION $ROLE_OWNER;
+              ALTER ROLE $ROLE_OWNER SET search_path = apisix;
+              GRANT CONNECT ON DATABASE $DB TO $ROLE_OWNER;
+              GRANT USAGE, CREATE ON SCHEMA apisix TO $ROLE_GROUP;
+              GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA apisix TO $ROLE_GROUP;
+              GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA apisix TO $ROLE_GROUP;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA apisix
+                GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA apisix
+                GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
+              EOSQL
+
+              if ! vault secrets list -format=json | jq -e 'has("yugabyte-db/")' >/dev/null 2>&1; then
+                vault secrets enable -path=yugabyte-db database
+                echo "✅ Enabled database secrets engine"
+              fi
+
+              vault write yugabyte-db/static-roles/apisix-app \
+                db_name="yugabyte" \
+                username="${ROLE_OWNER}" \
+                rotation_statements="ALTER ROLE \"{{name}}\" WITH PASSWORD '{{password}}';" \
+                rotation_period="24h"
+
+              vault policy write "apisix" - <<'EOF'
+              path "yugabyte-db/static-creds/apisix-app"          { capabilities = ["read"] }
+              path "secret/data/redis"                            { capabilities = ["read"] }
+              EOF
+
+              vault write auth/kubernetes/role/apisix \
+                bound_service_account_names="apisix" \
+                bound_service_account_namespaces="internal-api-gateway" \
+                policies="apisix" \
+                ttl="48h"
+
+              CREDS_JSON="$(vault read -format=json yugabyte-db/static-creds/apisix-app)"
+              DB_USER="$(printf '%s' "$CREDS_JSON" | jq -r .data.username)"
+              DB_PASS="$(printf '%s' "$CREDS_JSON" | jq -r .data.password)"
+              export PGPASSWORD="$DB_PASS"
+              echo "🔎 Sanity check as $DB_USER"
+              psql -h "$PGHOST" -p "$PGPORT" -U "$DB_USER" -d "$DB" -c "SELECT current_user, current_schema();"
+          volumeMounts:
+            - name: root-token
+              mountPath: /vault-token
+              readOnly: true
+          resources:
+            requests: { cpu: "50m",  memory: "64Mi" }
+            limits:   { cpu: "200m", memory: "256Mi" }
+---
+# Backstage YugabyteDB Setup Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backstage-yugabyte-config
+  namespace: internal-api-gateway
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        linkerd.io/inject: "disabled"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: default
+      volumes:
+        - name: root-token
+          secret:
+            secretName: vault-root-token
+      containers:
+        - name: setup-role
+          image: hashicorp/vault:1.15.4
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              set -eu
+
+              PGHOST=yb-tserver-service.yugabyte.svc.cluster.local
+              PGPORT=5433
+              DB=backstage
+              ROLE_GROUP=backstage
+              ROLE_OWNER=backstage_app
+              VAULTADMIN_USER=vaultadmin
+
+              apk add --no-cache postgresql15-client jq netcat-openbsd curl
+
+              export PATH="$PATH:/vault-bin"
+              export VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
+
+              while [ ! -f /vault-token/VAULT_TOKEN ]; do
+                echo "🔁 Waiting for Vault token file..."
+                sleep 2
+              done
+              export VAULT_TOKEN="$(cat /vault-token/VAULT_TOKEN)"
+
+              echo "🧩 Ensuring KV v2 at 'secret/'..."
+              while :; do
+                if vault secrets list -format=json 2>/dev/null \
+                  | jq -e '."secret/".type=="kv" and ."secret/".options.version=="2"' >/dev/null; then
+                  echo "✅ 'secret/' is KVv2"; break
+                fi
+                if vault secrets list -format=json 2>/dev/null | jq -e 'has("secret/")' >/dev/null; then
+                  echo "❌ 'secret/' exists but is not KVv2; please migrate manually."; exit 1
+                fi
+                vault secrets enable -path=secret -version=2 kv && break
+                sleep 2
+              done
+
+              echo "🔐 Seeding backstage credentials (if missing)..."
+              if ! vault kv get -format=json secret/backstage/github >/dev/null 2>&1; then
+                echo "❌ Please manually create secret/backstage/github with GitHub OAuth app credentials"
+                echo "   Required fields: clientId, clientSecret"
+                echo "   Optional fields: team (for team-based auth)"
+                exit 1
+              fi
+
+              until getent hosts "$PGHOST" >/dev/null 2>&1; do echo "🔄 Waiting for DNS for $PGHOST..."; sleep 3; done
+              until nc -z -w1 "$PGHOST" "$PGPORT"; do echo "⏳ Waiting for DB $PGHOST:$PGPORT..."; sleep 3; done
+              echo "✅ Yugabyte reachable"
+
+              echo "🔐 Waiting for secret/$VAULTADMIN_USER..."
+              VAULTADMIN_PASS=""
+              while :; do
+                OUT="$(vault kv get -format=json "secret/$VAULTADMIN_USER" 2>/dev/null || true)"
+                if [ -n "$OUT" ]; then
+                  VAULTADMIN_PASS="$(printf '%s' "$OUT" | jq -r '.data.data.password // .data.data.value // empty')"
+                  [ -n "$VAULTADMIN_PASS" ] && [ "$VAULTADMIN_PASS" != "null" ] && break
+                fi
+                sleep 5
+              done
+              export PGPASSWORD="$VAULTADMIN_PASS"
+
+              while :; do
+                DB_EXISTS="$(psql -h "$PGHOST" -p "$PGPORT" -U "$VAULTADMIN_USER" -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='$DB'" 2>/dev/null || true)"
+                [ "$DB_EXISTS" = "1" ] && { echo "✅ DB '$DB' exists"; break; }
+                echo "📦 Creating DB '$DB'..."
+                createdb -h "$PGHOST" -p "$PGPORT" -U "$VAULTADMIN_USER" -O "$VAULTADMIN_USER" "$DB" 2>/dev/null && { echo "✅ DB created"; break; }
+                sleep 3
+              done
+
+              psql -h "$PGHOST" -p "$PGPORT" -U "$VAULTADMIN_USER" -d yugabyte <<EOSQL
+              DO \$\$
+              BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$ROLE_GROUP') THEN
+                  CREATE ROLE $ROLE_GROUP NOLOGIN;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$ROLE_OWNER') THEN
+                  CREATE ROLE $ROLE_OWNER LOGIN INHERIT;
+                END IF;
+              END
+              \$\$;
+              GRANT $ROLE_GROUP TO $ROLE_OWNER;
+              GRANT $ROLE_OWNER TO $VAULTADMIN_USER;
+              EOSQL
+
+              psql -h "$PGHOST" -p "$PGPORT" -U "$VAULTADMIN_USER" -d "$DB" <<EOSQL
+              CREATE SCHEMA IF NOT EXISTS backstage AUTHORIZATION $ROLE_OWNER;
+              ALTER ROLE $ROLE_OWNER SET search_path = backstage;
+              GRANT CONNECT ON DATABASE $DB TO $ROLE_OWNER;
+              GRANT USAGE, CREATE ON SCHEMA backstage TO $ROLE_GROUP;
+              GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA backstage TO $ROLE_GROUP;
+              GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA backstage TO $ROLE_GROUP;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA backstage
+                GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA backstage
+                GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
+              EOSQL
+
+              if ! vault secrets list -format=json | jq -e 'has("yugabyte-db/")' >/dev/null 2>&1; then
+                vault secrets enable -path=yugabyte-db database
+                echo "✅ Enabled database secrets engine"
+              fi
+
+              vault write yugabyte-db/static-roles/backstage-app \
+                db_name="yugabyte" \
+                username="$ROLE_OWNER" \
+                rotation_statements="ALTER ROLE \"{{name}}\" WITH PASSWORD '{{password}}';" \
+                rotation_period="24h"
+
+              vault policy write "backstage" - <<'EOF'
+              path "yugabyte-db/static-creds/backstage-app"       { capabilities = ["read"] }
+              path "secret/data/backstage/github"                 { capabilities = ["read"] }
+              EOF
+
+              vault write auth/kubernetes/role/backstage \
+                bound_service_account_names="backstage" \
+                bound_service_account_namespaces="internal-api-gateway" \
+                policies="backstage" \
+                ttl="48h"
+
+              CREDS_JSON="$(vault read -format=json yugabyte-db/static-creds/backstage-app)"
+              DB_USER="$(printf '%s' "$CREDS_JSON" | jq -r .data.username)"
+              DB_PASS="$(printf '%s' "$CREDS_JSON" | jq -r .data.password)"
+              export PGPASSWORD="$DB_PASS"
+              echo "🔎 Sanity check as $DB_USER"
+              psql -h "$PGHOST" -p "$PGPORT" -U "$DB_USER" -d "$DB" -c "SELECT current_user, current_schema();"
+          volumeMounts:
+            - name: root-token
+              mountPath: /vault-token
+              readOnly: true
+          resources:
+            requests: { cpu: "50m",  memory: "64Mi" }
+            limits:   { cpu: "200m", memory: "256Mi" }
+---
+# APISIX ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apisix-config
+  namespace: internal-api-gateway
+data:
+  config.yaml: |
+    apisix:
+      node_listen: 9080
+      enable_ipv6: false
+      admin_key:
+        - name: "admin"
+          key: edd1c9f034335f136f87ad84b625c8f1
+          role: admin
+      
+    etcd:
+      host:
+        - "http://apisix-etcd:2379"
+      prefix: "/apisix"
+      timeout: 30
+    
+    plugins:
+      - real-ip
+      - client-control
+      - proxy-control
+      - request-id
+      - zipkin
+      - ext-plugin-pre-req
+      - fault-injection
+      - mocking
+      - serverless-pre-function
+      - cors
+      - ip-restriction
+      - ua-restriction
+      - referer-restriction
+      - csrf
+      - uri-blocker
+      - request-validation
+      - openid-connect
+      - authz-keycloak
+      - wolf-rbac
+      - ldap-auth
+      - hmac-auth
+      - basic-auth
+      - jwt-auth
+      - key-auth
+      - consumer-restriction
+      - authz-casbin
+      - authz-casdoor
+      - proxy-rewrite
+      - api-breaker
+      - limit-req
+      - limit-conn
+      - limit-count
+      - proxy-cache
+      - request-mirror
+      - proxy-mirror
+      - redirect
+      - response-rewrite
+      - degraphql
+      - body-transformer
+      - serverless-post-function
+      - ext-plugin-post-req
+      - ext-plugin-post-resp
+      - file-logger
+      - loggly
+      - http-logger
+      - splunk-hec-logging
+      - skywalking-logger
+      - google-cloud-logging
+      - sls-logger
+      - tcp-logger
+      - kafka-logger
+      - rocketmq-logger
+      - syslog
+      - udp-logger
+      - clickhouse-logger
+      - tencent-cloud-cls
+      - elasticsearch-logger
+      - datadog
+      - loki-logger
+      - prometheus
+      - node-status
+      - server-info
+      - batch-requests
+      - echo
+      - public-api
+      - forward-auth
+---
+# APISIX etcd Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apisix-etcd
+  namespace: internal-api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: apisix-etcd
+  template:
+    metadata:
+      labels:
+        app: apisix-etcd
+    spec:
+      containers:
+      - name: etcd
+        image: quay.io/coreos/etcd:v3.5.0
+        ports:
+        - containerPort: 2379
+        env:
+        - name: ETCD_LISTEN_CLIENT_URLS
+          value: "http://0.0.0.0:2379"
+        - name: ETCD_ADVERTISE_CLIENT_URLS
+          value: "http://apisix-etcd:2379"
+        - name: ETCD_LISTEN_PEER_URLS
+          value: "http://0.0.0.0:2380"
+        - name: ETCD_INITIAL_ADVERTISE_PEER_URLS
+          value: "http://apisix-etcd:2380"
+        - name: ETCD_INITIAL_CLUSTER
+          value: "etcd=http://apisix-etcd:2380"
+        - name: ETCD_NAME
+          value: "etcd"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+---
+# APISIX etcd Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: apisix-etcd
+  namespace: internal-api-gateway
+spec:
+  ports:
+  - port: 2379
+    targetPort: 2379
+    name: client
+  - port: 2380
+    targetPort: 2380
+    name: peer
+  selector:
+    app: apisix-etcd
+---
+# APISIX Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apisix
+  namespace: internal-api-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: apisix
+  template:
+    metadata:
+      labels:
+        app: apisix
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "apisix"
+        vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/apisix-app"
+        vault.hashicorp.com/agent-inject-template-db-creds: |
+          {{- with secret "yugabyte-db/static-creds/apisix-app" -}}
+          export DB_USER="{{ .Data.username }}"
+          export DB_PASSWORD="{{ .Data.password }}"
+          {{- end }}
+    spec:
+      serviceAccountName: apisix
+      initContainers:
+      - name: wait-etcd
+        image: busybox:1.35
+        command: 
+        - sh
+        - -c
+        - |
+          until nc -z apisix-etcd 2379; do
+            echo "Waiting for etcd..."
+            sleep 2
+          done
+          echo "etcd is ready"
+      containers:
+      - name: apisix
+        image: apache/apisix:3.6.0-debian
+        ports:
+        - containerPort: 9080
+        - containerPort: 9091
+        - containerPort: 9443
+        volumeMounts:
+        - name: apisix-config
+          mountPath: /usr/local/apisix/conf/config.yaml
+          subPath: config.yaml
+        env:
+        - name: APISIX_STAND_ALONE
+          value: "false"
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /apisix/status
+            port: 9091
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /apisix/status
+            port: 9091
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: apisix-config
+        configMap:
+          name: apisix-config
+---
+# APISIX Ingress Controller for Internal API Gateway
+# This controller manages the internal APISIX cluster separately from your edge gateway
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apisix-ingress-controller-internal
+  namespace: internal-api-gateway
+  labels:
+    app: apisix-ingress-controller-internal
+    tier: internal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: apisix-ingress-controller-internal
+  template:
+    metadata:
+      labels:
+        app: apisix-ingress-controller-internal
+        tier: internal
+    spec:
+      serviceAccountName: apisix
+      containers:
+      - name: apisix-ingress-controller
+        image: apache/apisix-ingress-controller:1.8.0
+        args:
+        - ingress
+        - --log-level=info
+        - --log-output=stderr
+        - --http-listen=:8080
+        - --https-listen=:8443
+        - --default-apisix-cluster-name=internal
+        - --default-apisix-cluster-admin-key=edd1c9f034335f136f87ad84b625c8f1
+        - --default-apisix-cluster-base-url=http://apisix.internal-api-gateway.svc.cluster.local:9091/apisix/admin
+        - --ingress-class=apisix-internal
+        - --apisix-route-version=apisix.apache.org/v2
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: APISIX_CLUSTER_NAME
+          value: "internal"
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+# APISIX Service (Internal Only)
+apiVersion: v1
+kind: Service
+metadata:
+  name: apisix
+  namespace: internal-api-gateway
+  annotations:
+    # Internal API Gateway - not exposed externally
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+spec:
+  ports:
+  - port: 80
+    targetPort: 9080
+    name: http
+  - port: 443
+    targetPort: 9443
+    name: https
+  - port: 9091
+    targetPort: 9091
+    name: admin
+  selector:
+    app: apisix
+  type: ClusterIP  # Internal only - no external LoadBalancer needed
+---
+# Backstage ConfigMap with Enhanced GitHub Team Authentication
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-config
+  namespace: internal-api-gateway
+data:
+  app-config.yaml: |
+    app:
+      title: Platform Portal
+      baseUrl: http://backstage.internal-api-gateway.svc.cluster.local:7007
+
+    organization:
+      name: Platform Team
+
+    backend:
+      auth:
+        keys:
+          - secret: $BACKEND_SECRET
+      baseUrl: http://backstage.internal-api-gateway.svc.cluster.local:7007
+      listen:
+        port: 7007
+      csp:
+        connect-src: ["'self'", 'http:', 'https:']
+      cors:
+        origin: http://localhost:3000
+        methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+        credentials: true
+      database:
+        client: pg
+        connection:
+          host: $POSTGRES_HOST
+          port: $POSTGRES_PORT
+          user: $POSTGRES_USER
+          password: $POSTGRES_PASSWORD
+          database: $POSTGRES_DB
+          ssl: false
+
+    integrations:
+      github:
+        - host: github.com
+          token: <path:secret/data/BACKSTAGE_GITHUB_PAT#value>
+
+    auth:
+      environment: development
+      providers:
+        github:
+          development:
+            clientId: <path:secret/data/BACKSTAGE_GITHUB_CLIENT_ID#value>
+            clientSecret: <path:secret/data/BACKSTAGE_GITHUB_CLIENT_SECRET#value>
+            signIn:
+              resolvers:
+                - resolver: emailMatchingUserEntityName
+                - resolver: emailLocalPartMatchingUserEntityName
+
+    # Permission framework configuration for team-based access
+    permission:
+      enabled: true
+      rules:
+        - allow: [catalog.entity.read]
+          resourceType: catalog-entity
+        - allow: [catalog.entity.create, catalog.entity.update, catalog.entity.delete]
+          resourceType: catalog-entity
+          conditions:
+            rule: IS_ENTITY_OWNER
+            resourceType: catalog-entity
+            params:
+              claims: ['group:default/backstage_admin_access']
+
+    scaffolder:
+      defaultAuthor:
+        name: Platform Team
+        email: platform-team@company.com
+      defaultCommitMessage: 'Initial commit from Backstage'
+
+    catalog:
+      import:
+        entityFilename: catalog-info.yaml
+        pullRequestBranchName: backstage-integration
+      rules:
+        - allow: [Component, System, API, Resource, Location, User, Group]
+      locations:
+        # GitHub organization discovery (update with your org)
+        # - type: github-discovery
+        #   target: https://github.com/your-org-here/*/blob/-/catalog-info.yaml
+        
+        # GitHub user/team discovery (update with your org)
+        # - type: github-org
+        #   target: https://github.com/your-org-here
+        #   rules:
+        #     - allow: [User, Group]
+
+        # Local example data for development
+        - type: file
+          target: ../../examples/entities.yaml
+        - type: file
+          target: ../../examples/template/template.yaml
+          rules:
+            - allow: [Template]
+        - type: file
+          target: ../../examples/org.yaml
+          rules:
+            - allow: [User, Group]
+---
+# Backstage Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage
+  namespace: internal-api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backstage
+  template:
+    metadata:
+      labels:
+        app: backstage
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "backstage"
+        vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/backstage-app"
+        vault.hashicorp.com/agent-inject-template-db-creds: |
+          {{- with secret "yugabyte-db/static-creds/backstage-app" -}}
+          export POSTGRES_USER="{{ .Data.username }}"
+          export POSTGRES_PASSWORD="{{ .Data.password }}"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-github: "secret/data/backstage/github"
+        vault.hashicorp.com/agent-inject-template-github: |
+          {{- with secret "secret/data/backstage/github" -}}
+          export GITHUB_CLIENT_ID="{{ .Data.data.clientId }}"
+          export GITHUB_CLIENT_SECRET="{{ .Data.data.clientSecret }}"
+          export GITHUB_TOKEN="{{ .Data.data.token | default "" }}"
+          {{- if .Data.data.team -}}
+          export GITHUB_TEAM="{{ .Data.data.team }}"
+          {{- end -}}
+          {{- end }}
+    spec:
+      serviceAccountName: backstage
+      containers:
+      - name: backstage
+        image: backstage/backstage:latest
+        ports:
+        - containerPort: 7007
+        env:
+        - name: POSTGRES_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: POSTGRES_PORT
+          value: "5433"
+        - name: POSTGRES_DB
+          value: "backstage"
+        - name: BACKEND_SECRET
+          value: "your-backend-secret-here-change-this"
+        command:
+        - sh
+        - -c
+        - |
+          # Source Vault secrets
+          if [ -f /vault/secrets/db-creds ]; then
+            source /vault/secrets/db-creds
+          fi
+          if [ -f /vault/secrets/github ]; then
+            source /vault/secrets/github
+          fi
+          
+          # Set default team if not specified
+          if [ -z "$GITHUB_TEAM" ]; then
+            echo "Warning: No GitHub team specified, using default 'platform-team'"
+            export GITHUB_TEAM="platform-team"
+          fi
+          
+          # Start backstage
+          exec node packages/backend --config app-config.yaml
+        volumeMounts:
+        - name: backstage-config
+          mountPath: /app/app-config.yaml
+          subPath: app-config.yaml
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+        livenessProbe:
+          httpGet:
+            path: /api/catalog/health
+            port: 7007
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/catalog/health
+            port: 7007
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: backstage-config
+        configMap:
+          name: backstage-config
+---
+# Backstage Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage
+  namespace: internal-api-gateway
+spec:
+  ports:
+  - port: 80
+    targetPort: 7007
+    name: http
+  selector:
+    app: backstage
+---
+# APISIX Upstream for Backstage
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: backstage-upstream
+  namespace: internal-api-gateway
+spec:
+  ports:
+  - port: 80
+    loadbalancer:
+      type: roundrobin
+  timeout:
+    connect: 6s
+    send: 6s
+    read: 6s
+---
+# APISIX Service for Backstage (enables service discovery)
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage-proxy
+  namespace: internal-api-gateway
+spec:
+  type: ExternalName
+  externalName: backstage.internal-api-gateway.svc.cluster.local
+  ports:
+  - port: 80
+    targetPort: 80
+---
+# Internal API Gateway Routes for Backstage
+# Note: GUI access is via Teleport, these routes are for:
+# 1. Internal service-to-service API calls
+# 2. Backstage managing APISIX gateway itself
+# 3. Optional internal access patterns
+
+# APISIX Route for Backstage Management APIs (internal service calls)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: backstage-management
+  namespace: internal-api-gateway
+  annotations:
+    # Target this specific internal APISIX cluster
+    apisix.ingress.kubernetes.io/apisix-cluster: "internal"
+spec:
+  http:
+  - name: backstage-mgmt-api
+    match:
+      # Internal management endpoints for Backstage to manage APISIX
+      paths:
+      - "/management/backstage/*"
+      methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - HEAD
+      - OPTIONS
+    backends:
+    - serviceName: backstage-proxy
+      servicePort: 80
+    plugins:
+    - name: proxy-rewrite
+      enable: true
+      config:
+        regex_uri: ["^/management/backstage/?(.*)$", "/$1"]
+    - name: cors
+      enable: true
+      config:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+        allow_headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+        expose_headers: "Content-Length,Content-Range"
+        allow_credentials: true
+---
+# APISIX Route for Backstage APIs (internal service-to-service calls)
+# These are for services calling Backstage APIs internally, not GUI access
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: backstage-api-internal
+  namespace: internal-api-gateway
+  annotations:
+    # Target this specific internal APISIX cluster
+    apisix.ingress.kubernetes.io/apisix-cluster: "internal"
+spec:
+  http:
+  - name: backstage-internal-api
+    priority: 10  # Higher priority for API paths
+    match:
+      # Internal API access for service-to-service calls
+      paths:
+      - "/internal-api/backstage/*"
+      methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - HEAD
+      - OPTIONS
+    backends:
+    - serviceName: backstage-proxy
+      servicePort: 80
+    plugins:
+    - name: proxy-rewrite
+      enable: true
+      config:
+        regex_uri: ["^/internal-api/backstage/?(.*)$", "/api/$1"]
+    - name: cors
+      enable: true
+      config:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+        allow_headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+        expose_headers: "Content-Length,Content-Range"
+        allow_credentials: true
+---
+# Route for other internal services (not Backstage GUI)
+# GUI access is via Teleport - these routes are for internal service mesh communication
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: internal-services
+  namespace: internal-api-gateway
+  annotations:
+    apisix.ingress.kubernetes.io/apisix-cluster: "internal"
+spec:
+  http:
+  - name: health-checks
+    priority: 5  # Medium priority for health endpoints
+    match:
+      paths:
+      - "/health/*"
+      - "/healthz"
+      - "/ready"
+      - "/metrics"
+      methods:
+      - GET
+      - HEAD
+    backends:
+    - serviceName: backstage-proxy
+      servicePort: 80
+    plugins:
+    - name: cors
+      enable: true
+      config:
+        allow_origins: "*"
+        allow_methods: "GET,HEAD"
+        allow_headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+        expose_headers: "Content-Length,Content-Range"
+        allow_credentials: false
+---
+# Internal API Gateway - No external ingress needed
+# This APISIX instance is for internal service-to-service communication only
+# Access via: apisix.apisix.svc.cluster.local:80 (from within cluster)
+# 
+# If you need external access for testing, uncomment the ingress below:
+# ---
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: api-gateway-ingress-internal
+#   namespace: apisix
+#   annotations:
+#     kubernetes.io/ingress.class: "nginx"
+#     nginx.ingress.kubernetes.io/ssl-redirect: "false"
+#     # Internal testing only
+# spec:
+#   rules:
+#   - host: internal-api-gateway.local
+#     http:
+#       paths:
+#       - path: /
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: apisix
+#             port:
+#               number: 80
