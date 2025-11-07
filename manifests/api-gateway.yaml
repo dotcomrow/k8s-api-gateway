@@ -1188,8 +1188,9 @@ spec:
           set -e
           echo "Setting up Backstage application..."
           
-          # Install system dependencies
-          apk add --no-cache python3 make g++ git curl libc6-compat pkgconfig autoconf automake libtool nasm
+          # Install system dependencies including those needed for rollup and native modules
+          apk add --no-cache python3 make g++ git curl libc6-compat pkgconfig autoconf automake libtool nasm \
+            linux-headers musl-dev gcc binutils-gold vips-dev
           
           # Install Backstage CLI globally
           npm install -g @backstage/create-app@latest
@@ -1216,6 +1217,11 @@ spec:
           # Set Node.js environment for native builds
           export NODE_ENV=development
           export npm_config_build_from_source=true
+          export PYTHON=/usr/bin/python3
+          export CC=gcc
+          export CXX=g++
+          export npm_config_cache=/tmp/.npm
+          export npm_config_python=/usr/bin/python3
           
           # Install dependencies (some build failures are acceptable)
           if ! yarn install; then
