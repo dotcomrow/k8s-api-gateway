@@ -437,6 +437,8 @@ data:
     nginx_config:
       error_log: "/dev/stderr"
       error_log_level: "warn"
+      http:
+        access_log: "/dev/stdout"
 
     plugin_attr:
       prometheus:
