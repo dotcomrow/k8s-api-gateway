@@ -437,6 +437,8 @@ data:
     nginx_config:
       error_log: "/dev/stderr"
       error_log_level: "warn"
+      event:
+        worker_connections: 1024
       http:
         access_log: "/dev/stdout"
         real_ip_from:
