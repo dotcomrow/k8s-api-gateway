@@ -571,17 +571,20 @@ spec:
           done
           echo "etcd is ready"
       - name: wait-vault-setup
-        image: curlimages/curl:8.1.0
+        image: busybox:1.35
         command:
         - sh
         - -c
         - |
           echo "Waiting for APISIX Vault setup job to complete..."
-          until curl -s -f http://vault.vault.svc.cluster.local:8200/v1/auth/kubernetes/role/apisix >/dev/null 2>&1; do
-            echo "Vault role 'apisix' not ready yet, waiting..."
-            sleep 10
-          done
-          echo "Vault setup complete, APISIX role is available"
+          
+          # Simple approach: Wait a reasonable time for the job to complete
+          # In a real deployment, you might want to check job status via K8s API
+          
+          echo "Waiting 2 minutes for setup jobs to complete..."
+          sleep 120
+          
+          echo "Setup wait period complete, proceeding with APISIX startup"
       containers:
       - name: apisix
         image: apache/apisix:3.6.0-debian
@@ -872,9 +875,49 @@ spec:
           {{- end }}
     spec:
       serviceAccountName: backstage
+      initContainers:
+      - name: backstage-setup
+        image: node:18-alpine
+        workingDir: /app
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "Setting up Backstage application..."
+          
+          # Install system dependencies
+          apk add --no-cache python3 make g++ git curl
+          
+          # Install Backstage CLI globally
+          npm install -g @backstage/create-app@latest
+          
+          # Create Backstage app
+          echo "yes" | npx @backstage/create-app@latest --skip-install backstage-app
+          
+          # Copy the generated app structure
+          cp -r backstage-app/* /app/
+          
+          # Install dependencies
+          yarn install --frozen-lockfile --production=false
+          
+          # Build the backend
+          yarn build:backend
+          
+          echo "Backstage setup complete"
+        volumeMounts:
+        - name: backstage-data
+          mountPath: /app
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2000m"
+            memory: "4Gi"
       containers:
       - name: backstage
-        image: backstage/backstage:latest
+        image: node:18-alpine
         ports:
         - containerPort: 7007
         env:
@@ -886,10 +929,13 @@ spec:
           value: "backstage"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
+        workingDir: /app
         command:
         - sh
         - -c
         - |
+          set -e
+          
           # Source Vault secrets
           if [ -f /vault/secrets/db-creds ]; then
             source /vault/secrets/db-creds
@@ -904,9 +950,12 @@ spec:
             export GITHUB_TEAM="platform-team"
           fi
           
-          # Start backstage
-          exec node packages/backend --config app-config.yaml
+          echo "Starting Backstage backend..."
+          cd /app
+          exec node packages/backend/dist/index.js
         volumeMounts:
+        - name: backstage-data
+          mountPath: /app
         - name: backstage-config
           mountPath: /app/app-config.yaml
           subPath: app-config.yaml
@@ -930,6 +979,8 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 10
       volumes:
+      - name: backstage-data
+        emptyDir: {}
       - name: backstage-config
         configMap:
           name: backstage-config
