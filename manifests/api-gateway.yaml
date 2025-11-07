@@ -1190,6 +1190,9 @@ spec:
           # Install Backstage CLI globally
           npm install -g @backstage/create-app@latest
           
+          # Enable Corepack for proper Yarn version management
+          corepack enable
+          
           # Clean up any existing directories
           rm -rf backstage-app yes || true
           
@@ -1202,7 +1205,9 @@ spec:
           # Copy the generated app structure
           cp -r backstage-app/* /app/
           
-          # Install dependencies
+          # Use Corepack to ensure correct Yarn version, then install dependencies
+          cd /app
+          corepack install
           yarn install --frozen-lockfile --production=false
           
           # Build the backend
