@@ -12,7 +12,6 @@ metadata:
     tier: internal
   annotations:
     linkerd.io/inject: "enabled"
-    linkerd.io/skip-outbound-ports: "8200"
     scheduler.alpha.kubernetes.io/node-selector: "dedicated=work-node"
     field.cattle.io/projectId: "local:infrastructure"
 ---
@@ -737,6 +736,7 @@ spec:
       labels:
         app: apisix
       annotations:
+        linkerd.io/inject: disabled
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "apisix"
         vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/apisix-app"
@@ -1181,7 +1181,7 @@ spec:
       labels:
         app: backstage
       annotations:
-        linkerd.io/skip-outbound-ports: "8200"
+        linkerd.io/inject: disabled
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "backstage"
         vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/backstage-app"
