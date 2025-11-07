@@ -1208,7 +1208,7 @@ spec:
           # Use Corepack to ensure correct Yarn version, then install dependencies
           cd /app
           corepack install
-          yarn install --frozen-lockfile --production=false
+          yarn install --immutable
           
           # Build the backend
           yarn build:backend
