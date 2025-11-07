@@ -607,7 +607,7 @@ data:
       default_cluster_name: "internal"
     
     kubernetes:
-      namespace_selector: ["k8s-api-gateway"]
+      namespace_selector: ["name=k8s-api-gateway"]
       
     apisix_resource_sync_interval: "200ms"
 ---
