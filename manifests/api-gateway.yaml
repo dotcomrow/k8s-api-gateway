@@ -584,21 +584,33 @@ spec:
           
           echo "Checking status of job: $JOB_NAME"
           
+          # First, wait for the job to exist
+          while ! kubectl get job "$JOB_NAME" -n "$NAMESPACE" >/dev/null 2>&1; do
+            echo "⏳ Waiting for job $JOB_NAME to be created..."
+            sleep 5
+          done
+          
           while true; do
-            # Get job status
-            STATUS=$(kubectl get job "$JOB_NAME" -n "$NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "")
-            FAILED=$(kubectl get job "$JOB_NAME" -n "$NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null || echo "")
+            # Get job status using a more robust approach
+            JOB_STATUS=$(kubectl get job "$JOB_NAME" -n "$NAMESPACE" -o json 2>/dev/null || echo '{}')
             
-            if [ "$STATUS" = "True" ]; then
+            # Check if job has succeeded (completions = 1)
+            SUCCEEDED=$(echo "$JOB_STATUS" | jq -r '.status.succeeded // 0')
+            FAILED=$(echo "$JOB_STATUS" | jq -r '.status.failed // 0')
+            ACTIVE=$(echo "$JOB_STATUS" | jq -r '.status.active // 0')
+            
+            echo "📊 Job status - Succeeded: $SUCCEEDED, Failed: $FAILED, Active: $ACTIVE"
+            
+            if [ "$SUCCEEDED" -gt 0 ]; then
               echo "✅ Job $JOB_NAME completed successfully"
               break
-            elif [ "$FAILED" = "True" ]; then
+            elif [ "$FAILED" -gt 0 ]; then
               echo "❌ Job $JOB_NAME failed. Checking logs:"
               kubectl logs job/"$JOB_NAME" -n "$NAMESPACE" --tail=20 || true
               echo "Exiting due to job failure"
               exit 1
             else
-              echo "⏳ Job $JOB_NAME still running... (Status: Complete=$STATUS, Failed=$FAILED)"
+              echo "⏳ Job $JOB_NAME still running..."
               sleep 10
             fi
           done
