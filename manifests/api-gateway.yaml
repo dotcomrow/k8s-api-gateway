@@ -1218,9 +1218,9 @@ spec:
           export npm_config_build_from_source=true
           
           # Install dependencies with verbose logging for troubleshooting
-          yarn install --verbose || {
+          yarn install || {
             echo "Yarn install had issues, trying without optional dependencies..."
-            yarn install --ignore-optional --verbose
+            yarn install --ignore-optional
           }
           
           # Build the backend (skip if dependencies failed)
