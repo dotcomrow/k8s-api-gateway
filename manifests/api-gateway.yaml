@@ -443,6 +443,12 @@ data:
         real_ip_from:
           - "127.0.0.1"
           - "unix:"
+
+    plugin_attr:
+      prometheus:
+        export_addr:
+          ip: "0.0.0.0"
+          port: 9091
       
     etcd:
       host:
@@ -744,6 +750,7 @@ spec:
         - containerPort: 9080
         - containerPort: 9180
         - containerPort: 9443
+        - containerPort: 9091
         volumeMounts:
         - name: apisix-config
           mountPath: /usr/local/apisix/conf/config.yaml
@@ -893,6 +900,9 @@ spec:
   - port: 9180
     targetPort: 9180
     name: admin
+  - port: 9091
+    targetPort: 9091
+    name: metrics
   selector:
     app: apisix
   type: ClusterIP  # Internal only - no external LoadBalancer needed
