@@ -401,7 +401,7 @@ data:
       
     etcd:
       host:
-        - "http://apisix-etcd:2379"
+        - "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
       prefix: "/apisix"
       timeout: 30
     
@@ -571,20 +571,39 @@ spec:
           done
           echo "etcd is ready"
       - name: wait-vault-setup
-        image: busybox:1.35
+        image: alpine/k8s:1.31.4
         command:
         - sh
         - -c
         - |
           echo "Waiting for APISIX Vault setup job to complete..."
           
-          # Simple approach: Wait a reasonable time for the job to complete
-          # In a real deployment, you might want to check job status via K8s API
+          # Wait for the setup job to complete successfully
+          JOB_NAME="apisix-yugabyte-config"
+          NAMESPACE="k8s-api-gateway"
           
-          echo "Waiting 2 minutes for setup jobs to complete..."
-          sleep 120
+          echo "Checking status of job: $JOB_NAME"
           
-          echo "Setup wait period complete, proceeding with APISIX startup"
+          while true; do
+            # Get job status
+            STATUS=$(kubectl get job "$JOB_NAME" -n "$NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "")
+            FAILED=$(kubectl get job "$JOB_NAME" -n "$NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null || echo "")
+            
+            if [ "$STATUS" = "True" ]; then
+              echo "✅ Job $JOB_NAME completed successfully"
+              break
+            elif [ "$FAILED" = "True" ]; then
+              echo "❌ Job $JOB_NAME failed. Checking logs:"
+              kubectl logs job/"$JOB_NAME" -n "$NAMESPACE" --tail=20 || true
+              echo "Exiting due to job failure"
+              exit 1
+            else
+              echo "⏳ Job $JOB_NAME still running... (Status: Complete=$STATUS, Failed=$FAILED)"
+              sleep 10
+            fi
+          done
+          
+          echo "APISIX Vault setup job completed successfully, proceeding with APISIX startup"
       containers:
       - name: apisix
         image: apache/apisix:3.6.0-debian
