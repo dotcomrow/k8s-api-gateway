@@ -402,10 +402,6 @@ data:
     apisix:
       node_listen: 9080
       enable_ipv6: false
-      admin_key:
-        - name: "admin"
-          key: edd1c9f034335f136f87ad84b625c8f1
-          role: admin
       
     etcd:
       host:
@@ -579,6 +575,23 @@ spec:
             sleep 2
           done
           echo "etcd is ready"
+      - name: debug-config
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "🔍 Debugging APISIX configuration..."
+          echo "Contents of /usr/local/apisix/conf/:"
+          ls -la /usr/local/apisix/conf/ || echo "Directory not accessible"
+          echo "Contents of config.yaml:"
+          cat /usr/local/apisix/conf/config.yaml || echo "config.yaml not found"
+          echo "Environment variables:"
+          env | grep APISIX || echo "No APISIX env vars"
+        volumeMounts:
+        - name: apisix-config
+          mountPath: /usr/local/apisix/conf/config.yaml
+          subPath: config.yaml
       - name: wait-vault-setup
         image: alpine/k8s:1.31.4
         command:
@@ -671,10 +684,17 @@ spec:
         - containerPort: 9443
         volumeMounts:
         - name: apisix-config
-          mountPath: /usr/local/apisix/conf
+          mountPath: /usr/local/apisix/conf/config.yaml
+          subPath: config.yaml
         env:
         - name: APISIX_STAND_ALONE
           value: "false"
+        - name: APISIX_DEPLOYMENT_ETCD_HOST
+          value: "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
+        - name: APISIX_DEPLOYMENT_ETCD_PREFIX
+          value: "/apisix"
+        - name: APISIX_DEPLOYMENT_ETCD_TIMEOUT
+          value: "30"
         resources:
           requests:
             cpu: "200m"
