@@ -416,6 +416,14 @@ data:
     apisix:
       node_listen: 9080
       enable_ipv6: false
+      proxy_cache:
+        cache_ttl: 10s
+        zones:
+          - name: "disk_cache_one"
+            memory_size: "50m"
+            disk_size: "1G"
+            disk_path: "/tmp/disk_cache_one"
+            cache_levels: "1:2"
       
     etcd:
       host:
