@@ -10,6 +10,10 @@ metadata:
   labels:
     name: k8s-api-gateway
     tier: internal
+  annotations:
+    linkerd.io/inject: "enabled"
+    scheduler.alpha.kubernetes.io/node-selector: "dedicated=work-node"
+    field.cattle.io/projectId: "local:infrastructure"
 ---
 # Service Accounts
 apiVersion: v1
@@ -1208,7 +1212,7 @@ spec:
           # Use Corepack to ensure correct Yarn version, then install dependencies
           cd /app
           corepack install
-          yarn install --immutable
+          yarn install
           
           # Build the backend
           yarn build:backend
