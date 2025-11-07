@@ -604,7 +604,6 @@ data:
       - hmac-auth
       - basic-auth
       - jwt-auth
-      - jwe-decrypt
       - key-auth
       - consumer-restriction
       - forward-auth
