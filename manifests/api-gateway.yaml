@@ -464,10 +464,6 @@ data:
           plugin-limit-conn: 10m
           upstream-healthcheck: 10m
           worker-events: 10m
-      upstream:
-        keepalive: 60
-        keepalive_requests: 1000
-        keepalive_timeout: "60s"
 
     plugin_attr:
       prometheus:
@@ -475,6 +471,11 @@ data:
           ip: "0.0.0.0"
           port: 9091
       
+    upstream:
+      keepalive: 60
+      keepalive_requests: 1000
+      keepalive_timeout: "60s"
+    
     etcd:
       host:
         - "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
