@@ -48,6 +48,9 @@ rules:
 - apiGroups: ["extensions"]
   resources: ["ingresses"]
   verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -578,42 +581,79 @@ spec:
         - |
           echo "Waiting for APISIX Vault setup job to complete..."
           
-          # Wait for the setup job to complete successfully
-          JOB_NAME="apisix-yugabyte-config"
-          NAMESPACE="k8s-api-gateway"
+          # Wait for both setup jobs to complete successfully
+          # First job copies vault token from vault namespace
+          TOKEN_JOB_NAME="copy-api-gateway-vault-root-token"
+          TOKEN_NAMESPACE="vault"
+          # Second job sets up database and vault roles
+          CONFIG_JOB_NAME="apisix-yugabyte-config"
+          CONFIG_NAMESPACE="k8s-api-gateway"
           
-          echo "Checking status of job: $JOB_NAME"
+          # Function to wait for a job to complete
+          wait_for_job() {
+            local job_name="$1"
+            local namespace="$2"
+            
+            echo "🔍 Waiting for job: $job_name in namespace: $namespace"
+            
+            # Wait for the job to exist
+            RETRY_COUNT=0
+            MAX_RETRIES=30
+            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              if kubectl get job "$job_name" -n "$namespace" >/dev/null 2>&1; then
+                echo "✅ Found job $job_name"
+                break
+              fi
+              
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "⏳ Waiting for job $job_name to be created... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+              
+              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                echo "❌ Job $job_name not found after $MAX_RETRIES attempts"
+                echo "📋 Current jobs in namespace $namespace:"
+                kubectl get jobs -n "$namespace" || true
+                return 1
+              fi
+              
+              sleep 5
+            done
+            
+            # Wait for the job to complete
+            while true; do
+              JOB_STATUS=$(kubectl get job "$job_name" -n "$namespace" -o json 2>/dev/null || echo '{}')
+              
+              SUCCEEDED=$(echo "$JOB_STATUS" | jq -r '.status.succeeded // 0')
+              FAILED=$(echo "$JOB_STATUS" | jq -r '.status.failed // 0')
+              ACTIVE=$(echo "$JOB_STATUS" | jq -r '.status.active // 0')
+              
+              echo "📊 Job $job_name status - Succeeded: $SUCCEEDED, Failed: $FAILED, Active: $ACTIVE"
+              
+              if [ "$SUCCEEDED" -gt 0 ]; then
+                echo "✅ Job $job_name completed successfully"
+                return 0
+              elif [ "$FAILED" -gt 0 ]; then
+                echo "❌ Job $job_name failed. Checking logs:"
+                kubectl logs job/"$job_name" -n "$namespace" --tail=20 || true
+                return 1
+              else
+                echo "⏳ Job $job_name still running..."
+                sleep 10
+              fi
+            done
+          }
           
-          # First, wait for the job to exist
-          while ! kubectl get job "$JOB_NAME" -n "$NAMESPACE" >/dev/null 2>&1; do
-            echo "⏳ Waiting for job $JOB_NAME to be created..."
-            sleep 5
-          done
+          # Wait for both jobs in sequence
+          echo "🔧 Step 1: Waiting for vault token copy job..."
+          if ! wait_for_job "$TOKEN_JOB_NAME" "$TOKEN_NAMESPACE"; then
+            echo "❌ Vault token copy job failed"
+            exit 1
+          fi
           
-          while true; do
-            # Get job status using a more robust approach
-            JOB_STATUS=$(kubectl get job "$JOB_NAME" -n "$NAMESPACE" -o json 2>/dev/null || echo '{}')
-            
-            # Check if job has succeeded (completions = 1)
-            SUCCEEDED=$(echo "$JOB_STATUS" | jq -r '.status.succeeded // 0')
-            FAILED=$(echo "$JOB_STATUS" | jq -r '.status.failed // 0')
-            ACTIVE=$(echo "$JOB_STATUS" | jq -r '.status.active // 0')
-            
-            echo "📊 Job status - Succeeded: $SUCCEEDED, Failed: $FAILED, Active: $ACTIVE"
-            
-            if [ "$SUCCEEDED" -gt 0 ]; then
-              echo "✅ Job $JOB_NAME completed successfully"
-              break
-            elif [ "$FAILED" -gt 0 ]; then
-              echo "❌ Job $JOB_NAME failed. Checking logs:"
-              kubectl logs job/"$JOB_NAME" -n "$NAMESPACE" --tail=20 || true
-              echo "Exiting due to job failure"
-              exit 1
-            else
-              echo "⏳ Job $JOB_NAME still running..."
-              sleep 10
-            fi
-          done
+          echo "🔧 Step 2: Waiting for APISIX configuration job..."
+          if ! wait_for_job "$CONFIG_JOB_NAME" "$CONFIG_NAMESPACE"; then
+            echo "❌ APISIX configuration job failed"
+            exit 1
+          fi
           
           echo "APISIX Vault setup job completed successfully, proceeding with APISIX startup"
       containers:
