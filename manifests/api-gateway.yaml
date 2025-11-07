@@ -587,6 +587,34 @@ spec:
         configMap:
           name: apisix-config
 ---
+# APISIX Ingress Controller Config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apisix-ingress-controller-config
+  namespace: k8s-api-gateway
+data:
+  config.yaml: |
+    apisix:
+      base_url: "http://apisix.k8s-api-gateway.svc.cluster.local:9091/apisix/admin"
+      admin_key: "edd1c9f034335f136f87ad84b625c8f1"
+    
+    log_level: "info"
+    log_output: "stderr"
+    
+    http_listen: ":8080"
+    https_listen: ":8443"
+    
+    ingress:
+      publish_service: ""
+      status_publish_interval: "60s"
+      
+    kubernetes:
+      namespace_selector: ["k8s-api-gateway"]
+      ingress_class: "apisix-internal"
+      
+    apisix_resource_sync_interval: "200ms"
+---
 # APISIX Ingress Controller for Internal API Gateway
 # This controller manages the internal APISIX cluster separately from your edge gateway
 apiVersion: apps/v1
@@ -614,14 +642,11 @@ spec:
         image: apache/apisix-ingress-controller:1.8.0
         args:
         - ingress
-        - --log-level=info
-        - --log-output=stderr
-        - --http-listen=:8080
-        - --https-listen=:8443
-        - --default-apisix-cluster-name=internal
-        - --default-apisix-cluster-admin-key=edd1c9f034335f136f87ad84b625c8f1
-        - --default-apisix-cluster-base-url=http://apisix.k8s-api-gateway.svc.cluster.local:9091/apisix/admin
-        - --ingress-class=apisix-internal
+        - --config-path=/usr/local/apisix-ingress-controller/conf/config.yaml
+        volumeMounts:
+        - name: config-volume
+          mountPath: /usr/local/apisix-ingress-controller/conf/config.yaml
+          subPath: config.yaml
         env:
         - name: POD_NAMESPACE
           valueFrom:
@@ -659,6 +684,10 @@ spec:
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 5
+      volumes:
+      - name: config-volume
+        configMap:
+          name: apisix-ingress-controller-config
 ---
 # APISIX Service (Internal Only)
 apiVersion: v1
