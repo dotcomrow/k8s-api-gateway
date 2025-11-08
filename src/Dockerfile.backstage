@@ -85,6 +85,7 @@ RUN echo "🔍 Checking build output locations..." && \
         echo "✅ Found backend bundle, extracting..." && \
         cd packages/backend/dist && \
         tar -xzf bundle.tar.gz && \
+        echo "Extracted contents:" && \
         ls -la && \
         echo "✅ Backend bundle extracted successfully" && \
         cd /app; \
