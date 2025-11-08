@@ -1211,7 +1211,7 @@ spec:
             linux-headers musl-dev gcc binutils-gold vips-dev
             
           # Set Node.js memory optimization for Alpine Linux container
-          export NODE_OPTIONS="--max-old-space-size=2048 --optimize-for-size"
+          export NODE_OPTIONS="--max-old-space-size=2048"
           
           # Install Backstage CLI globally
           npm install -g @backstage/create-app@latest
@@ -1242,7 +1242,7 @@ spec:
           
           # Set Node.js environment for native builds with memory optimization
           export NODE_ENV=development
-          export NODE_OPTIONS="--max-old-space-size=2048 --optimize-for-size"
+          export NODE_OPTIONS="--max-old-space-size=2048"
           export npm_config_build_from_source=true
           export PYTHON=/usr/bin/python3
           export CC=gcc
@@ -1342,7 +1342,7 @@ spec:
           set -e
           
           # Set Node.js memory optimization for container runtime
-          export NODE_OPTIONS="--max-old-space-size=1536 --optimize-for-size"
+          export NODE_OPTIONS="--max-old-space-size=1536"
           
           # Install git and essential build tools for runtime builds
           echo "🔧 Installing git and build dependencies..."
