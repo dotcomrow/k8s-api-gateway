@@ -1193,7 +1193,7 @@ spec:
       serviceAccountName: backstage
       containers:
       - name: backstage
-        image: ghcr.io/dotcomrow/backstage-image:ts-20251108-184154
+        image: ghcr.io/dotcomrow/backstage-image:ts-20251108-185900
         workingDir: /app
         ports:
         - containerPort: 7007
