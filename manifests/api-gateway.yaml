@@ -1292,6 +1292,10 @@ spec:
         - |
           set -e
           
+          # Install git and essential build tools for runtime builds
+          echo "🔧 Installing git and build dependencies..."
+          apk add --no-cache git || echo "Git installation failed, continuing..."
+          
           # Source Vault secrets
           if [ -f /vault/secrets/db-creds ]; then
             source /vault/secrets/db-creds
@@ -1332,6 +1336,11 @@ spec:
           fi
           
           echo "✅ Using yarn executable: $YARN_EXEC"
+          
+          # Fix workspace links that cause npm install failures
+          echo "🔧 Fixing any remaining workspace links in package.json files..."
+          find /app -name "package.json" -type f -exec sed -i 's|"link:../app"|"file:../app"|g' {} \;
+          find /app -name "package.json" -type f -exec sed -i 's|"link:|"file:|g' {} \;
           
           # Debug: Show current directory structure
           echo "Current /app structure:"
