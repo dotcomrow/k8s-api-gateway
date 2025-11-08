@@ -1518,26 +1518,66 @@ spec:
               # Set final runtime memory optimization
               export NODE_OPTIONS="--max-old-space-size=1024"
               
-              # Method 1: Direct node_modules path
+              # Create ts-node configuration for ESM
+              echo "🔧 Setting up TypeScript configuration for ES modules..."
+              cat > tsconfig.json << EOFTS
+              {
+                "compilerOptions": {
+                  "target": "ES2020",
+                  "module": "ESNext",
+                  "moduleResolution": "node",
+                  "esModuleInterop": true,
+                  "allowSyntheticDefaultImports": true,
+                  "skipLibCheck": true,
+                  "strict": false,
+                  "resolveJsonModule": true
+                },
+                "ts-node": {
+                  "esm": true,
+                  "experimentalSpecifierResolution": "node"
+                }
+              }
+              EOFTS
+              
+              # Check if package.json exists and add "type": "module" if needed
+              if [ -f "package.json" ]; then
+                echo "🔧 Checking package.json for module type..."
+                if ! grep -q '"type".*"module"' package.json; then
+                  echo "Adding module type to package.json..."
+                  # Create a temporary file with the modified package.json
+                  node -e "
+                    const fs = require('fs');
+                    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+                    pkg.type = 'module';
+                    fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+                  " || echo "Failed to modify package.json, continuing..."
+                fi
+              fi
+              
+              # Method 1: Direct node_modules path with ESM support
               if [ -f "/app/packages/backend/node_modules/.bin/ts-node" ]; then
-                echo "✅ Using backend local ts-node with memory optimization..."
-                exec ./node_modules/.bin/ts-node src/index.ts
+                echo "✅ Using backend local ts-node with ESM support..."
+                exec ./node_modules/.bin/ts-node --esm src/index.ts
               elif [ -f "/app/node_modules/.bin/ts-node" ]; then
-                echo "✅ Using workspace ts-node..."
-                exec /app/node_modules/.bin/ts-node src/index.ts
-              # Method 2: Try global ts-node
+                echo "✅ Using workspace ts-node with ESM support..."
+                exec /app/node_modules/.bin/ts-node --esm src/index.ts
+              # Method 2: Try global ts-node with ESM
               elif command -v ts-node >/dev/null 2>&1; then
-                echo "✅ Using global ts-node..."
-                exec ts-node src/index.ts
-              # Method 3: Use npx with explicit path
+                echo "✅ Using global ts-node with ESM support..."
+                exec ts-node --esm src/index.ts
+              # Method 3: Use npx with explicit path and ESM
               elif command -v npx >/dev/null 2>&1; then
-                echo "✅ Trying npx with PATH adjustment..."
+                echo "✅ Trying npx with PATH adjustment and ESM..."
                 export PATH="/app/node_modules/.bin:/app/packages/backend/node_modules/.bin:$PATH"
-                exec npx ts-node src/index.ts
-              # Method 4: Direct Node.js with typescript compilation
+                exec npx ts-node --esm src/index.ts
+              # Method 3b: Try Node.js with experimental loader as fallback
+              elif command -v node >/dev/null 2>&1; then
+                echo "✅ Trying Node.js with experimental ESM loader..."
+                exec node --loader=ts-node/esm src/index.ts
+              # Method 4: Direct Node.js with typescript compilation for ESM
               elif command -v tsc >/dev/null 2>&1; then
-                echo "✅ Compiling TypeScript and running with Node..."
-                tsc src/index.ts --outDir dist --target es2020 --module commonjs --esModuleInterop true --skipLibCheck true
+                echo "✅ Compiling TypeScript and running with Node (ESM)..."
+                tsc src/index.ts --outDir dist --target es2020 --module esnext --moduleResolution node --esModuleInterop true --skipLibCheck true
                 if [ -f "dist/index.js" ]; then
                   exec node dist/index.js
                 else
