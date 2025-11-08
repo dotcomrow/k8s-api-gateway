@@ -1194,6 +1194,7 @@ spec:
       containers:
       - name: backstage
         image: ghcr.io/dotcomrow/backstage-image:ts-20251108-184154
+        workingDir: /app
         ports:
         - containerPort: 7007
         env:
@@ -1201,6 +1202,8 @@ spec:
           value: "production"
         - name: NODE_OPTIONS
           value: "--max-old-space-size=14336"
+        - name: BACKSTAGE_APP_CONFIG
+          value: "/app/app-config.yaml"
         - name: POSTGRES_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
         - name: POSTGRES_PORT
