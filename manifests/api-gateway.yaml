@@ -1389,41 +1389,63 @@ spec:
               echo "✅ Running TypeScript backend directly"
               cd /app/packages/backend
               
-              # Install ts-node locally if not available
-              echo "🔧 Ensuring ts-node is available..."
-              if ! npm list ts-node >/dev/null 2>&1 && ! test -f "node_modules/.bin/ts-node" && ! test -f "/app/node_modules/.bin/ts-node"; then
-                echo "Installing ts-node locally..."
-                if [ "$YARN_EXEC" != "npm" ]; then
-                  $YARN_EXEC add --dev ts-node typescript @types/node || {
-                    echo "Yarn add failed, trying npm install..."
-                    npm install --no-save ts-node typescript @types/node
-                  }
-                else
-                  npm install --no-save ts-node typescript @types/node
-                fi
-              else
-                echo "✅ ts-node is already available"
-              fi
+              # Force install ts-node and dependencies
+              echo "🔧 Installing ts-node and dependencies..."
+              cd /app/packages/backend
               
-              # Try different ways to run ts-node
-              echo "Attempting to run TypeScript backend..."
-              if command -v npx >/dev/null 2>&1; then
-                echo "Using npx ts-node..."
-                exec npx ts-node src/index.ts
-              elif [ -f "node_modules/.bin/ts-node" ]; then
-                echo "Using local ts-node..."
+              # Always install to ensure it's available
+              echo "Installing ts-node with npm..."
+              npm install ts-node typescript @types/node --no-save || {
+                echo "Local install failed, trying global install..."
+                npm install -g ts-node typescript @types/node
+              }
+              
+              # Try different ways to run ts-node with better path resolution
+              echo "🚀 Attempting to run TypeScript backend..."
+              
+              # Method 1: Direct node_modules path
+              if [ -f "/app/packages/backend/node_modules/.bin/ts-node" ]; then
+                echo "✅ Using backend local ts-node..."
                 exec ./node_modules/.bin/ts-node src/index.ts
               elif [ -f "/app/node_modules/.bin/ts-node" ]; then
-                echo "Using root ts-node..."
+                echo "✅ Using workspace ts-node..."
                 exec /app/node_modules/.bin/ts-node src/index.ts
-              else
-                echo "❌ ts-node still not found, trying Node.js directly with precompiled JS..."
-                # Last resort: look for any .js files in dist
+              # Method 2: Try global ts-node
+              elif command -v ts-node >/dev/null 2>&1; then
+                echo "✅ Using global ts-node..."
+                exec ts-node src/index.ts
+              # Method 3: Use npx with explicit path
+              elif command -v npx >/dev/null 2>&1; then
+                echo "✅ Trying npx with PATH adjustment..."
+                export PATH="/app/node_modules/.bin:/app/packages/backend/node_modules/.bin:$PATH"
+                exec npx ts-node src/index.ts
+              # Method 4: Direct Node.js with typescript compilation
+              elif command -v tsc >/dev/null 2>&1; then
+                echo "✅ Compiling TypeScript and running with Node..."
+                tsc src/index.ts --outDir dist --target es2020 --module commonjs --esModuleInterop true --skipLibCheck true
                 if [ -f "dist/index.js" ]; then
-                  echo "Found precompiled JavaScript, running it..."
                   exec node dist/index.js
                 else
-                  echo "❌ No executable backend found"
+                  echo "❌ TypeScript compilation failed"
+                  exit 1
+                fi
+              # Method 5: Last resort - try to find and run any compiled JS
+              else
+                echo "⚠️ No TypeScript runner found, looking for compiled JavaScript..."
+                if [ -f "dist/index.js" ]; then
+                  echo "✅ Found precompiled JavaScript, running it..."
+                  exec node dist/index.js
+                elif [ -f "../app/dist/static/main.*.js" ]; then
+                  echo "✅ Found frontend build, but no backend. This might be expected..."
+                  echo "Backend may need manual compilation. Listing available files:"
+                  find . -name "*.js" | head -10
+                  exit 1
+                else
+                  echo "❌ No executable backend found anywhere"
+                  echo "Available files in backend:"
+                  ls -la
+                  echo "Available TypeScript files:"
+                  find . -name "*.ts" | head -10
                   exit 1
                 fi
               fi
