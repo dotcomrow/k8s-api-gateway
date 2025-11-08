@@ -77,19 +77,28 @@ RUN if [ -d "packages/app" ]; then \
         echo "Frontend build completed with warnings"); \
     fi
 
-# Verify backend build output exists and show what was built
+# Check and extract backend bundle if needed
 RUN echo "🔍 Checking build output locations..." && \
-    find . -name "index.js" -path "*/backend/*" -o -path "*/dist/*" | head -10 && \
-    echo "📁 Workspace structure:" && \
-    ls -la dist/ 2>/dev/null || echo "No dist directory" && \
+    echo "📁 Backend dist directory:" && \
     ls -la packages/backend/dist/ 2>/dev/null || echo "No packages/backend/dist directory" && \
-    if [ ! -f "packages/backend/dist/index.js" ] && [ ! -f "dist/packages/backend/index.js" ] && [ ! -f "dist/index.js" ]; then \
-        echo "❌ ERROR: No backend build output found in expected locations" && \
-        echo "Available JS files:" && \
-        find . -name "*.js" | grep -E "(backend|dist)" | head -10 && \
-        exit 1; \
+    if [ -f "packages/backend/dist/bundle.tar.gz" ]; then \
+        echo "✅ Found backend bundle, extracting..." && \
+        cd packages/backend/dist && \
+        tar -xzf bundle.tar.gz && \
+        ls -la && \
+        echo "✅ Backend bundle extracted successfully" && \
+        cd /app; \
+    elif [ -f "packages/backend/dist/index.js" ]; then \
+        echo "✅ Found built backend index.js"; \
+    elif [ -f "dist/packages/backend/index.js" ]; then \
+        echo "✅ Found backend in workspace dist"; \
+    elif [ -f "dist/index.js" ]; then \
+        echo "✅ Found backend in root dist"; \
     else \
-        echo "✅ Backend build output found successfully"; \
+        echo "❌ ERROR: No backend build output found" && \
+        echo "Available files in backend/dist:" && \
+        find packages/backend/dist -type f 2>/dev/null | head -10 && \
+        exit 1; \
     fi
 
 # Clean up build dependencies and caches
@@ -102,9 +111,12 @@ FROM node:18-alpine AS runtime
 # Install only minimal runtime dependencies
 RUN apk add --no-cache git curl
 
+# Enable corepack for proper yarn version
+RUN corepack enable
+
 # Set runtime environment
 ENV NODE_ENV=production
-ENV NODE_OPTIONS="--max-old-space-size=8192"
+ENV NODE_OPTIONS="--max-old-space-size=14336"
 
 # Create app user
 RUN addgroup -g 1001 -S nodejs && \
@@ -116,23 +128,25 @@ WORKDIR /app
 # Copy ONLY the built application from builder stage
 COPY --from=builder --chown=backstage:nodejs /app /app
 
-# Install only production dependencies (no dev dependencies)
-USER backstage
-RUN yarn install --production --frozen-lockfile --network-timeout 300000 || \
+# Install production dependencies as root to avoid permission issues
+RUN corepack install && \
+    yarn install --production --frozen-lockfile --network-timeout 300000 || \
     npm install --only=production --legacy-peer-deps --no-audit --no-fund
+
+# Switch to backstage user for runtime
+USER backstage
 
 # Verify the build is complete and ready in production image
 RUN echo "Verifying production build completeness..." && \
-    echo "🔍 Available backend files:" && \
-    find . -name "*.js" | grep -i backend | head -5 && \
-    if [ ! -f "packages/backend/dist/index.js" ] && [ ! -f "dist/packages/backend/index.js" ] && [ ! -f "dist/index.js" ]; then \
-        echo "❌ ERROR: No built backend found in production image!" && \
-        echo "Directory structure:" && \
-        ls -la dist/ 2>/dev/null || echo "No dist directory" && \
-        ls -la packages/ 2>/dev/null || echo "No packages directory" && \
-        exit 1; \
+    echo "🔍 Backend dist contents:" && \
+    ls -la packages/backend/dist/ 2>/dev/null || echo "No backend dist directory" && \
+    if [ -f "packages/backend/dist/index.js" ] || [ -f "dist/packages/backend/index.js" ] || [ -f "dist/index.js" ] || [ -f "packages/backend/dist/bundle.tar.gz" ]; then \
+        echo "✅ Backend build found and ready for production"; \
     else \
-        echo "✅ Built backend found and ready for production"; \
+        echo "❌ ERROR: No built backend found in production image!" && \
+        echo "Available files:" && \
+        find . -name "*.js" -o -name "*.tar.gz" | grep -E "(backend|dist)" | head -10 && \
+        exit 1; \
     fi
 
 # Pre-configure git for runtime
@@ -162,7 +176,21 @@ CMD ["sh", "-c", "\
     echo '📊 Container memory info:' && \
     free -h 2>/dev/null || echo 'Memory info not available' && \
     echo '🔍 Searching for built backend...' && \
-    if [ -f 'packages/backend/dist/index.js' ]; then \
+    if [ -f 'packages/backend/dist/bundle.tar.gz' ]; then \
+        echo '📦 Extracting backend bundle if needed...' && \
+        cd packages/backend/dist && \
+        if [ ! -f 'index.js' ]; then \
+            tar -xzf bundle.tar.gz; \
+        fi && \
+        if [ -f 'index.js' ]; then \
+            echo '✅ Starting backend from extracted bundle' && \
+            exec node index.js; \
+        else \
+            echo '❌ Bundle extraction failed - no index.js found' && \
+            ls -la && \
+            exit 1; \
+        fi; \
+    elif [ -f 'packages/backend/dist/index.js' ]; then \
         echo '✅ Starting pre-built backend from packages/backend/dist/index.js' && \
         exec node packages/backend/dist/index.js; \
     elif [ -f 'dist/packages/backend/index.js' ]; then \
@@ -173,10 +201,9 @@ CMD ["sh", "-c", "\
         exec node dist/index.js; \
     else \
         echo '❌ ERROR: No pre-built backend found!' && \
-        echo '📁 Available directories:' && \
-        ls -la dist/ 2>/dev/null || echo 'No dist directory' && \
-        ls -la packages/backend/ 2>/dev/null || echo 'No packages/backend directory' && \
-        echo '📄 Available backend JS files:' && \
-        find . -name '*.js' | grep -i backend | head -10 && \
+        echo '📁 Backend dist contents:' && \
+        ls -la packages/backend/dist/ 2>/dev/null || echo 'No backend dist' && \
+        echo '📄 Available files:' && \
+        find . -name '*.js' -o -name '*.tar.gz' | head -10 && \
         exit 1; \
     fi"]
