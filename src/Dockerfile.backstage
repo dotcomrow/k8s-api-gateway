@@ -214,8 +214,13 @@ CMD ["sh", "-c", "\
             echo \"✅ Starting backend from extracted bundle: $BACKEND_JS\" && \
             echo '🔧 Setting up config file...' && \
             if [ -f '/app/app-config.yaml' ]; then \
-                cp /app/app-config.yaml packages/backend/dist/app-config.yaml 2>/dev/null || true; \
-                echo 'Config file copied to backend directory'; \
+                echo 'Source config exists at /app/app-config.yaml' && \
+                mkdir -p packages/backend/dist && \
+                cp /app/app-config.yaml packages/backend/dist/app-config.yaml && \
+                echo 'Config file copied to packages/backend/dist/app-config.yaml' && \
+                ls -la packages/backend/dist/app-config.yaml || echo 'Config copy verification failed'; \
+            else \
+                echo 'Source config file /app/app-config.yaml not found'; \
             fi && \
             exec node \"$BACKEND_JS\"; \
         else \
@@ -228,16 +233,26 @@ CMD ["sh", "-c", "\
         echo '✅ Starting pre-built backend from packages/backend/dist/index.js' && \
         echo '🔧 Setting up config file...' && \
         if [ -f '/app/app-config.yaml' ]; then \
-            cp /app/app-config.yaml packages/backend/dist/app-config.yaml 2>/dev/null || true; \
-            echo 'Config file copied to backend directory'; \
+            echo 'Source config exists at /app/app-config.yaml' && \
+            mkdir -p packages/backend/dist && \
+            cp /app/app-config.yaml packages/backend/dist/app-config.yaml && \
+            echo 'Config file copied to packages/backend/dist/app-config.yaml' && \
+            ls -la packages/backend/dist/app-config.yaml || echo 'Config copy verification failed'; \
+        else \
+            echo 'Source config file /app/app-config.yaml not found'; \
         fi && \
         exec node packages/backend/dist/index.js; \
     elif [ -f 'packages/backend/dist/index.cjs.js' ]; then \
         echo '✅ Starting pre-built backend from packages/backend/dist/index.cjs.js' && \
         echo '🔧 Setting up config file...' && \
         if [ -f '/app/app-config.yaml' ]; then \
-            cp /app/app-config.yaml packages/backend/dist/app-config.yaml 2>/dev/null || true; \
-            echo 'Config file copied to backend directory'; \
+            echo 'Source config exists at /app/app-config.yaml' && \
+            mkdir -p packages/backend/dist && \
+            cp /app/app-config.yaml packages/backend/dist/app-config.yaml && \
+            echo 'Config file copied to packages/backend/dist/app-config.yaml' && \
+            ls -la packages/backend/dist/app-config.yaml || echo 'Config copy verification failed'; \
+        else \
+            echo 'Source config file /app/app-config.yaml not found'; \
         fi && \
         exec node packages/backend/dist/index.cjs.js; \
     elif [ -f 'dist/packages/backend/index.js' ]; then \
