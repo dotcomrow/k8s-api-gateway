@@ -1301,9 +1301,14 @@ spec:
           cd /app
           git config --global user.email "backstage@k8s-api-gateway.local"
           git config --global user.name "Backstage Container"
+          git config --global init.defaultBranch main
           git init . || echo "Git init failed, continuing..."
-          git add . || echo "Git add failed, continuing..."
+          echo "✅ Git repository initialized"
+          # Add only essential files to avoid large commits
+          git add package.json yarn.lock tsconfig.json || echo "Git add failed, continuing..."
+          echo "✅ Essential files added to git"
           git commit -m "Initial container commit" || echo "Git commit failed, continuing..."
+          echo "✅ Git repository setup complete"
           
           # Source Vault secrets
           if [ -f /vault/secrets/db-creds ]; then
