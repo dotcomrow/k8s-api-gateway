@@ -212,6 +212,11 @@ CMD ["sh", "-c", "\
         fi && \
         if [ -n \"$BACKEND_JS\" ] && [ -f \"$BACKEND_JS\" ]; then \
             echo \"✅ Starting backend from extracted bundle: $BACKEND_JS\" && \
+            echo '🔧 Setting up config file...' && \
+            if [ -f '/app/app-config.yaml' ]; then \
+                cp /app/app-config.yaml packages/backend/dist/app-config.yaml 2>/dev/null || true; \
+                echo 'Config file copied to backend directory'; \
+            fi && \
             exec node \"$BACKEND_JS\"; \
         else \
             echo '❌ Bundle extraction failed - no backend entry point found anywhere' && \
@@ -221,9 +226,19 @@ CMD ["sh", "-c", "\
         fi; \
     elif [ -f 'packages/backend/dist/index.js' ]; then \
         echo '✅ Starting pre-built backend from packages/backend/dist/index.js' && \
+        echo '🔧 Setting up config file...' && \
+        if [ -f '/app/app-config.yaml' ]; then \
+            cp /app/app-config.yaml packages/backend/dist/app-config.yaml 2>/dev/null || true; \
+            echo 'Config file copied to backend directory'; \
+        fi && \
         exec node packages/backend/dist/index.js; \
     elif [ -f 'packages/backend/dist/index.cjs.js' ]; then \
         echo '✅ Starting pre-built backend from packages/backend/dist/index.cjs.js' && \
+        echo '🔧 Setting up config file...' && \
+        if [ -f '/app/app-config.yaml' ]; then \
+            cp /app/app-config.yaml packages/backend/dist/app-config.yaml 2>/dev/null || true; \
+            echo 'Config file copied to backend directory'; \
+        fi && \
         exec node packages/backend/dist/index.cjs.js; \
     elif [ -f 'dist/packages/backend/index.js' ]; then \
         echo '✅ Starting pre-built backend from dist/packages/backend/index.js' && \
