@@ -1228,6 +1228,11 @@ spec:
           cd /app
           corepack install
           
+          # Fix workspace links in package.json files that cause npm install failures
+          echo "🔧 Fixing workspace links in package.json files..."
+          find /app -name "package.json" -type f -exec sed -i 's|"link:../app"|"file:../app"|g' {} \;
+          find /app -name "package.json" -type f -exec sed -i 's|"link:|"file:|g' {} \;
+          
           # Set Node.js environment for native builds
           export NODE_ENV=development
           export npm_config_build_from_source=true
