@@ -1227,9 +1227,12 @@ spec:
           free -m || echo "Memory info not available"
           
           # Create Backstage app (non-interactive with explicit app name)
-          printf "backstage-app\n" | npx @backstage/create-app@latest --skip-install || {
-            echo "Create app failed, trying alternative approach..."
-            npx create-backstage-app@latest --name backstage-app --skip-install || true
+          echo "backstage-app" | npx @backstage/create-app@latest --skip-install || {
+            echo "Create app failed, trying with explicit name parameter..."
+            npx @backstage/create-app@latest backstage-app --skip-install || {
+              echo "Still failed, trying alternative approach..."
+              npx create-backstage-app@latest --name backstage-app --skip-install || true
+            }
           }
           
           # Copy the generated app structure
@@ -1278,27 +1281,27 @@ spec:
           # Clear npm cache to free memory before installation
           npm cache clean --force 2>/dev/null || true
           
-          # Install core dependencies first
-          if yarn install --network-timeout 300000 --legacy-peer-deps --production 2>/dev/null; then
-            echo "✅ Core dependencies installed successfully"
-            
-            # Clear caches and check memory
-            yarn cache clean 2>/dev/null || true
-            npm cache clean --force 2>/dev/null || true
-            echo "📊 Memory after core dependencies:"
-            free -m || echo "Memory info not available"
-            
-            # Install dev dependencies if memory allows
-            echo "🔄 Installing development dependencies..."
-            yarn install --network-timeout 300000 --legacy-peer-deps 2>/dev/null || {
-              echo "⚠️  Dev dependencies installation failed - using production only"
-            }
+          # First try with yarn (using correct yarn flags)
+          if yarn install --network-timeout 300000 2>/dev/null; then
+            echo "✅ Yarn install completed successfully"
+          elif yarn install --network-timeout 300000 --mode loose 2>/dev/null; then
+            echo "✅ Yarn install completed with loose mode for peer dependencies"
           else
-            echo "⚠️  Using fallback npm install with memory constraints"
-            npm install --legacy-peer-deps --production --no-audit --no-fund 2>/dev/null || {
-              echo "⚠️  Even minimal install failed - continuing with basic setup"
+            echo "⚠️  Yarn install failed, using npm fallback with memory constraints"
+            # Use npm with legacy peer deps support
+            npm install --legacy-peer-deps --no-audit --no-fund --maxsockets=1 2>/dev/null || {
+              echo "⚠️  npm install failed, trying production only"
+              npm install --legacy-peer-deps --production --no-audit --no-fund --maxsockets=1 2>/dev/null || {
+                echo "⚠️  Even minimal install failed - continuing with basic setup"
+              }
             }
           fi
+          
+          # Clear caches and check memory
+          yarn cache clean 2>/dev/null || true
+          npm cache clean --force 2>/dev/null || true
+          echo "📊 Memory after dependency installation:"
+          free -m || echo "Memory info not available"
           
           # Clean up to free memory
           yarn cache clean 2>/dev/null || true
