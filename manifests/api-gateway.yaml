@@ -1211,7 +1211,7 @@ spec:
             linux-headers musl-dev gcc binutils-gold vips-dev
             
           # Set Node.js memory optimization for Alpine Linux container - more conservative
-          export NODE_OPTIONS="--max-old-space-size=1024 --gc-global --expose-gc"
+          export NODE_OPTIONS="--max-old-space-size=1024"
           
           # Install Backstage CLI globally with memory constraints
           npm install -g @backstage/create-app@latest --legacy-peer-deps
@@ -1253,7 +1253,7 @@ spec:
           
           # Set Node.js environment for native builds with memory optimization
           export NODE_ENV=development
-          export NODE_OPTIONS="--max-old-space-size=1024 --gc-global --expose-gc"
+          export NODE_OPTIONS="--max-old-space-size=1024"
           export npm_config_build_from_source=true
           export PYTHON=/usr/bin/python3
           export CC=gcc
@@ -1275,15 +1275,16 @@ spec:
           # Try progressive yarn install with memory management
           echo "🔄 Starting progressive installation to manage memory..."
           
-          # Force garbage collection between major operations
-          node -e "if (global.gc) global.gc();" 2>/dev/null || true
+          # Clear npm cache to free memory before installation
+          npm cache clean --force 2>/dev/null || true
           
           # Install core dependencies first
           if yarn install --network-timeout 300000 --legacy-peer-deps --production 2>/dev/null; then
             echo "✅ Core dependencies installed successfully"
             
-            # Force garbage collection and check memory
-            node -e "if (global.gc) global.gc();" 2>/dev/null || true
+            # Clear caches and check memory
+            yarn cache clean 2>/dev/null || true
+            npm cache clean --force 2>/dev/null || true
             echo "📊 Memory after core dependencies:"
             free -m || echo "Memory info not available"
             
@@ -1315,7 +1316,7 @@ spec:
             echo "🔨 Building backend with memory constraints..."
             
             # Set TypeScript compilation memory limit - very conservative
-            export NODE_OPTIONS="--max-old-space-size=512 --gc-global --expose-gc"
+            export NODE_OPTIONS="--max-old-space-size=512"
             
             # Try backend build with reduced memory usage
             yarn build:backend || {
@@ -1381,7 +1382,7 @@ spec:
           set -e
           
           # Set Node.js memory optimization for container runtime - conservative for 4Gi limit
-          export NODE_OPTIONS="--max-old-space-size=2048 --gc-global --expose-gc"
+          export NODE_OPTIONS="--max-old-space-size=2048"
           
           # Install git and essential build tools for runtime builds
           echo "🔧 Installing git and build dependencies..."
@@ -1542,7 +1543,7 @@ spec:
               
               # Clear cache and optimize for memory
               npm cache clean --force 2>/dev/null || true
-              export NODE_OPTIONS="--max-old-space-size=1024 --gc-global --expose-gc"
+              export NODE_OPTIONS="--max-old-space-size=1024"
               
               # Always install to ensure it's available
               echo "Installing ts-node with npm (memory optimized)..."
@@ -1558,7 +1559,7 @@ spec:
               echo "🚀 Attempting to run TypeScript backend..."
               
               # Set final runtime memory optimization
-              export NODE_OPTIONS="--max-old-space-size=2048 --gc-global --expose-gc"
+              export NODE_OPTIONS="--max-old-space-size=2048"
               
               # Simple ES module setup
               echo "🔧 Setting up for ES modules..."
