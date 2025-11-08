@@ -66,24 +66,36 @@ RUN yarn install --network-timeout 300000 || \
     yarn install --network-timeout 300000 --mode loose || \
     npm install --legacy-peer-deps --no-audit --no-fund
 
+# Add missing dependencies that Backstage needs but aren't always installed
+RUN yarn add prop-types typescript @types/react @types/react-dom --dev || \
+    npm install prop-types typescript @types/react @types/react-dom --save-dev --legacy-peer-deps || \
+    echo "Warning: Could not install additional dependencies"
+
 # Build the backend - MUST succeed for production image
 RUN if [ -d "packages/backend" ]; then \
         echo "Building backend..." && \
-        (yarn build:backend || \
-        (cd packages/backend && yarn build) || \
-        (cd packages/backend && yarn tsc) || \
-        (cd packages/backend && npx tsc)) && \
+        # Try different build approaches in order of preference \
+        (echo "Trying yarn build:backend..." && yarn build:backend) || \
+        (echo "Trying workspace backend build..." && cd packages/backend && yarn build) || \
+        (echo "Trying TypeScript compilation..." && cd packages/backend && yarn tsc) || \
+        (echo "Trying npx TypeScript..." && cd packages/backend && npx typescript) || \
+        (echo "Installing TypeScript globally and trying..." && npm install -g typescript && cd packages/backend && tsc) || \
+        (echo "ERROR: All backend build attempts failed" && exit 1) && \
         echo "Backend build completed successfully"; \
     else \
         echo "ERROR: No backend package found" && exit 1; \
     fi
 
-# Build the frontend if it exists
+# Build the frontend if it exists - but don't fail the entire build if it fails
 RUN if [ -d "packages/app" ]; then \
         echo "Building frontend..." && \
-        (cd packages/app && yarn build 2>/dev/null || \
-        yarn build:app 2>/dev/null || \
-        echo "Frontend build skipped - no build script found"); \
+        # Install frontend-specific dependencies first \
+        (cd packages/app && yarn add prop-types @types/react @types/react-dom --dev 2>/dev/null || true) && \
+        # Try building frontend with various approaches \
+        (cd packages/app && yarn build 2>/dev/null) || \
+        (yarn build:app 2>/dev/null) || \
+        (cd packages/app && npm run build 2>/dev/null) || \
+        echo "Frontend build failed - continuing with backend-only build"; \
     else \
         echo "No frontend package found, skipping frontend build"; \
     fi
