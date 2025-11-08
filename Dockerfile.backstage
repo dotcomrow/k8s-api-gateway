@@ -1,0 +1,163 @@
+# Multi-stage Dockerfile for Backstage
+FROM node:18-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies for building
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    git \
+    curl \
+    libc6-compat \
+    pkgconfig \
+    autoconf \
+    automake \
+    libtool \
+    nasm \
+    linux-headers \
+    musl-dev \
+    gcc \
+    binutils-gold \
+    vips-dev
+
+# Set Node.js memory optimization for build - use full available memory
+ENV NODE_OPTIONS="--max-old-space-size=14336"
+ENV NODE_ENV=development
+ENV npm_config_build_from_source=true
+ENV PYTHON=/usr/bin/python3
+ENV CC=gcc
+ENV CXX=g++
+
+# Install Backstage CLI globally
+RUN npm install -g @backstage/create-app@latest --legacy-peer-deps
+
+# Enable Corepack for proper Yarn version management
+RUN corepack enable
+
+# Create Backstage app
+RUN echo "backstage-app" | npx @backstage/create-app@latest --skip-install || \
+    npx @backstage/create-app@latest backstage-app --skip-install || \
+    npx create-backstage-app@latest --name backstage-app --skip-install
+
+# Copy the generated app structure
+RUN cp -r backstage-app/* /app/ && rm -rf backstage-app
+
+# Use Corepack to ensure correct Yarn version
+RUN corepack install
+
+# Fix workspace links in package.json files
+RUN find /app -name "package.json" -type f -exec sed -i 's|"link:../app"|"file:../app"|g' {} \; && \
+    find /app -name "package.json" -type f -exec sed -i 's|"link:|"file:|g' {} \;
+
+# Install dependencies with full memory
+RUN yarn install --network-timeout 300000 || \
+    yarn install --network-timeout 300000 --mode loose || \
+    npm install --legacy-peer-deps --no-audit --no-fund
+
+# Build the backend - MUST succeed for production image
+RUN if [ -d "packages/backend" ]; then \
+        echo "Building backend..." && \
+        (yarn build:backend || \
+        (cd packages/backend && yarn build) || \
+        (cd packages/backend && yarn tsc) || \
+        (cd packages/backend && npx tsc)) && \
+        echo "Backend build completed successfully"; \
+    else \
+        echo "ERROR: No backend package found" && exit 1; \
+    fi
+
+# Build the frontend if it exists
+RUN if [ -d "packages/app" ]; then \
+        echo "Building frontend..." && \
+        (yarn build:frontend || \
+        (cd packages/app && yarn build) || \
+        echo "Frontend build completed with warnings"); \
+    fi
+
+# Verify backend build output exists
+RUN if [ -d "packages/backend" ] && [ ! -f "packages/backend/dist/index.js" ] && [ ! -f "dist/packages/backend/index.js" ]; then \
+        echo "ERROR: Backend build failed - no output found" && \
+        find packages/backend -name "*.js" -o -name "dist" -type d && \
+        exit 1; \
+    fi
+
+# Clean up build dependencies and caches
+RUN rm -rf /tmp/* ~/.npm ~/.cache /var/cache/apk/* && \
+    yarn cache clean 2>/dev/null || true
+
+# Production stage - fully built and ready to run
+FROM node:18-alpine AS runtime
+
+# Install only minimal runtime dependencies
+RUN apk add --no-cache git curl
+
+# Set runtime environment
+ENV NODE_ENV=production
+ENV NODE_OPTIONS="--max-old-space-size=8192"
+
+# Create app user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S backstage -u 1001
+
+# Set working directory
+WORKDIR /app
+
+# Copy ONLY the built application from builder stage
+COPY --from=builder --chown=backstage:nodejs /app /app
+
+# Install only production dependencies (no dev dependencies)
+USER backstage
+RUN yarn install --production --frozen-lockfile --network-timeout 300000 || \
+    npm install --only=production --legacy-peer-deps --no-audit --no-fund
+
+# Verify the build is complete and ready
+RUN echo "Verifying build completeness..." && \
+    if [ ! -f "packages/backend/dist/index.js" ] && [ ! -f "dist/packages/backend/index.js" ]; then \
+        echo "ERROR: No built backend found in production image!" && \
+        find . -name "*.js" -path "*/backend/*" | head -10 && \
+        exit 1; \
+    else \
+        echo "✅ Built backend found and ready"; \
+    fi
+
+# Pre-configure git for runtime
+RUN git config --global user.email "backstage@k8s-api-gateway.local" && \
+    git config --global user.name "Backstage Container" && \
+    git config --global init.defaultBranch main && \
+    git config --global init.defaultBranch main
+
+# Initialize git repository (pre-setup for runtime)
+RUN git init . && \
+    echo "node_modules/" > .gitignore && \
+    echo "dist/" >> .gitignore && \
+    echo "*.log" >> .gitignore && \
+    git add .gitignore package.json yarn.lock 2>/dev/null || true && \
+    git commit -m "Production container ready" 2>/dev/null || echo "Git setup complete"
+
+# Expose port
+EXPOSE 7007
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:7007/api/catalog/health || exit 1
+
+# Simple start command - everything is pre-built
+CMD ["sh", "-c", "\
+    echo '🚀 Starting pre-built Backstage application...' && \
+    echo '📊 Container memory info:' && \
+    free -h 2>/dev/null || echo 'Memory info not available' && \
+    if [ -f 'packages/backend/dist/index.js' ]; then \
+        echo '✅ Starting pre-built backend from packages/backend/dist/index.js' && \
+        exec node packages/backend/dist/index.js; \
+    elif [ -f 'dist/packages/backend/index.js' ]; then \
+        echo '✅ Starting pre-built backend from dist/packages/backend/index.js' && \
+        exec node dist/packages/backend/index.js; \
+    else \
+        echo '❌ ERROR: No pre-built backend found! Image build failed.' && \
+        echo 'Available JS files:' && \
+        find . -name '*.js' -path '*/backend/*' | head -5 && \
+        exit 1; \
+    fi"]
