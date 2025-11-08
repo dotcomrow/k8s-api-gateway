@@ -187,24 +187,34 @@ CMD ["sh", "-c", "\
             tar -xzf bundle.tar.gz && \
             echo '📁 Contents after extraction:' && \
             ls -la && \
-            echo '🔍 Looking for index.js files recursively:' && \
-            find . -name 'index.js' -type f 2>/dev/null || echo 'No index.js found'; \
+            echo '🔍 Looking for backend entry points recursively:' && \
+            find . -name 'index*.js' -type f 2>/dev/null || echo 'No backend entry points found'; \
         fi && \
         BACKEND_JS='' && \
         if [ -f 'index.js' ]; then \
             BACKEND_JS='index.js'; \
+        elif [ -f 'index.cjs.js' ]; then \
+            BACKEND_JS='index.cjs.js'; \
+        elif [ -f 'packages/backend/dist/index.js' ]; then \
+            BACKEND_JS='packages/backend/dist/index.js'; \
+        elif [ -f 'packages/backend/dist/index.cjs.js' ]; then \
+            BACKEND_JS='packages/backend/dist/index.cjs.js'; \
         elif [ -f 'dist/index.js' ]; then \
             BACKEND_JS='dist/index.js'; \
+        elif [ -f 'dist/index.cjs.js' ]; then \
+            BACKEND_JS='dist/index.cjs.js'; \
         elif [ -f 'bundle/index.js' ]; then \
             BACKEND_JS='bundle/index.js'; \
+        elif [ -f 'bundle/index.cjs.js' ]; then \
+            BACKEND_JS='bundle/index.cjs.js'; \
         else \
-            BACKEND_JS=$(find . -name 'index.js' -type f | head -1); \
+            BACKEND_JS=$(find . -name 'index.*.js' -type f | head -1); \
         fi && \
         if [ -n \"$BACKEND_JS\" ] && [ -f \"$BACKEND_JS\" ]; then \
             echo \"✅ Starting backend from extracted bundle: $BACKEND_JS\" && \
             exec node \"$BACKEND_JS\"; \
         else \
-            echo '❌ Bundle extraction failed - no index.js found anywhere' && \
+            echo '❌ Bundle extraction failed - no backend entry point found anywhere' && \
             echo '📁 Complete directory structure:' && \
             find . -type f | head -20 && \
             exit 1; \
@@ -212,12 +222,21 @@ CMD ["sh", "-c", "\
     elif [ -f 'packages/backend/dist/index.js' ]; then \
         echo '✅ Starting pre-built backend from packages/backend/dist/index.js' && \
         exec node packages/backend/dist/index.js; \
+    elif [ -f 'packages/backend/dist/index.cjs.js' ]; then \
+        echo '✅ Starting pre-built backend from packages/backend/dist/index.cjs.js' && \
+        exec node packages/backend/dist/index.cjs.js; \
     elif [ -f 'dist/packages/backend/index.js' ]; then \
         echo '✅ Starting pre-built backend from dist/packages/backend/index.js' && \
         exec node dist/packages/backend/index.js; \
+    elif [ -f 'dist/packages/backend/index.cjs.js' ]; then \
+        echo '✅ Starting pre-built backend from dist/packages/backend/index.cjs.js' && \
+        exec node dist/packages/backend/index.cjs.js; \
     elif [ -f 'dist/index.js' ]; then \
         echo '✅ Starting pre-built backend from dist/index.js' && \
         exec node dist/index.js; \
+    elif [ -f 'dist/index.cjs.js' ]; then \
+        echo '✅ Starting pre-built backend from dist/index.cjs.js' && \
+        exec node dist/index.cjs.js; \
     else \
         echo '❌ ERROR: No pre-built backend found!' && \
         echo '📁 Backend dist contents:' && \
