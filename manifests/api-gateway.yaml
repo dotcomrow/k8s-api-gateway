@@ -1450,7 +1450,7 @@ spec:
               free -m || echo "Memory info not available"
               
               # Set memory limits for runtime build
-              export NODE_OPTIONS="--max-old-space-size=1024 --optimize-for-size"
+              export NODE_OPTIONS="--max-old-space-size=1024"
               
               # Try building with the detected yarn executable
               if [ "$YARN_EXEC" != "npm" ]; then
@@ -1503,7 +1503,7 @@ spec:
               
               # Clear cache and optimize for memory
               npm cache clean --force 2>/dev/null || true
-              export NODE_OPTIONS="--max-old-space-size=512 --optimize-for-size"
+              export NODE_OPTIONS="--max-old-space-size=512"
               
               # Always install to ensure it's available
               echo "Installing ts-node with npm (memory optimized)..."
@@ -1516,7 +1516,7 @@ spec:
               echo "🚀 Attempting to run TypeScript backend..."
               
               # Set final runtime memory optimization
-              export NODE_OPTIONS="--max-old-space-size=1024 --optimize-for-size"
+              export NODE_OPTIONS="--max-old-space-size=1024"
               
               # Method 1: Direct node_modules path
               if [ -f "/app/packages/backend/node_modules/.bin/ts-node" ]; then
