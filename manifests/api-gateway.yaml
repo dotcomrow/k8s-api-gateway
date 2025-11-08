@@ -1518,40 +1518,15 @@ spec:
               # Set final runtime memory optimization
               export NODE_OPTIONS="--max-old-space-size=1024"
               
-              # Create ts-node configuration for ESM
-              echo "🔧 Setting up TypeScript configuration for ES modules..."
-              cat > tsconfig.json << EOFTS
-              {
-                "compilerOptions": {
-                  "target": "ES2020",
-                  "module": "ESNext",
-                  "moduleResolution": "node",
-                  "esModuleInterop": true,
-                  "allowSyntheticDefaultImports": true,
-                  "skipLibCheck": true,
-                  "strict": false,
-                  "resolveJsonModule": true
-                },
-                "ts-node": {
-                  "esm": true,
-                  "experimentalSpecifierResolution": "node"
-                }
-              }
-              EOFTS
+              # Simple ES module setup
+              echo "🔧 Setting up for ES modules..."
               
-              # Check if package.json exists and add "type": "module" if needed
-              if [ -f "package.json" ]; then
-                echo "🔧 Checking package.json for module type..."
-                if ! grep -q '"type".*"module"' package.json; then
-                  echo "Adding module type to package.json..."
-                  # Create a temporary file with the modified package.json
-                  node -e "
-                    const fs = require('fs');
-                    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-                    pkg.type = 'module';
-                    fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-                  " || echo "Failed to modify package.json, continuing..."
-                fi
+              # Create basic tsconfig.json for ESM
+              echo '{"compilerOptions":{"target":"ES2020","module":"ESNext","moduleResolution":"node","esModuleInterop":true,"skipLibCheck":true},"ts-node":{"esm":true}}' > tsconfig.json
+              
+              # Add type: module to package.json if needed
+              if [ -f "package.json" ] && ! grep -q '"type"' package.json; then
+                sed -i 's/{/{"type":"module",/' package.json || echo "Could not modify package.json"
               fi
               
               # Method 1: Direct node_modules path with ESM support
