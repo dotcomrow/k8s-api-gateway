@@ -181,14 +181,32 @@ CMD ["sh", "-c", "\
         echo '📦 Extracting backend bundle if needed...' && \
         cd packages/backend/dist && \
         if [ ! -f 'index.js' ]; then \
-            tar -xzf bundle.tar.gz; \
-        fi && \
-        if [ -f 'index.js' ]; then \
-            echo '✅ Starting backend from extracted bundle' && \
-            exec node index.js; \
-        else \
-            echo '❌ Bundle extraction failed - no index.js found' && \
+            echo '🔍 Examining bundle contents before extraction:' && \
+            tar -tzf bundle.tar.gz | head -10 && \
+            echo '📦 Extracting bundle...' && \
+            tar -xzf bundle.tar.gz && \
+            echo '📁 Contents after extraction:' && \
             ls -la && \
+            echo '🔍 Looking for index.js files recursively:' && \
+            find . -name 'index.js' -type f 2>/dev/null || echo 'No index.js found'; \
+        fi && \
+        BACKEND_JS='' && \
+        if [ -f 'index.js' ]; then \
+            BACKEND_JS='index.js'; \
+        elif [ -f 'dist/index.js' ]; then \
+            BACKEND_JS='dist/index.js'; \
+        elif [ -f 'bundle/index.js' ]; then \
+            BACKEND_JS='bundle/index.js'; \
+        else \
+            BACKEND_JS=$(find . -name 'index.js' -type f | head -1); \
+        fi && \
+        if [ -n \"$BACKEND_JS\" ] && [ -f \"$BACKEND_JS\" ]; then \
+            echo \"✅ Starting backend from extracted bundle: $BACKEND_JS\" && \
+            exec node \"$BACKEND_JS\"; \
+        else \
+            echo '❌ Bundle extraction failed - no index.js found anywhere' && \
+            echo '📁 Complete directory structure:' && \
+            find . -type f | head -20 && \
             exit 1; \
         fi; \
     elif [ -f 'packages/backend/dist/index.js' ]; then \
