@@ -1296,6 +1296,15 @@ spec:
           echo "🔧 Installing git and build dependencies..."
           apk add --no-cache git || echo "Git installation failed, continuing..."
           
+          # Initialize git repository to prevent git-related npm failures
+          echo "🔧 Initializing git repository to prevent npm failures..."
+          cd /app
+          git config --global user.email "backstage@k8s-api-gateway.local"
+          git config --global user.name "Backstage Container"
+          git init . || echo "Git init failed, continuing..."
+          git add . || echo "Git add failed, continuing..."
+          git commit -m "Initial container commit" || echo "Git commit failed, continuing..."
+          
           # Source Vault secrets
           if [ -f /vault/secrets/db-creds ]; then
             source /vault/secrets/db-creds
