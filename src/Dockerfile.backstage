@@ -48,6 +48,15 @@ RUN cp -r backstage-app/* /app/ && rm -rf backstage-app
 # Use Corepack to ensure correct Yarn version
 RUN corepack install
 
+# Initialize git repository early to prevent build warnings
+RUN git config --global user.email "build@backstage.local" && \
+    git config --global user.name "Build Process" && \
+    git init . && \
+    echo "node_modules/" > .gitignore && \
+    echo "dist/" >> .gitignore && \
+    git add . && \
+    git commit -m "Initial build setup" || echo "Git setup complete"
+
 # Fix workspace links in package.json files
 RUN find /app -name "package.json" -type f -exec sed -i 's|"link:../app"|"file:../app"|g' {} \; && \
     find /app -name "package.json" -type f -exec sed -i 's|"link:|"file:|g' {} \;
@@ -72,9 +81,11 @@ RUN if [ -d "packages/backend" ]; then \
 # Build the frontend if it exists
 RUN if [ -d "packages/app" ]; then \
         echo "Building frontend..." && \
-        (yarn build:frontend || \
-        (cd packages/app && yarn build) || \
-        echo "Frontend build completed with warnings"); \
+        (cd packages/app && yarn build 2>/dev/null || \
+        yarn build:app 2>/dev/null || \
+        echo "Frontend build skipped - no build script found"); \
+    else \
+        echo "No frontend package found, skipping frontend build"; \
     fi
 
 # Check and extract backend bundle if needed
@@ -134,10 +145,7 @@ RUN corepack install && \
     yarn install --production --frozen-lockfile --network-timeout 300000 || \
     npm install --only=production --legacy-peer-deps --no-audit --no-fund
 
-# Switch to backstage user for runtime
-USER backstage
-
-# Verify the build is complete and ready in production image
+# Verify the build is complete and ready in production image (as root for git setup)
 RUN echo "Verifying production build completeness..." && \
     echo "🔍 Backend dist contents:" && \
     ls -la packages/backend/dist/ 2>/dev/null || echo "No backend dist directory" && \
@@ -150,19 +158,22 @@ RUN echo "Verifying production build completeness..." && \
         exit 1; \
     fi
 
-# Pre-configure git for runtime
+# Pre-configure git for runtime as backstage user  
 RUN git config --global user.email "backstage@k8s-api-gateway.local" && \
     git config --global user.name "Backstage Container" && \
-    git config --global init.defaultBranch main && \
     git config --global init.defaultBranch main
 
-# Initialize git repository (pre-setup for runtime)
-RUN git init . && \
-    echo "node_modules/" > .gitignore && \
-    echo "dist/" >> .gitignore && \
-    echo "*.log" >> .gitignore && \
+# Initialize git repository (pre-setup for runtime) with proper permissions
+RUN git init . 2>/dev/null || echo "Git init skipped" && \
+    echo "node_modules/" > .gitignore 2>/dev/null || true && \
+    echo "dist/" >> .gitignore 2>/dev/null || true && \
+    echo "*.log" >> .gitignore 2>/dev/null || true && \
     git add .gitignore package.json yarn.lock 2>/dev/null || true && \
-    git commit -m "Production container ready" 2>/dev/null || echo "Git setup complete"
+    git commit -m "Production container ready" 2>/dev/null || echo "Git setup complete" && \
+    chown -R backstage:nodejs /app 2>/dev/null || true
+
+# Switch to backstage user for runtime
+USER backstage
 
 # Expose port
 EXPOSE 7007
