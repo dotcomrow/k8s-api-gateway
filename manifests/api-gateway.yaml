@@ -1210,8 +1210,8 @@ spec:
           apk add --no-cache python3 make g++ git curl libc6-compat pkgconfig autoconf automake libtool nasm \
             linux-headers musl-dev gcc binutils-gold vips-dev
             
-          # Set Node.js memory optimization for Alpine Linux container - more conservative
-          export NODE_OPTIONS="--max-old-space-size=1024"
+          # Set Node.js memory optimization for Alpine Linux container - use full 16GB
+          export NODE_OPTIONS="--max-old-space-size=14336"
           
           # Install Backstage CLI globally with memory constraints
           npm install -g @backstage/create-app@latest --legacy-peer-deps
@@ -1256,7 +1256,7 @@ spec:
           
           # Set Node.js environment for native builds with memory optimization
           export NODE_ENV=development
-          export NODE_OPTIONS="--max-old-space-size=1024"
+          export NODE_OPTIONS="--max-old-space-size=14336"
           export npm_config_build_from_source=true
           export PYTHON=/usr/bin/python3
           export CC=gcc
@@ -1270,9 +1270,9 @@ spec:
           # Clear npm cache to free memory
           npm cache clean --force 2>/dev/null || true
           
-          # Install with reduced parallelism to use less memory
-          export npm_config_maxsockets=1
-          export npm_config_fetch_retries=1
+          # Install with optimal parallelism to use full resources
+          export npm_config_maxsockets=10
+          export npm_config_fetch_retries=3
           export npm_config_prefer_offline=true
           
           # Try progressive yarn install with memory management
@@ -1289,9 +1289,9 @@ spec:
           else
             echo "⚠️  Yarn install failed, using npm fallback with memory constraints"
             # Use npm with legacy peer deps support
-            npm install --legacy-peer-deps --no-audit --no-fund --maxsockets=1 2>/dev/null || {
+            npm install --legacy-peer-deps --no-audit --no-fund 2>/dev/null || {
               echo "⚠️  npm install failed, trying production only"
-              npm install --legacy-peer-deps --production --no-audit --no-fund --maxsockets=1 2>/dev/null || {
+              npm install --legacy-peer-deps --production --no-audit --no-fund 2>/dev/null || {
                 echo "⚠️  Even minimal install failed - continuing with basic setup"
               }
             }
@@ -1306,26 +1306,21 @@ spec:
           # Clean up to free memory
           yarn cache clean 2>/dev/null || true
           
-          # Check memory before building backend
+          # Build the backend with full memory available
           echo "📊 Memory before backend build:"
           free -m || echo "Memory info not available"
           
-          # Skip backend build if memory is too low (< 1GB available)
-          AVAILABLE_MEM=$(free -m 2>/dev/null | awk '/^Mem:/{print $7}' || echo "999")
-          if [ "$AVAILABLE_MEM" -lt "1000" ] 2>/dev/null; then
-            echo "⚠️  Low memory detected ($AVAILABLE_MEM MB), skipping backend build"
-            echo "ℹ️  Backend will be compiled at runtime"
-          elif [ -d "packages/backend" ]; then
+          if [ -d "packages/backend" ]; then
             echo "🔨 Building backend with memory constraints..."
             
-            # Set TypeScript compilation memory limit - very conservative
-            export NODE_OPTIONS="--max-old-space-size=512"
+            # Set TypeScript compilation memory limit - use full available memory
+            export NODE_OPTIONS="--max-old-space-size=14336"
             
             # Try backend build with reduced memory usage
             yarn build:backend || {
               echo "⚠️  Backend build failed, trying with reduced parallelism..."
               cd packages/backend
-              yarn build --max-old-space-size=512 || {
+              yarn build --max-old-space-size=14336 || {
                 echo "⚠️  Backend build failed, will try runtime compilation..."
                 mkdir -p dist
                 echo "console.log('Backend will be compiled at runtime');" > dist/index.js
@@ -1359,8 +1354,8 @@ spec:
             cpu: "500m"
             memory: "1Gi"
           limits:
-            cpu: "2000m"
-            memory: "4Gi"
+            cpu: "4000m"
+            memory: "16Gi"
       containers:
       - name: backstage
         image: node:18-alpine
@@ -1384,8 +1379,8 @@ spec:
         - |
           set -e
           
-          # Set Node.js memory optimization for container runtime - conservative for 4Gi limit
-          export NODE_OPTIONS="--max-old-space-size=2048"
+          # Set Node.js memory optimization for container runtime - use full 16GB
+          export NODE_OPTIONS="--max-old-space-size=14336"
           
           # Install git and essential build tools for runtime builds
           echo "🔧 Installing git and build dependencies..."
@@ -1546,7 +1541,7 @@ spec:
               
               # Clear cache and optimize for memory
               npm cache clean --force 2>/dev/null || true
-              export NODE_OPTIONS="--max-old-space-size=1024"
+              export NODE_OPTIONS="--max-old-space-size=14336"
               
               # Always install to ensure it's available
               echo "Installing ts-node with npm (memory optimized)..."
@@ -1562,7 +1557,7 @@ spec:
               echo "🚀 Attempting to run TypeScript backend..."
               
               # Set final runtime memory optimization
-              export NODE_OPTIONS="--max-old-space-size=2048"
+              export NODE_OPTIONS="--max-old-space-size=14336"
               
               # Simple ES module setup
               echo "🔧 Setting up for ES modules..."
@@ -1654,8 +1649,8 @@ spec:
             cpu: "200m"
             memory: "512Mi"
           limits:
-            cpu: "2000m"
-            memory: "4Gi"
+            cpu: "4000m"
+            memory: "16Gi"
         livenessProbe:
           httpGet:
             path: /api/catalog/health
