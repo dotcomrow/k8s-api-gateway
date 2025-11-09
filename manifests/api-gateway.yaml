@@ -1151,9 +1151,6 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
-        # Completely disable plugin isolation for YugabyteDB compatibility
-        pluginDivisionMode: 'database'
-        ensureExists: false
 
 
     integrations:
