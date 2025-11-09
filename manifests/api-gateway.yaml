@@ -2093,11 +2093,10 @@ spec:
                 else
                   echo "❌ Source config file /app/app-config.yaml not found";
                 fi &&
-                echo "🔧 Forcing pure JavaScript pg driver - creating native stub..." &&
-                # Create a stub native directory with a dummy module that returns null to force fallback
-                mkdir -p "/app/node_modules/pg/lib/native" &&
-                echo "module.exports = null;" > "/app/node_modules/pg/lib/native/index.js" &&
-                echo "✅ Native pg stub created - pure JavaScript driver enforced" &&
+                echo "🔧 Forcing pure JavaScript pg driver - removing native module completely..." &&
+                # Remove the entire native directory to prevent any loading attempts
+                rm -rf "/app/node_modules/pg/lib/native" &&
+                echo "✅ Native pg module removed - pure JavaScript driver enforced" &&
                 # Use NODE_OPTIONS to disable native pg loading attempts
                 export NODE_OPTIONS="--max-old-space-size=14336" &&
                 export DISABLE_PG_NATIVE=1 &&
@@ -2122,8 +2121,7 @@ spec:
                 echo "❌ Source config file /app/app-config.yaml not found";
               fi &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              mkdir -p "/app/node_modules/pg/lib/native" &&
-              echo "module.exports = null;" > "/app/node_modules/pg/lib/native/index.js" &&
+              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
               exec node packages/backend/dist/index.js;
             elif [ -f "packages/backend/dist/index.cjs.js" ]; then
@@ -2140,36 +2138,31 @@ spec:
                 echo "❌ Source config file /app/app-config.yaml not found";
               fi &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              mkdir -p "/app/node_modules/pg/lib/native" &&
-              echo "module.exports = null;" > "/app/node_modules/pg/lib/native/index.js" &&
+              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
               exec node packages/backend/dist/index.cjs.js;
             elif [ -f "dist/packages/backend/index.js" ]; then
               echo "✅ Starting pre-built backend from dist/packages/backend/index.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              mkdir -p "/app/node_modules/pg/lib/native" &&
-              echo "module.exports = null;" > "/app/node_modules/pg/lib/native/index.js" &&
+              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
               exec node dist/packages/backend/index.js;
             elif [ -f "dist/packages/backend/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from dist/packages/backend/index.cjs.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              mkdir -p "/app/node_modules/pg/lib/native" &&
-              echo "module.exports = null;" > "/app/node_modules/pg/lib/native/index.js" &&
+              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
               exec node dist/packages/backend/index.cjs.js;
             elif [ -f "dist/index.js" ]; then
               echo "✅ Starting pre-built backend from dist/index.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              mkdir -p "/app/node_modules/pg/lib/native" &&
-              echo "module.exports = null;" > "/app/node_modules/pg/lib/native/index.js" &&
+              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
               exec node dist/index.js;
             elif [ -f "dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from dist/index.cjs.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              mkdir -p "/app/node_modules/pg/lib/native" &&
-              echo "module.exports = null;" > "/app/node_modules/pg/lib/native/index.js" &&
+              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
               exec node dist/index.cjs.js;
             else
