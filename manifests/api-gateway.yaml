@@ -1559,20 +1559,22 @@ spec:
           echo "🔐 Migration Coordinator: Installing dependencies..."
           
           # Install required tools
-          apk add --no-cache curl jq postgresql15-client
+          apk add --no-cache curl jq postgresql15-client unzip
           
-          # Install vault binary
+          # Remove any existing vault binary/symlink and install HashiCorp Vault
+          rm -f /usr/bin/vault /usr/local/bin/vault
           VAULT_VERSION="1.15.2"
-          curl -fsSL "https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip" -o vault.zip
+          curl -fsSL "https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip" -o /tmp/vault.zip
+          cd /tmp
           unzip vault.zip
           chmod +x vault
-          mv vault /usr/local/bin/
+          mv vault /usr/local/bin/hashicorp-vault
           
           echo "🔐 Migration Coordinator: Getting database credentials from Vault..."
           export VAULT_TOKEN="$(cat /vault-token/token)"
           
-          # Get database credentials from Vault
-          CREDS_JSON="$(vault read -format=json yugabyte-db/static-creds/backstage-app)"
+          # Get database credentials from Vault using the renamed binary
+          CREDS_JSON="$(/usr/local/bin/hashicorp-vault read -format=json yugabyte-db/static-creds/backstage-app)"
           export PGUSER="$(echo "$CREDS_JSON" | jq -r .data.username)"
           export PGPASSWORD="$(echo "$CREDS_JSON" | jq -r .data.password)"
           export PGHOST="$POSTGRES_HOST"
