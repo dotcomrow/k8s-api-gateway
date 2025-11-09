@@ -1242,8 +1242,18 @@ data:
         methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
         credentials: true
       database:
-        client: pg
-        connection: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB?options=-c%20search_path%3Dbackstage"
+        client: postgres
+        connection:
+          host: $POSTGRES_HOST
+          port: $POSTGRES_PORT
+          user: $POSTGRES_USER
+          password: $POSTGRES_PASSWORD
+          database: $POSTGRES_DB
+          ssl: false
+          # Force search_path at connection level
+          options: "-c search_path=backstage"
+          # Explicit schema setting for Knex
+          schema: "backstage"
         # Force use of pure JavaScript pg driver (not pg-native)
         acquireConnectionTimeout: 60000
         useNullAsDefault: false
@@ -2083,17 +2093,17 @@ spec:
                 else
                   echo "❌ Source config file /app/app-config.yaml not found";
                 fi &&
-                echo "🔧 Forcing pure JavaScript pg driver with comprehensive environment controls..." &&
-                # Set multiple environment variables to force JS driver
-                export NODE_OPTIONS="--max-old-space-size=14336" &&
-                export DISABLE_PG_NATIVE=1 &&
+                echo "🔧 Configuring runtime to use pure JavaScript PostgreSQL driver..." &&
+                # Set comprehensive environment variables for pure JS drivers
+                export NODE_ENV=production &&
+                export DISABLE_PG_NATIVE=true &&
+                export PG_FORCE_NATIVE=false &&
                 export NODE_PG_FORCE_NATIVE=false &&
-                export NODE_PG_NO_NATIVE=true &&
-                export PG_NATIVE_MAX_CONN=0 &&
-                export NODE_ENV="production" &&
-                # Completely remove native directory to force fallback
-                rm -rf "/app/node_modules/pg/lib/native" 2>/dev/null || true &&
-                echo "✅ Comprehensive JS driver enforcement configured" &&
+                # Create runtime stub to prevent native module loading
+                mkdir -p /app/node_modules/pg/lib &&
+                echo "module.exports = null;" > /app/node_modules/pg/lib/native.js 2>/dev/null || true &&
+                rm -rf /app/node_modules/pg/lib/native 2>/dev/null || true &&
+                echo "✅ Pure JavaScript PostgreSQL driver configuration complete" &&
                 exec node "$BACKEND_JS";
               else
                 echo "❌ Bundle extraction failed - no backend entry point found anywhere" &&
