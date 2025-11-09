@@ -2008,6 +2008,11 @@ spec:
           value: "1"
         - name: PG_NATIVE_MAX_CONN
           value: "0"
+        # Force pg library to never attempt native loading
+        - name: PG_NATIVE
+          value: "false"
+        - name: DISABLE_PG_NATIVE
+          value: "true"
         # Force pg module to skip native binding completely
         - name: NODE_ENV
           value: "production"
@@ -2042,39 +2047,27 @@ spec:
         - |
           set -e
           
-          echo "🔧 Patching pg-native module to prevent require errors..."
+          echo "🔧 Patching pg library to completely disable native loading..."
           
-          # Create fake pg-native module directory and files
-          mkdir -p /app/node_modules/pg-native
-          echo '// Fake pg-native module that mimics the real pg-native interface' > /app/node_modules/pg-native/index.js
-          echo 'console.log("⚠️ pg-native disabled - using pure JavaScript PostgreSQL driver");' >> /app/node_modules/pg-native/index.js
-          echo '' >> /app/node_modules/pg-native/index.js
-          echo '// Create a fake Client constructor that throws an error' >> /app/node_modules/pg-native/index.js
-          echo 'function Client() {' >> /app/node_modules/pg-native/index.js
-          echo '  throw new Error("pg-native not available, use JavaScript client");' >> /app/node_modules/pg-native/index.js
-          echo '}' >> /app/node_modules/pg-native/index.js
-          echo '' >> /app/node_modules/pg-native/index.js
-          echo '// Export the Client constructor like pg-native would' >> /app/node_modules/pg-native/index.js
-          echo 'module.exports = Client;' >> /app/node_modules/pg-native/index.js
-          echo 'module.exports.Client = Client;' >> /app/node_modules/pg-native/index.js
+          # Instead of patching pg-native, patch the main pg library to never try to load it
+          if [ -f "/app/node_modules/pg/lib/index.js" ]; then
+            echo "🔧 Patching main pg/lib/index.js to disable native loading..."
+            
+            # Backup original file
+            cp /app/node_modules/pg/lib/index.js /app/node_modules/pg/lib/index.js.backup
+            
+            # Simple replacement to disable native loading
+            sed -i 's/var native = null/var native = null; \/\/ PATCHED: force native to stay null/g' /app/node_modules/pg/lib/index.js
+            sed -i 's/native = require/\/\/ PATCHED: native = require/g' /app/node_modules/pg/lib/index.js
+            
+            echo "✅ Main pg library patched to disable native loading"
+          fi
           
-          echo '{"name": "pg-native", "version": "1.0.0-fake", "description": "Fake pg-native", "main": "index.js"}' > /app/node_modules/pg-native/package.json
-          
-          # Also patch the pg library native files to prevent loading attempts
-          if [ -d "/app/node_modules/pg/lib/native" ]; then
-            echo "🔧 Patching pg native directory..."
-            
-            # Create safe fallback files that properly export the JS client
-            echo '// Safe native client fallback - prevents pg-native require errors' > /app/node_modules/pg/lib/native/client.js
-            echo 'console.log("⚠️ pg native client disabled - using JavaScript client");' >> /app/node_modules/pg/lib/native/client.js
-            echo "module.exports = null;" >> /app/node_modules/pg/lib/native/client.js
-            
-            echo '// Safe native index fallback - prevents pg-native require errors' > /app/node_modules/pg/lib/native/index.js
-            echo 'console.log("⚠️ pg native disabled - using JavaScript driver");' >> /app/node_modules/pg/lib/native/index.js
-            echo '// Export null to indicate native client unavailable' >> /app/node_modules/pg/lib/native/index.js
-            echo 'module.exports = null;' >> /app/node_modules/pg/lib/native/index.js
-            
-            echo "✅ pg native files patched successfully"
+          # Also ensure pg-native directory doesn't exist to prevent any loading attempts
+          if [ -d "/app/node_modules/pg-native" ]; then
+            echo "🔧 Removing existing pg-native directory..."
+            rm -rf /app/node_modules/pg-native
+            echo "✅ pg-native directory removed"
           fi
           
           echo "✅ pg-native patching completed"
