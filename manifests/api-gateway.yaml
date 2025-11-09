@@ -1279,15 +1279,18 @@ spec:
               fi &&
               if [ -n "$BACKEND_JS" ] && [ -f "$BACKEND_JS" ]; then
                 echo "✅ Starting backend from extracted bundle: $BACKEND_JS" &&
-                echo "🔧 Setting up config file..." &&
+                echo "🔧 Setting up config file with environment variable substitution..." &&
                 if [ -f "/app/app-config.yaml" ]; then
                   echo "Source config exists at /app/app-config.yaml" &&
                   mkdir -p /app/packages/backend/dist &&
-                  cp /app/app-config.yaml /app/packages/backend/dist/app-config.yaml &&
-                  echo "Config file copied to /app/packages/backend/dist/app-config.yaml" &&
+                  echo "🔄 Processing config with envsubst..." &&
+                  envsubst < /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
+                  echo "✅ Config processed and copied to /app/packages/backend/dist/app-config.yaml" &&
+                  echo "📄 Processed config database section:" &&
+                  grep -A 10 "database:" /app/packages/backend/dist/app-config.yaml || echo "No database section found" &&
                   ls -la /app/packages/backend/dist/app-config.yaml || echo "Config copy verification failed";
                 else
-                  echo "Source config file /app/app-config.yaml not found";
+                  echo "❌ Source config file /app/app-config.yaml not found";
                 fi &&
                 exec node "$BACKEND_JS";
               else
@@ -1298,28 +1301,30 @@ spec:
               fi;
             elif [ -f "packages/backend/dist/index.js" ]; then
               echo "✅ Starting pre-built backend from packages/backend/dist/index.js" &&
-              echo "🔧 Setting up config file..." &&
+              echo "🔧 Setting up config file with environment variable substitution..." &&
               if [ -f "/app/app-config.yaml" ]; then
                 echo "Source config exists at /app/app-config.yaml" &&
                 mkdir -p /app/packages/backend/dist &&
-                cp /app/app-config.yaml /app/packages/backend/dist/app-config.yaml &&
-                echo "Config file copied to /app/packages/backend/dist/app-config.yaml" &&
+                echo "🔄 Processing config with envsubst..." &&
+                envsubst < /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
+                echo "✅ Config processed and copied to /app/packages/backend/dist/app-config.yaml" &&
                 ls -la /app/packages/backend/dist/app-config.yaml || echo "Config copy verification failed";
               else
-                echo "Source config file /app/app-config.yaml not found";
+                echo "❌ Source config file /app/app-config.yaml not found";
               fi &&
               exec node packages/backend/dist/index.js;
             elif [ -f "packages/backend/dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from packages/backend/dist/index.cjs.js" &&
-              echo "🔧 Setting up config file..." &&
+              echo "🔧 Setting up config file with environment variable substitution..." &&
               if [ -f "/app/app-config.yaml" ]; then
                 echo "Source config exists at /app/app-config.yaml" &&
                 mkdir -p /app/packages/backend/dist &&
-                cp /app/app-config.yaml /app/packages/backend/dist/app-config.yaml &&
-                echo "Config file copied to /app/packages/backend/dist/app-config.yaml" &&
+                echo "🔄 Processing config with envsubst..." &&
+                envsubst < /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
+                echo "✅ Config processed and copied to /app/packages/backend/dist/app-config.yaml" &&
                 ls -la /app/packages/backend/dist/app-config.yaml || echo "Config copy verification failed";
               else
-                echo "Source config file /app/app-config.yaml not found";
+                echo "❌ Source config file /app/app-config.yaml not found";
               fi &&
               exec node packages/backend/dist/index.cjs.js;
             elif [ -f "dist/packages/backend/index.js" ]; then
