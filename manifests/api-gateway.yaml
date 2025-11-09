@@ -264,6 +264,61 @@ spec:
         - name: root-token
           secret:
             secretName: vault-root-token
+      initContainers:
+        - name: wait-vault-token-copy
+          image: alpine/k8s:1.31.4
+          command:
+          - sh
+          - -c
+          - |
+            echo "🔧 Waiting for Vault token copy job to complete..."
+            
+            TOKEN_JOB_NAME="copy-api-gateway-vault-root-token"
+            TOKEN_NAMESPACE="vault"
+            
+            echo "🔍 Waiting for job: $TOKEN_JOB_NAME in namespace: $TOKEN_NAMESPACE"
+            
+            # Wait for the job to exist
+            RETRY_COUNT=0
+            MAX_RETRIES=60
+            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              if kubectl get job "$TOKEN_JOB_NAME" -n "$TOKEN_NAMESPACE" >/dev/null 2>&1; then
+                echo "✅ Found job $TOKEN_JOB_NAME"
+                break
+              fi
+              
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "⏳ Waiting for job $TOKEN_JOB_NAME to be created... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+              
+              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                echo "❌ Job $TOKEN_JOB_NAME not found after $MAX_RETRIES attempts"
+                exit 1
+              fi
+              
+              sleep 5
+            done
+            
+            # Wait for the job to complete successfully
+            while true; do
+              JOB_STATUS=$(kubectl get job "$TOKEN_JOB_NAME" -n "$TOKEN_NAMESPACE" -o json 2>/dev/null || echo '{}')
+              
+              SUCCEEDED=$(echo "$JOB_STATUS" | jq -r '.status.succeeded // 0')
+              FAILED=$(echo "$JOB_STATUS" | jq -r '.status.failed // 0')
+              
+              if [ "$SUCCEEDED" -gt 0 ]; then
+                echo "✅ Vault token copy job completed successfully"
+                break
+              elif [ "$FAILED" -gt 0 ]; then
+                echo "❌ Vault token copy job failed"
+                kubectl logs job/"$TOKEN_JOB_NAME" -n "$TOKEN_NAMESPACE" --tail=20 || true
+                exit 1
+              else
+                echo "⏳ Vault token copy job still running..."
+                sleep 10
+              fi
+            done
+            
+            echo "✅ Vault token is ready, proceeding with database setup"
       containers:
         - name: setup-role
           image: hashicorp/vault:1.15.4
