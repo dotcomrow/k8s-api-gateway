@@ -1251,7 +1251,7 @@ data:
           database: $POSTGRES_DB
           ssl: false
           # Force schema isolation - READ COMMITTED now enabled at YugabyteDB server level
-          options: "-c search_path=backstage -c default_transaction_isolation='read committed'"
+          options: "-c search_path=backstage"
         # Use single database with plugin schema isolation
         pluginDivisionMode: 'schema'
         ensureExists: true
@@ -1742,7 +1742,7 @@ spec:
           value: "backstage"
         # YugabyteDB compatibility settings (READ COMMITTED now enabled server-wide)
         - name: PGOPTIONS
-          value: "-c default_transaction_isolation=read_committed -c search_path=backstage"
+          value: "-c search_path=backstage"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
         - name: GITHUB_TEAM
