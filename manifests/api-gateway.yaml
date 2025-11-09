@@ -1953,7 +1953,7 @@ spec:
           echo "✅ Starting PostgreSQL proxy: localhost:6432 -> $POSTGRES_HOST:$POSTGRES_PORT"
           exec socat TCP-LISTEN:6432,reuseaddr,fork TCP:$POSTGRES_HOST:$POSTGRES_PORT
       - name: backstage
-        image: ghcr.io/dotcomrow/backstage-image:ts-20251108-195559
+        image: ghcr.io/dotcomrow/backstage-image:ts-20251109-230146
         workingDir: /app
         ports:
         - containerPort: 7007
@@ -2046,31 +2046,6 @@ spec:
         args:
         - |
           set -e
-          
-          echo "🔧 Installing pure JavaScript PostgreSQL client for YugabyteDB..."
-          
-          # Install pg2 (pure JS PostgreSQL client, no native dependencies)
-          cd /app
-          npm install --no-save pg@8.8.0 --no-optional
-          
-          # Remove any existing pg-native to prevent loading
-          rm -rf /app/node_modules/pg-native 2>/dev/null || true
-          
-          # Patch pg to never attempt native loading
-          if [ -f "/app/node_modules/pg/lib/index.js" ]; then
-            echo "🔧 Patching pg library to force pure JavaScript mode..."
-            
-            # Backup and patch
-            cp /app/node_modules/pg/lib/index.js /app/node_modules/pg/lib/index.js.backup
-            
-            # Force native to always be null
-            sed -i 's/var native = null/var native = null; \/\/ FORCED PURE JS MODE/g' /app/node_modules/pg/lib/index.js
-            sed -i '/require.*pg-native/d' /app/node_modules/pg/lib/index.js
-            
-            echo "✅ pg library patched for pure JavaScript mode"
-          fi
-          
-          echo "✅ Pure JavaScript PostgreSQL client configured for YugabyteDB"
           
           echo "🔧 Loading database credentials from Vault..."
           if [ -f /vault/secrets/db-creds ]; then
