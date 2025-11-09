@@ -2085,12 +2085,14 @@ spec:
                 fi &&
                 echo "🔧 Forcing pure JavaScript pg driver with comprehensive environment controls..." &&
                 # Set multiple environment variables to force JS driver
-                export NODE_OPTIONS="--max-old-space-size=14336 --no-native-modules" &&
+                export NODE_OPTIONS="--max-old-space-size=14336" &&
                 export DISABLE_PG_NATIVE=1 &&
                 export NODE_PG_FORCE_NATIVE=false &&
                 export NODE_PG_NO_NATIVE=true &&
                 export PG_NATIVE_MAX_CONN=0 &&
                 export NODE_ENV="production" &&
+                # Completely remove native directory to force fallback
+                rm -rf "/app/node_modules/pg/lib/native" 2>/dev/null || true &&
                 echo "✅ Comprehensive JS driver enforcement configured" &&
                 exec node "$BACKEND_JS";
               else
