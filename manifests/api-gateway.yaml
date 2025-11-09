@@ -100,6 +100,20 @@ roleRef:
   name: job-secret-reader
   apiGroup: rbac.authorization.k8s.io
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backstage-secret-reader
+  namespace: k8s-api-gateway
+subjects:
+- kind: ServiceAccount
+  name: backstage
+  namespace: k8s-api-gateway
+roleRef:
+  kind: Role
+  name: job-secret-reader
+  apiGroup: rbac.authorization.k8s.io
+---
 # Cross-namespace permission to read jobs in vault namespace
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -1358,13 +1372,31 @@ spec:
           SECRET_NAMESPACE="k8s-api-gateway"
           
           echo "🔍 Step 1: Waiting for Vault token secret..."
+          
+          # Debug: Show current permissions and available secrets
+          echo "🔍 Debug: Current service account and permissions:"
+          whoami 2>/dev/null || echo "Cannot determine user"
+          echo "🔍 Available secrets in namespace:"
+          kubectl get secrets -n "$SECRET_NAMESPACE" 2>&1 || echo "Cannot list secrets - permission denied"
+          
           RETRY_COUNT=0
           MAX_RETRIES=60
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" >/dev/null 2>&1; then
-              if kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" -o jsonpath='{.data.VAULT_TOKEN}' 2>/dev/null | grep -q .; then
-                echo "✅ Vault token secret is available"
+            # Check if secret exists
+            SECRET_EXISTS=$(kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" >/dev/null 2>&1 && echo "true" || echo "false")
+            echo "🔍 Secret $SECRET_NAME exists: $SECRET_EXISTS"
+            
+            if [ "$SECRET_EXISTS" = "true" ]; then
+              # Check if it has the VAULT_TOKEN key
+              VAULT_TOKEN_DATA=$(kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" -o jsonpath='{.data.VAULT_TOKEN}' 2>/dev/null || echo "")
+              if [ -n "$VAULT_TOKEN_DATA" ]; then
+                echo "✅ Vault token secret is available with VAULT_TOKEN key"
                 break
+              else
+                echo "📄 Secret exists but missing VAULT_TOKEN key"
+                # Show secret structure for debugging
+                echo "🔍 Secret keys:"
+                kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" -o jsonpath='{.data}' 2>/dev/null || echo "Cannot read secret data"
               fi
             fi
             
@@ -1373,6 +1405,8 @@ spec:
             
             if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
               echo "❌ Vault token not available, but continuing to database check"
+              echo "🔍 Final debug - all secrets in namespace:"
+              kubectl get secrets -n "$SECRET_NAMESPACE" 2>&1 || echo "Cannot list secrets"
               break
             fi
             sleep 5
