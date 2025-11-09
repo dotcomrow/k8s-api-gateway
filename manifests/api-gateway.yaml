@@ -1997,6 +1997,9 @@ spec:
           value: "production"
         - name: PG_FORCE_NATIVE
           value: "false"
+        # Absolutely force pure JS pg driver
+        - name: PG_NATIVE
+          value: "false"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
         # Disable Backstage migrations - handled by migration coordinator
@@ -2088,6 +2091,18 @@ spec:
                 else
                   echo "❌ Source config file /app/app-config.yaml not found";
                 fi &&
+                echo "🔧 Patching pg module to force pure JavaScript driver..." &&
+                # Completely disable native pg driver by removing the native directory
+                if [ -d "/app/node_modules/pg/lib/native" ]; then
+                  rm -rf "/app/node_modules/pg/lib/native" &&
+                  echo "✅ Native pg directory removed completely";
+                fi &&
+                # Also patch the main pg index to never try native
+                if [ -f "/app/node_modules/pg/lib/index.js" ]; then
+                  sed -i 's/require.*native.*//g' "/app/node_modules/pg/lib/index.js" &&
+                  sed -i 's/native.*require.*//g' "/app/node_modules/pg/lib/index.js" &&
+                  echo "✅ pg module patched to avoid native references";
+                fi &&
                 exec node "$BACKEND_JS";
               else
                 echo "❌ Bundle extraction failed - no backend entry point found anywhere" &&
@@ -2108,6 +2123,11 @@ spec:
               else
                 echo "❌ Source config file /app/app-config.yaml not found";
               fi &&
+              echo "🔧 Patching pg module to force pure JavaScript driver..." &&
+              if [ -d "/app/node_modules/pg/lib/native" ]; then
+                rm -rf "/app/node_modules/pg/lib/native" &&
+                echo "✅ Native pg directory removed completely";
+              fi &&
               exec node packages/backend/dist/index.js;
             elif [ -f "packages/backend/dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from packages/backend/dist/index.cjs.js" &&
@@ -2122,18 +2142,43 @@ spec:
               else
                 echo "❌ Source config file /app/app-config.yaml not found";
               fi &&
+              echo "🔧 Patching pg module to force pure JavaScript driver..." &&
+              if [ -d "/app/node_modules/pg/lib/native" ]; then
+                rm -rf "/app/node_modules/pg/lib/native" &&
+                echo "✅ Native pg directory removed completely";
+              fi &&
               exec node packages/backend/dist/index.cjs.js;
             elif [ -f "dist/packages/backend/index.js" ]; then
               echo "✅ Starting pre-built backend from dist/packages/backend/index.js" &&
+              echo "🔧 Patching pg module to force pure JavaScript driver..." &&
+              if [ -d "/app/node_modules/pg/lib/native" ]; then
+                rm -rf "/app/node_modules/pg/lib/native" &&
+                echo "✅ Native pg directory removed completely";
+              fi &&
               exec node dist/packages/backend/index.js;
             elif [ -f "dist/packages/backend/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from dist/packages/backend/index.cjs.js" &&
+              echo "🔧 Patching pg module to force pure JavaScript driver..." &&
+              if [ -d "/app/node_modules/pg/lib/native" ]; then
+                rm -rf "/app/node_modules/pg/lib/native" &&
+                echo "✅ Native pg directory removed completely";
+              fi &&
               exec node dist/packages/backend/index.cjs.js;
             elif [ -f "dist/index.js" ]; then
               echo "✅ Starting pre-built backend from dist/index.js" &&
+              echo "🔧 Patching pg module to force pure JavaScript driver..." &&
+              if [ -d "/app/node_modules/pg/lib/native" ]; then
+                rm -rf "/app/node_modules/pg/lib/native" &&
+                echo "✅ Native pg directory removed completely";
+              fi &&
               exec node dist/index.js;
             elif [ -f "dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from dist/index.cjs.js" &&
+              echo "🔧 Patching pg module to force pure JavaScript driver..." &&
+              if [ -d "/app/node_modules/pg/lib/native" ]; then
+                rm -rf "/app/node_modules/pg/lib/native" &&
+                echo "✅ Native pg directory removed completely";
+              fi &&
               exec node dist/index.cjs.js;
             else
               echo "❌ ERROR: No pre-built backend found!" &&
