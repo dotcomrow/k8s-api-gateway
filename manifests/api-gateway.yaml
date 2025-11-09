@@ -1242,7 +1242,7 @@ data:
         methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
         credentials: true
       database:
-        client: postgres
+        client: pg
         connection:
           host: $POSTGRES_HOST
           port: $POSTGRES_PORT
@@ -2093,18 +2093,16 @@ spec:
                 else
                   echo "❌ Source config file /app/app-config.yaml not found";
                 fi &&
-                echo "🔧 Configuring runtime to use pure JavaScript PostgreSQL driver..." &&
-                # Set comprehensive environment variables for pure JS drivers
+                echo "🔧 Creating module hijacking for pg-native prevention..." &&
+                # Create hijack script using base64 to avoid YAML issues
+                echo "Ly8gSGlqYWNrIHJlcXVpcmUgdG8gcHJldmVudCBwZy1uYXRpdmUgbG9hZGluZwpjb25zdCBNb2R1bGUgPSByZXF1aXJlKCdtb2R1bGUnKTsKY29uc3Qgb3JpZ2luYWxSZXF1aXJlID0gTW9kdWxlLnByb3RvdHlwZS5yZXF1aXJlOwoKTW9kdWxlLnByb3RvdHlwZS5yZXF1aXJlID0gZnVuY3Rpb24oaWQpIHsKICAvLyBCbG9jayBhbnkgYXR0ZW1wdHMgdG8gbG9hZCBwZy1uYXRpdmUKICBpZiAoaWQgPT09ICdwZy1uYXRpdmUnIHx8IGlkID09PSAnLi9uYXRpdmUnIHx8IGlkLmVuZHNXaXRoKCcvbmF0aXZlJykpIHsKICAgIGNvbnNvbGUubG9nKCfwn5qrIEJsb2NrZWQgcGctbmF0aXZlIGxvYWRpbmcgYXR0ZW1wdDonLCBpZCk7CiAgICByZXR1cm4gbnVsbDsKICB9CiAgcmV0dXJuIG9yaWdpbmFsUmVxdWlyZS5hcHBseSh0aGlzLCBhcmd1bWVudHMpOwp9OwoKY29uc29sZS5sb2coJ+KchSBNb2R1bGUgaGlqYWNraW5nIGFjdGl2ZSAtIHBnLW5hdGl2ZSByZXF1ZXN0cyB3aWxsIGJlIGJsb2NrZWQnKTs=" | base64 -d > /app/hijack-pg-native.js &&
+                # Set environment variables for pure JS mode  
                 export NODE_ENV=production &&
                 export DISABLE_PG_NATIVE=true &&
                 export PG_FORCE_NATIVE=false &&
                 export NODE_PG_FORCE_NATIVE=false &&
-                # Create runtime stub to prevent native module loading
-                mkdir -p /app/node_modules/pg/lib &&
-                echo "module.exports = null;" > /app/node_modules/pg/lib/native.js 2>/dev/null || true &&
-                rm -rf /app/node_modules/pg/lib/native 2>/dev/null || true &&
-                echo "✅ Pure JavaScript PostgreSQL driver configuration complete" &&
-                exec node "$BACKEND_JS";
+                echo "✅ Module hijacking configured" &&
+                node -r /app/hijack-pg-native.js "$BACKEND_JS";
               else
                 echo "❌ Bundle extraction failed - no backend entry point found anywhere" &&
                 echo "📁 Complete directory structure:" &&
@@ -2129,7 +2127,7 @@ spec:
               export NODE_PG_FORCE_NATIVE=false &&
               export NODE_PG_NO_NATIVE=true &&
               export PG_NATIVE_MAX_CONN=0 &&
-              exec node packages/backend/dist/index.js;
+              node -r /app/hijack-pg-native.js packages/backend/dist/index.js;
             elif [ -f "packages/backend/dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from packages/backend/dist/index.cjs.js" &&
               echo "🔧 Setting up config file with environment variable substitution..." &&
@@ -2148,7 +2146,7 @@ spec:
               export NODE_PG_FORCE_NATIVE=false &&
               export NODE_PG_NO_NATIVE=true &&
               export PG_NATIVE_MAX_CONN=0 &&
-              exec node packages/backend/dist/index.cjs.js;
+              node -r /app/hijack-pg-native.js packages/backend/dist/index.cjs.js;
             elif [ -f "dist/packages/backend/index.js" ]; then
               echo "✅ Starting pre-built backend from dist/packages/backend/index.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
