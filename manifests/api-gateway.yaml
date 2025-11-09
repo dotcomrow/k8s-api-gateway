@@ -1250,7 +1250,7 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
-          # Include all plugin schemas in search path for schema-based isolation
+          # Set backstage as primary schema in search path for unqualified table creation
           options: "-c search_path=backstage,backstage_plugin_app,backstage_plugin_proxy,backstage_plugin_scaffolder,backstage_plugin_techdocs,backstage_plugin_auth,backstage_plugin_catalog,backstage_plugin_permission,backstage_plugin_search,backstage_plugin_kubernetes,backstage_plugin_notifications,backstage_plugin_signals"
         # Use schema-based isolation within single database (YugabyteDB compatible)
         pluginDivisionMode: 'schema'
@@ -1668,8 +1668,9 @@ spec:
               
               # Create comprehensive schema with all tables Backstage expects
               psql -c "
-                -- Set session isolation level
+                -- Set session isolation level and current schema
                 SET SESSION default_transaction_isolation = 'read committed';
+                SET search_path = backstage, backstage_plugin_app, backstage_plugin_proxy, backstage_plugin_scaffolder, backstage_plugin_techdocs, backstage_plugin_auth, backstage_plugin_catalog, backstage_plugin_permission, backstage_plugin_search, backstage_plugin_kubernetes, backstage_plugin_notifications, backstage_plugin_signals;
                 
                 -- Create auth keys table first (critical for all plugins)
                 DROP TABLE IF EXISTS backstage.backstage_backend_public_keys__keys;
@@ -1678,6 +1679,19 @@ spec:
                   key TEXT NOT NULL,
                   expires_at TIMESTAMPTZ,
                   created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                -- Create auth keys knex migrations table (required by auth service)
+                CREATE TABLE IF NOT EXISTS backstage.backstage_backend_public_keys__knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.backstage_backend_public_keys__knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER DEFAULT 0
                 );
               "
               
@@ -1824,6 +1838,19 @@ spec:
                 " || echo "Migration records for $schema may already exist"
               done
               
+              echo "🔧 Adding fake migration records to auth keys table..."
+              # Add fake migration records to auth keys migration table
+              psql -c "
+                INSERT INTO backstage.backstage_backend_public_keys__knex_migrations (name, batch) VALUES 
+                ('001_create_keys_table.js', 1),
+                ('002_add_expires_at.js', 1)
+                ON CONFLICT (name) DO NOTHING;
+                
+                -- Ensure lock table has entry
+                INSERT INTO backstage.backstage_backend_public_keys__knex_migrations_lock (is_locked) 
+                SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM backstage.backstage_backend_public_keys__knex_migrations_lock);
+              " || echo "Auth keys migration records may already exist"
+              
               # Release the advisory lock
               psql -c "SELECT pg_advisory_unlock(12345);"
               
@@ -1887,7 +1914,9 @@ spec:
           value: "5433"
         - name: POSTGRES_DB
           value: "backstage"
-        # YugabyteDB compatibility settings with schema-based plugin isolation
+        - name: POSTGRES_SCHEMA
+          value: "backstage"
+        # YugabyteDB compatibility settings with backstage as primary schema
         - name: PGOPTIONS
           value: "-c search_path=backstage,backstage_plugin_app,backstage_plugin_proxy,backstage_plugin_scaffolder,backstage_plugin_techdocs,backstage_plugin_auth,backstage_plugin_catalog,backstage_plugin_permission,backstage_plugin_search,backstage_plugin_kubernetes,backstage_plugin_notifications,backstage_plugin_signals"
         - name: BACKEND_SECRET
