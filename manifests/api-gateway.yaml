@@ -1251,7 +1251,7 @@ data:
           database: $POSTGRES_DB
           ssl: false
           # Force schema isolation - only use backstage schema
-          options: '-c search_path=backstage'
+          options: '-c search_path=backstage -c default_transaction_isolation=\'read committed\''
         # Use single database with plugin schema isolation
         pluginDivisionMode: 'schema'
         ensureExists: true
@@ -1259,13 +1259,30 @@ data:
         searchPath: ['backstage']
         knexConfig:
           pool:
-            min: 3
-            max: 12
-            acquireTimeoutMillis: 60000
-            createTimeoutMillis: 30000
-            destroyTimeoutMillis: 5000
-            idleTimeoutMillis: 30000
+            min: 1
+            max: 3
+            acquireTimeoutMillis: 120000
+            createTimeoutMillis: 60000
+            destroyTimeoutMillis: 10000
+            idleTimeoutMillis: 60000
+          # YugabyteDB-specific settings for concurrent migration handling
+          migrations:
+            disableTransactions: false
+            tableName: 'knex_migrations'
+            schemaName: 'backstage'
+          # Prevent concurrent migrations by serializing database operations
+          acquireConnectionTimeout: 120000
+          # YugabyteDB compatibility settings
+          postProcessResponse: null
+          wrapIdentifier: null
 
+    # TechDocs configuration to fix missing config error
+    techdocs:
+      builder: 'local'
+      generator:
+        runIn: 'local'
+      publisher:
+        type: 'local'
 
     integrations:
       github:
@@ -1518,6 +1535,150 @@ spec:
             
             sleep 5
           done
+      # Migration coordination init container to prevent concurrent migrations
+      - name: migration-coordinator
+        image: postgres:15-alpine
+        env:
+        - name: POSTGRES_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: POSTGRES_PORT
+          value: "5433"
+        - name: POSTGRES_DB
+          value: "backstage"
+        - name: BACKSTAGE_INSTANCE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "🔐 Migration Coordinator: Getting database credentials from Vault..."
+          export VAULT_ADDR="https://vault.vault.svc.cluster.local:8200"
+          export VAULT_TOKEN="$(cat /vault-token/token)"
+          
+          CREDS_JSON="$(vault read -format=json yugabyte-db/static-creds/backstage-app)"
+          export PGUSER="$(echo "$CREDS_JSON" | jq -r .data.username)"
+          export PGPASSWORD="$(echo "$CREDS_JSON" | jq -r .data.password)"
+          export PGHOST="$POSTGRES_HOST"
+          export PGPORT="$POSTGRES_PORT"
+          export PGDATABASE="$POSTGRES_DB"
+          
+          echo "🔄 Migration Coordinator: Checking for migration lock..."
+          
+          # Create a coordination table for migration locks
+          psql -c "
+            CREATE TABLE IF NOT EXISTS backstage.migration_coordination (
+              id SERIAL PRIMARY KEY,
+              instance_name VARCHAR(255) UNIQUE NOT NULL,
+              migration_status VARCHAR(50) NOT NULL DEFAULT 'waiting',
+              created_at TIMESTAMP DEFAULT NOW(),
+              updated_at TIMESTAMP DEFAULT NOW()
+            );
+          " || echo "⚠️ Migration coordination table might already exist"
+          
+          # Register this instance
+          psql -c "
+            INSERT INTO backstage.migration_coordination (instance_name, migration_status) 
+            VALUES ('$BACKSTAGE_INSTANCE_ID', 'waiting')
+            ON CONFLICT (instance_name) 
+            DO UPDATE SET migration_status = 'waiting', updated_at = NOW();
+          "
+          
+          echo "📋 Migration Coordinator: Checking migration queue..."
+          
+          # Check if any instance is currently running migrations
+          MAX_WAIT=300  # 5 minutes max wait
+          WAIT_COUNT=0
+          
+          while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+            # Clean up stale migration locks (older than 10 minutes)
+            psql -c "
+              UPDATE backstage.migration_coordination 
+              SET migration_status = 'failed' 
+              WHERE migration_status = 'running' 
+              AND updated_at < NOW() - INTERVAL '10 minutes';
+            "
+            
+            # Try to acquire migration lock
+            ACQUIRED=$(psql -tAc "
+              WITH lock_attempt AS (
+                UPDATE backstage.migration_coordination 
+                SET migration_status = 'running', updated_at = NOW()
+                WHERE instance_name = '$BACKSTAGE_INSTANCE_ID' 
+                AND NOT EXISTS (
+                  SELECT 1 FROM backstage.migration_coordination 
+                  WHERE migration_status = 'running' 
+                  AND instance_name != '$BACKSTAGE_INSTANCE_ID'
+                )
+                RETURNING instance_name
+              )
+              SELECT COUNT(*) FROM lock_attempt;
+            ")
+            
+            if [ "$ACQUIRED" = "1" ]; then
+              echo "✅ Migration Coordinator: Acquired migration lock for $BACKSTAGE_INSTANCE_ID"
+              
+              # Perform pre-migration setup with READ COMMITTED isolation
+              echo "🔧 Migration Coordinator: Setting up YugabyteDB for migrations..."
+              psql -c "
+                -- Ensure proper isolation level for YugabyteDB
+                SET SESSION default_transaction_isolation = 'read committed';
+                
+                -- Create migration tracking table with proper settings
+                CREATE TABLE IF NOT EXISTS backstage.knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER
+                );
+              "
+              
+              # Mark migration as completed
+              psql -c "
+                UPDATE backstage.migration_coordination 
+                SET migration_status = 'completed', updated_at = NOW()
+                WHERE instance_name = '$BACKSTAGE_INSTANCE_ID';
+              "
+              
+              echo "✅ Migration Coordinator: Migration setup completed for $BACKSTAGE_INSTANCE_ID"
+              break
+            else
+              RUNNING_INSTANCE=$(psql -tAc "
+                SELECT instance_name FROM backstage.migration_coordination 
+                WHERE migration_status = 'running' 
+                LIMIT 1;
+              ")
+              echo "⏳ Migration Coordinator: Waiting for migration by instance: $RUNNING_INSTANCE (${WAIT_COUNT}s/${MAX_WAIT}s)"
+              sleep 5
+              WAIT_COUNT=$((WAIT_COUNT + 5))
+            fi
+          done
+          
+          if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+            echo "❌ Migration Coordinator: Timeout waiting for migration lock"
+            psql -c "
+              UPDATE backstage.migration_coordination 
+              SET migration_status = 'timeout', updated_at = NOW()
+              WHERE instance_name = '$BACKSTAGE_INSTANCE_ID';
+            "
+            exit 1
+          fi
+          
+          echo "✅ Migration Coordinator: Ready for Backstage startup"
+        volumeMounts:
+        - name: root-token
+          mountPath: /vault-token
+          readOnly: true
+        resources:
+          requests: { cpu: "50m", memory: "64Mi" }
+          limits: { cpu: "200m", memory: "128Mi" }
       containers:
       - name: backstage
         image: ghcr.io/dotcomrow/backstage-image:ts-20251108-195559
@@ -1537,7 +1698,9 @@ spec:
           value: "5433"
         - name: POSTGRES_DB
           value: "backstage"
-
+        # YugabyteDB compatibility settings
+        - name: PGOPTIONS
+          value: "-c default_transaction_isolation=read_committed -c search_path=backstage"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
         - name: GITHUB_TEAM
@@ -1742,6 +1905,10 @@ spec:
       - name: backstage-config
         configMap:
           name: backstage-config
+      - name: root-token
+        secret:
+          secretName: vault-root-token
+          optional: false
 ---
 # Backstage Service
 apiVersion: v1
