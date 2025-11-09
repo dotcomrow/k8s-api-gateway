@@ -1965,9 +1965,9 @@ spec:
         - name: BACKSTAGE_APP_CONFIG
           value: "/app/app-config.yaml"
         - name: POSTGRES_HOST
-          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+          value: "localhost"
         - name: POSTGRES_PORT
-          value: "5433"
+          value: "6432"
         - name: POSTGRES_DB
           value: "backstage"
         - name: POSTGRES_SCHEMA
@@ -2018,6 +2018,11 @@ spec:
           value: "false"
         - name: DISABLE_PG_NATIVE
           value: "1"
+        # Force pg library to never attempt native binding loading
+        - name: NODE_PG_FORCE_NATIVE
+          value: "false"
+        - name: NODE_PG_NO_NATIVE
+          value: "1"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
         # Disable Backstage migrations - handled by migration coordinator
@@ -2036,6 +2041,35 @@ spec:
         args:
         - |
           set -e
+          
+          echo "🔧 Patching pg-native module to prevent require errors..."
+          
+          # Create fake pg-native module directory and files
+          mkdir -p /app/node_modules/pg-native
+          echo '// Fake pg-native module to prevent require errors' > /app/node_modules/pg-native/index.js
+          echo 'console.log("⚠️ pg-native disabled - using pure JavaScript PostgreSQL driver");' >> /app/node_modules/pg-native/index.js  
+          echo 'module.exports = null;' >> /app/node_modules/pg-native/index.js
+          
+          echo '{"name": "pg-native", "version": "1.0.0-fake", "description": "Fake pg-native", "main": "index.js"}' > /app/node_modules/pg-native/package.json
+          
+          # Also patch the pg library native files to prevent loading attempts
+          if [ -d "/app/node_modules/pg/lib/native" ]; then
+            echo "🔧 Patching pg native directory..."
+            
+            # Create safe fallback files 
+            echo '// Safe native client fallback - prevents pg-native require errors' > /app/node_modules/pg/lib/native/client.js
+            echo 'console.log("⚠️ pg native client disabled - using JavaScript client");' >> /app/node_modules/pg/lib/native/client.js
+            echo "module.exports = require('../client');" >> /app/node_modules/pg/lib/native/client.js
+            
+            echo '// Safe native index fallback - prevents pg-native require errors' > /app/node_modules/pg/lib/native/index.js
+            echo 'console.log("⚠️ pg native disabled - using JavaScript driver");' >> /app/node_modules/pg/lib/native/index.js
+            echo "module.exports = require('../index');" >> /app/node_modules/pg/lib/native/index.js
+            
+            echo "✅ pg native files patched successfully"
+          fi
+          
+          echo "✅ pg-native patching completed"
+          
           echo "🔧 Loading database credentials from Vault..."
           if [ -f /vault/secrets/db-creds ]; then
             echo "📄 Vault secrets file found, contents:"
