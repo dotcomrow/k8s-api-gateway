@@ -1976,7 +1976,7 @@ spec:
           auth_file = /etc/pgbouncer/userlist.txt
           server_reset_query = DISCARD ALL
           EOF
-          echo "\"$DATABASES_USER\" \"$DATABASES_PASSWORD\"" > /etc/pgbouncer/userlist.txt
+          printf '"%s" "%s"\n' "$DATABASES_USER" "$DATABASES_PASSWORD" > /etc/pgbouncer/userlist.txt
           echo "✅ PGBouncer configured for YugabyteDB at $DATABASES_HOST:$DATABASES_PORT"
           exec pgbouncer /etc/pgbouncer/pgbouncer.ini
       - name: backstage
@@ -2136,20 +2136,9 @@ spec:
                 else
                   echo "❌ Source config file /app/app-config.yaml not found";
                 fi &&
-                echo "🔧 Forcing pure JavaScript PostgreSQL mode for YugabyteDB..." &&
-                # Use the most aggressive approach to force pure JS mode
+                echo "🔧 Using PGBouncer sidecar for YugabyteDB connectivity..." &&
                 export NODE_ENV=production &&
-                export NODE_PG_FORCE_NATIVE=false &&
-                export DISABLE_PG_NATIVE=true &&
-                export PG_FORCE_NATIVE=false &&
-                # Remove any native directories that might exist  
-                find /app -name "native" -type d -path "*/pg/*" -exec rm -rf {} + 2>/dev/null || true &&
-                find /app -name "*native*" -path "*/pg/*" -exec rm -f {} + 2>/dev/null || true &&
-                # Create stub files to prevent native loading
-                mkdir -p /app/node_modules/pg/lib 2>/dev/null || true &&
-                echo "module.exports = null;" > /app/node_modules/pg/lib/native.js 2>/dev/null || true &&
-                echo "throw new Error('Native bindings disabled');" > /app/node_modules/pg/lib/native/index.js 2>/dev/null || true &&
-                echo "✅ Pure JavaScript PostgreSQL mode enforced for YugabyteDB" &&
+                echo "✅ Connecting to YugabyteDB via PGBouncer localhost:6432" &&
                 exec node "$BACKEND_JS";
               else
                 echo "❌ Bundle extraction failed - no backend entry point found anywhere" &&
