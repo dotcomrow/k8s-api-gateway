@@ -1243,15 +1243,8 @@ data:
         credentials: true
       database:
         client: pg
-        connection:
-          host: $POSTGRES_HOST
-          port: $POSTGRES_PORT
-          user: $POSTGRES_USER
-          password: $POSTGRES_PASSWORD
-          database: $POSTGRES_DB
-          ssl: false
-          # Force search_path at connection level, remove public access
-          options: "-c search_path=backstage"
+        # Use connection string format to enforce schema in URL
+        connection: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=backstage&options=-c%20search_path%3Dbackstage"
         # Use schema-based isolation within single database (YugabyteDB compatible)
         pluginDivisionMode: 'schema'
         ensureExists: false
@@ -1291,31 +1284,9 @@ data:
         - host: github.com
           token: <path:secret/data/BACKSTAGE_GITHUB_PAT#value>
 
-    # Merged auth configuration with database override
+    # Auth configuration - rely on main database config with environment overrides
     auth:
       environment: development
-      # Force auth service to use backstage schema
-      database:
-        client: pg
-        connection:
-          host: $POSTGRES_HOST
-          port: $POSTGRES_PORT
-          user: $POSTGRES_USER
-          password: $POSTGRES_PASSWORD
-          database: $POSTGRES_DB
-          ssl: false
-          options: "-c search_path=backstage"
-          schema: "backstage"
-        # Use schema-based isolation within single database (YugabyteDB compatible)
-        pluginDivisionMode: 'schema'
-        ensureExists: false
-        searchPath: ['backstage']
-        knexConfig:
-          migrations: false
-          schemaName: 'backstage'
-          pool:
-            min: 1
-            max: 3
       providers:
         github:
           development:
@@ -1992,6 +1963,16 @@ spec:
           value: "UTF8"
         - name: PGSEARCH_PATH
           value: "backstage"
+        # Core auth service schema enforcement
+        - name: BACKSTAGE_BACKEND_AUTH_KEYS_SCHEMA
+          value: "backstage"
+        - name: KNEX_DEFAULT_SCHEMA
+          value: "backstage"
+        # Additional Node.js pg client schema enforcement
+        - name: PGSCHEMA_DEFAULT
+          value: "backstage"
+        - name: NODE_PG_FORCE_NATIVE
+          value: "false"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
         # Disable Backstage migrations - handled by migration coordinator
