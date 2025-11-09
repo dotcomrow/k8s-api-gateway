@@ -1252,8 +1252,6 @@ data:
           ssl: false
           # Force search_path at connection level
           options: "-c search_path=backstage"
-          # Try setting schema at connection level
-          searchPath: ['backstage']
         # Use schema-based isolation within single database (YugabyteDB compatible)
         pluginDivisionMode: 'schema'
         ensureExists: false
@@ -1280,22 +1278,6 @@ data:
           # Additional migration disabling
           migrationsTableName: false
 
-    # Auth service specific configuration to override schema selection
-    auth:
-      # Force auth service to use backstage schema
-      database:
-        connection:
-          host: $POSTGRES_HOST
-          port: $POSTGRES_PORT
-          user: $POSTGRES_USER
-          password: $POSTGRES_PASSWORD
-          database: $POSTGRES_DB
-          ssl: false
-          options: "-c search_path=backstage"
-        knexConfig:
-          migrations: false
-          schemaName: 'backstage'
-
     # TechDocs configuration to fix missing config error
     techdocs:
       builder: 'local'
@@ -1309,8 +1291,22 @@ data:
         - host: github.com
           token: <path:secret/data/BACKSTAGE_GITHUB_PAT#value>
 
+    # Merged auth configuration with database override
     auth:
       environment: development
+      # Force auth service to use backstage schema
+      database:
+        connection:
+          host: $POSTGRES_HOST
+          port: $POSTGRES_PORT
+          user: $POSTGRES_USER
+          password: $POSTGRES_PASSWORD
+          database: $POSTGRES_DB
+          ssl: false
+          options: "-c search_path=backstage"
+        knexConfig:
+          migrations: false
+          schemaName: 'backstage'
       providers:
         github:
           development:
