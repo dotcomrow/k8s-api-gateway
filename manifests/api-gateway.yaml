@@ -1241,6 +1241,10 @@ data:
         origin: http://localhost:3000
         methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
         credentials: true
+      # Disable automatic migrations - handled by migration coordinator
+      database:
+        migrations:
+          skip: true
       database:
         client: pg
         connection:
@@ -1265,11 +1269,13 @@ data:
             createTimeoutMillis: 60000
             destroyTimeoutMillis: 10000
             idleTimeoutMillis: 60000
-          # YugabyteDB-specific settings for concurrent migration handling
+          # YugabyteDB-specific settings - migrations pre-created by coordinator
           migrations:
-            disableTransactions: false
+            disableTransactions: true
             tableName: 'knex_migrations'
             schemaName: 'backstage'
+            # Skip migration running - tables already exist
+            disableMigrationsListValidation: true
           # Prevent concurrent migrations by serializing database operations
           acquireConnectionTimeout: 120000
           # YugabyteDB compatibility settings
@@ -1668,7 +1674,8 @@ spec:
                 -- Set session isolation level
                 SET SESSION default_transaction_isolation = 'read committed';
                 
-                -- Create migration tracking table with proper settings
+                -- Create all Backstage plugin migration tables to prevent concurrent conflicts
+                -- Core Knex migration tables
                 CREATE TABLE IF NOT EXISTS backstage.knex_migrations (
                   id SERIAL PRIMARY KEY,
                   name VARCHAR(255),
@@ -1680,6 +1687,135 @@ spec:
                   index SERIAL PRIMARY KEY,
                   is_locked INTEGER
                 );
+                
+                -- Backstage auth/keys tables (used by multiple plugins)
+                CREATE TABLE IF NOT EXISTS backstage.backstage_backend_public_keys__knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.backstage_backend_public_keys__knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER
+                );
+                
+                -- Create the actual keys table that plugins need
+                CREATE TABLE IF NOT EXISTS backstage.backstage_backend_public_keys__keys (
+                  id VARCHAR(255) PRIMARY KEY,
+                  key TEXT NOT NULL,
+                  expires_at TIMESTAMPTZ,
+                  created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                -- Catalog plugin tables
+                CREATE TABLE IF NOT EXISTS backstage.catalog__knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.catalog__knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER
+                );
+                
+                -- Search plugin tables
+                CREATE TABLE IF NOT EXISTS backstage.search__knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.search__knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER
+                );
+                
+                -- Scaffolder plugin tables
+                CREATE TABLE IF NOT EXISTS backstage.scaffolder__knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.scaffolder__knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER
+                );
+                
+                -- Techdocs plugin tables
+                CREATE TABLE IF NOT EXISTS backstage.techdocs__knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.techdocs__knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER
+                );
+                
+                -- Notifications plugin tables
+                CREATE TABLE IF NOT EXISTS backstage.notifications__knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.notifications__knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER
+                );
+                
+                -- Signals plugin tables
+                CREATE TABLE IF NOT EXISTS backstage.signals__knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.signals__knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER
+                );
+                
+                -- Permission plugin tables
+                CREATE TABLE IF NOT EXISTS backstage.permission__knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.permission__knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER
+                );
+                
+                -- Kubernetes plugin tables
+                CREATE TABLE IF NOT EXISTS backstage.kubernetes__knex_migrations (
+                  id SERIAL PRIMARY KEY,
+                  name VARCHAR(255),
+                  batch INTEGER,
+                  migration_time TIMESTAMPTZ DEFAULT NOW()
+                );
+                
+                CREATE TABLE IF NOT EXISTS backstage.kubernetes__knex_migrations_lock (
+                  index SERIAL PRIMARY KEY,
+                  is_locked INTEGER
+                );
+                
+                -- Set proper permissions on all tables
+                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA backstage TO backstage_app;
+                GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA backstage TO backstage_app;
               "
               
               # Mark migration as completed
