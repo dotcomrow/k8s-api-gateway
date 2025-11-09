@@ -1684,7 +1684,10 @@ spec:
               # Verify the table was created
               echo "✅ Verifying auth keys table creation..."
               psql -c "SELECT 'Auth keys table created successfully' as status, COUNT(*) as table_exists FROM information_schema.tables WHERE table_schema='backstage' AND table_name='backstage_backend_public_keys__keys';"
-                
+              
+              # Create additional tables in separate commands for better error handling
+              echo "🔧 Creating migration tracking tables..."
+              psql -c "
                 -- Create main migration tracking tables
                 CREATE TABLE IF NOT EXISTS backstage.knex_migrations (
                   id SERIAL PRIMARY KEY,
@@ -1697,7 +1700,10 @@ spec:
                   index SERIAL PRIMARY KEY,
                   is_locked INTEGER DEFAULT 0
                 );
-                
+              "
+              
+              echo "🔧 Creating plugin-specific tables..."
+              psql -c "
                 -- Create static assets cache table for app plugin
                 CREATE TABLE IF NOT EXISTS backstage.static_assets_cache (
                   path VARCHAR(255) PRIMARY KEY,
