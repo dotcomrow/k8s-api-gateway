@@ -1250,8 +1250,9 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
-          # Set backstage as primary schema in search path for unqualified table creation
-          options: "-c search_path=backstage,backstage_plugin_app,backstage_plugin_proxy,backstage_plugin_scaffolder,backstage_plugin_techdocs,backstage_plugin_auth,backstage_plugin_catalog,backstage_plugin_permission,backstage_plugin_search,backstage_plugin_kubernetes,backstage_plugin_notifications,backstage_plugin_signals"
+          # Set backstage as primary schema and force all DDL operations to backstage schema
+          options: "-c search_path=backstage,backstage_plugin_app,backstage_plugin_proxy,backstage_plugin_scaffolder,backstage_plugin_techdocs,backstage_plugin_auth,backstage_plugin_catalog,backstage_plugin_permission,backstage_plugin_search,backstage_plugin_kubernetes,backstage_plugin_notifications,backstage_plugin_signals -c default_table_access_method=heap"
+          schema: "backstage"
         # Use schema-based isolation within single database (YugabyteDB compatible)
         pluginDivisionMode: 'schema'
         ensureExists: false
@@ -1265,13 +1266,18 @@ data:
             createTimeoutMillis: 60000
             destroyTimeoutMillis: 10000
             idleTimeoutMillis: 60000
-          # YugabyteDB-specific settings - completely disable migrations
+          # YugabyteDB-specific settings - completely disable ALL migrations
           migrations: false
+          disableTransactions: true
+          # Force all knex operations to use backstage schema by default
+          schemaName: 'backstage'
           # Prevent concurrent migrations by serializing database operations
           acquireConnectionTimeout: 120000
           # YugabyteDB compatibility settings
           postProcessResponse: null
           wrapIdentifier: null
+          # Additional migration disabling
+          migrationsTableName: false
 
     # TechDocs configuration to fix missing config error
     techdocs:
@@ -1695,9 +1701,14 @@ spec:
                 );
               "
               
-              # Verify the table was created
-              echo "✅ Verifying auth keys table creation..."
+              # Verify ALL auth tables were created
+              echo "✅ Verifying auth tables creation..."
               psql -c "SELECT 'Auth keys table created successfully' as status, COUNT(*) as table_exists FROM information_schema.tables WHERE table_schema='backstage' AND table_name='backstage_backend_public_keys__keys';"
+              psql -c "SELECT 'Auth knex migrations table status' as status, COUNT(*) as table_exists FROM information_schema.tables WHERE table_schema='backstage' AND table_name='backstage_backend_public_keys__knex_migrations';"
+              psql -c "SELECT 'Auth knex lock table status' as status, COUNT(*) as table_exists FROM information_schema.tables WHERE table_schema='backstage' AND table_name='backstage_backend_public_keys__knex_migrations_lock';"
+              
+              echo "📋 Listing all tables in backstage schema:"
+              psql -c "SELECT schemaname, tablename FROM pg_tables WHERE schemaname='backstage' ORDER BY tablename;"
               
               # Create additional tables in separate commands for better error handling
               echo "🔧 Creating migration tracking tables..."
@@ -1851,6 +1862,24 @@ spec:
                 SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM backstage.backstage_backend_public_keys__knex_migrations_lock);
               " || echo "Auth keys migration records may already exist"
               
+              echo "🔍 Final verification - checking all critical tables exist..."
+              # Final verification that all critical tables exist
+              AUTH_KEYS_COUNT=$(psql -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='backstage' AND table_name='backstage_backend_public_keys__keys';")
+              AUTH_MIGRATIONS_COUNT=$(psql -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='backstage' AND table_name='backstage_backend_public_keys__knex_migrations';")
+              MAIN_MIGRATIONS_COUNT=$(psql -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='backstage' AND table_name='knex_migrations';")
+              
+              echo "📊 Table verification results:"
+              echo "  - Auth keys table: $AUTH_KEYS_COUNT (should be 1)"
+              echo "  - Auth migrations table: $AUTH_MIGRATIONS_COUNT (should be 1)"  
+              echo "  - Main migrations table: $MAIN_MIGRATIONS_COUNT (should be 1)"
+              
+              if [ "$AUTH_KEYS_COUNT" = "1" ] && [ "$AUTH_MIGRATIONS_COUNT" = "1" ] && [ "$MAIN_MIGRATIONS_COUNT" = "1" ]; then
+                echo "✅ All critical tables verified successfully"
+              else
+                echo "❌ WARNING: Some tables are missing - Backstage may fail to start"
+                psql -c "SELECT schemaname, tablename FROM pg_tables WHERE schemaname='backstage' ORDER BY tablename;"
+              fi
+              
               # Release the advisory lock
               psql -c "SELECT pg_advisory_unlock(12345);"
               
@@ -1916,6 +1945,11 @@ spec:
           value: "backstage"
         - name: POSTGRES_SCHEMA
           value: "backstage"
+        # Force Backstage to use backstage schema as default
+        - name: BACKSTAGE_DATABASE_SCHEMA
+          value: "backstage"
+        - name: KNEX_SCHEMA
+          value: "backstage"
         # YugabyteDB compatibility settings with backstage as primary schema
         - name: PGOPTIONS
           value: "-c search_path=backstage,backstage_plugin_app,backstage_plugin_proxy,backstage_plugin_scaffolder,backstage_plugin_techdocs,backstage_plugin_auth,backstage_plugin_catalog,backstage_plugin_permission,backstage_plugin_search,backstage_plugin_kubernetes,backstage_plugin_notifications,backstage_plugin_signals"
@@ -1926,6 +1960,11 @@ spec:
           value: "true"
         - name: NODE_CONFIG_STRICT_MODE
           value: "false"
+        # Force disable all knex migration attempts
+        - name: KNEX_DISABLE_MIGRATIONS
+          value: "true"
+        - name: BACKSTAGE_DISABLE_MIGRATIONS
+          value: "true"
         - name: GITHUB_TEAM
           value: "backstage_admin_access"
         command: ["/bin/sh", "-c"]
