@@ -1151,8 +1151,8 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
-        # Disable plugin database isolation - use single database for all plugins
-        pluginDivisionMode: 'schema'
+        # Completely disable plugin database isolation
+        ensureExists: false
 
     integrations:
       github:
