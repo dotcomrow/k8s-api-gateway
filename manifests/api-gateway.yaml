@@ -2000,6 +2000,8 @@ spec:
         # Absolutely force pure JS pg driver
         - name: PG_NATIVE
           value: "false"
+        - name: DISABLE_PG_NATIVE
+          value: "1"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
         # Disable Backstage migrations - handled by migration coordinator
@@ -2099,9 +2101,10 @@ spec:
                   sed -i 's/"pg-native"[^,}]*[,}]/}/g' "/app/node_modules/pg/package.json" 2>/dev/null || true;
                 fi &&
                 echo "✅ Native pg components removed - pure JavaScript driver enforced" &&
-                # Create a simple module loader that prevents pg-native loading
-                echo "const Module=require('module');const orig=Module.prototype.require;Module.prototype.require=function(id){if(id==='pg-native'||id.includes('pg-native')){throw new Error('pg-native disabled');}return orig.call(this,id);};console.log('pg-native loading blocked');" > /app/block-native.js &&
-                exec node -r /app/block-native.js "$BACKEND_JS";
+                # Use NODE_OPTIONS to disable native pg loading attempts
+                export NODE_OPTIONS="--max-old-space-size=14336" &&
+                export DISABLE_PG_NATIVE=1 &&
+                exec node "$BACKEND_JS";
               else
                 echo "❌ Bundle extraction failed - no backend entry point found anywhere" &&
                 echo "📁 Complete directory structure:" &&
@@ -2123,8 +2126,8 @@ spec:
               fi &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
               rm -rf "/app/node_modules/pg/lib/native" 2>/dev/null || true &&
-              echo "const Module=require('module');const orig=Module.prototype.require;Module.prototype.require=function(id){if(id==='pg-native'||id.includes('pg-native')){throw new Error('pg-native disabled');}return orig.call(this,id);};console.log('pg-native loading blocked');" > /app/block-native.js &&
-              exec node -r /app/block-native.js packages/backend/dist/index.js;
+              export DISABLE_PG_NATIVE=1 &&
+              exec node packages/backend/dist/index.js;
             elif [ -f "packages/backend/dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from packages/backend/dist/index.cjs.js" &&
               echo "🔧 Setting up config file with environment variable substitution..." &&
@@ -2140,32 +2143,32 @@ spec:
               fi &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
               rm -rf "/app/node_modules/pg/lib/native" 2>/dev/null || true &&
-              echo "const Module=require('module');const orig=Module.prototype.require;Module.prototype.require=function(id){if(id==='pg-native'||id.includes('pg-native')){throw new Error('pg-native disabled');}return orig.call(this,id);};console.log('pg-native loading blocked');" > /app/block-native.js &&
-              exec node -r /app/block-native.js packages/backend/dist/index.cjs.js;
+              export DISABLE_PG_NATIVE=1 &&
+              exec node packages/backend/dist/index.cjs.js;
             elif [ -f "dist/packages/backend/index.js" ]; then
               echo "✅ Starting pre-built backend from dist/packages/backend/index.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
               rm -rf "/app/node_modules/pg/lib/native" 2>/dev/null || true &&
-              echo "const Module=require('module');const orig=Module.prototype.require;Module.prototype.require=function(id){if(id==='pg-native'||id.includes('pg-native')){throw new Error('pg-native disabled');}return orig.call(this,id);};console.log('pg-native loading blocked');" > /app/block-native.js &&
-              exec node -r /app/block-native.js dist/packages/backend/index.js;
+              export DISABLE_PG_NATIVE=1 &&
+              exec node dist/packages/backend/index.js;
             elif [ -f "dist/packages/backend/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from dist/packages/backend/index.cjs.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
               rm -rf "/app/node_modules/pg/lib/native" 2>/dev/null || true &&
-              echo "const Module=require('module');const orig=Module.prototype.require;Module.prototype.require=function(id){if(id==='pg-native'||id.includes('pg-native')){throw new Error('pg-native disabled');}return orig.call(this,id);};console.log('pg-native loading blocked');" > /app/block-native.js &&
-              exec node -r /app/block-native.js dist/packages/backend/index.cjs.js;
+              export DISABLE_PG_NATIVE=1 &&
+              exec node dist/packages/backend/index.cjs.js;
             elif [ -f "dist/index.js" ]; then
               echo "✅ Starting pre-built backend from dist/index.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
               rm -rf "/app/node_modules/pg/lib/native" 2>/dev/null || true &&
-              echo "const Module=require('module');const orig=Module.prototype.require;Module.prototype.require=function(id){if(id==='pg-native'||id.includes('pg-native')){throw new Error('pg-native disabled');}return orig.call(this,id);};console.log('pg-native loading blocked');" > /app/block-native.js &&
-              exec node -r /app/block-native.js dist/index.js;
+              export DISABLE_PG_NATIVE=1 &&
+              exec node dist/index.js;
             elif [ -f "dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from dist/index.cjs.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
               rm -rf "/app/node_modules/pg/lib/native" 2>/dev/null || true &&
-              echo "const Module=require('module');const orig=Module.prototype.require;Module.prototype.require=function(id){if(id==='pg-native'||id.includes('pg-native')){throw new Error('pg-native disabled');}return orig.call(this,id);};console.log('pg-native loading blocked');" > /app/block-native.js &&
-              exec node -r /app/block-native.js dist/index.cjs.js;
+              export DISABLE_PG_NATIVE=1 &&
+              exec node dist/index.cjs.js;
             else
               echo "❌ ERROR: No pre-built backend found!" &&
               echo "📁 Backend dist contents:" &&
