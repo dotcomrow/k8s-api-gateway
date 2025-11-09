@@ -1250,9 +1250,8 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
-          # Force schema isolation and enable READ COMMITTED isolation for YugabyteDB
-          # (Setting yb_enable_read_committed_isolation=true is safe even if enabled server-wide)
-          options: '-c search_path=backstage -c yb_enable_read_committed_isolation=true -c default_transaction_isolation=\'read committed\''
+          # Force schema isolation - READ COMMITTED now enabled at YugabyteDB server level
+          options: '-c search_path=backstage -c default_transaction_isolation=\'read committed\''
         # Use single database with plugin schema isolation
         pluginDivisionMode: 'schema'
         ensureExists: true
@@ -1661,11 +1660,12 @@ spec:
                 echo "✅ READ COMMITTED isolation already enabled server-wide"
               else
                 echo "🔧 Enabling READ COMMITTED isolation for this session"
+                # Only set it if not enabled server-wide
+                psql -c "SET yb_enable_read_committed_isolation = true;" 2>/dev/null || echo "⚠️ Cannot set yb_enable_read_committed_isolation (may need server-level setting)"
               fi
               
               psql -c "
-                -- Enable READ COMMITTED isolation for YugabyteDB (safe even if already enabled server-wide)
-                SET yb_enable_read_committed_isolation = true;
+                -- Set session isolation level
                 SET SESSION default_transaction_isolation = 'read committed';
                 
                 -- Create migration tracking table with proper settings
@@ -1740,9 +1740,9 @@ spec:
           value: "5433"
         - name: POSTGRES_DB
           value: "backstage"
-        # YugabyteDB compatibility settings
+        # YugabyteDB compatibility settings (READ COMMITTED now enabled server-wide)
         - name: PGOPTIONS
-          value: "-c yb_enable_read_committed_isolation=true -c default_transaction_isolation=read_committed -c search_path=backstage"
+          value: "-c default_transaction_isolation=read_committed -c search_path=backstage"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
         - name: GITHUB_TEAM
