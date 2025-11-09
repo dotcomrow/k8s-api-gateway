@@ -1250,9 +1250,10 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
-          # Set backstage as primary schema and force all DDL operations to backstage schema
-          options: "-c search_path=backstage,backstage_plugin_app,backstage_plugin_proxy,backstage_plugin_scaffolder,backstage_plugin_techdocs,backstage_plugin_auth,backstage_plugin_catalog,backstage_plugin_permission,backstage_plugin_search,backstage_plugin_kubernetes,backstage_plugin_notifications,backstage_plugin_signals -c default_table_access_method=heap"
-          schema: "backstage"
+          # Force search_path at connection level
+          options: "-c search_path=backstage"
+          # Try setting schema at connection level
+          searchPath: ['backstage']
         # Use schema-based isolation within single database (YugabyteDB compatible)
         pluginDivisionMode: 'schema'
         ensureExists: false
@@ -1278,6 +1279,22 @@ data:
           wrapIdentifier: null
           # Additional migration disabling
           migrationsTableName: false
+
+    # Auth service specific configuration to override schema selection
+    auth:
+      # Force auth service to use backstage schema
+      database:
+        connection:
+          host: $POSTGRES_HOST
+          port: $POSTGRES_PORT
+          user: $POSTGRES_USER
+          password: $POSTGRES_PASSWORD
+          database: $POSTGRES_DB
+          ssl: false
+          options: "-c search_path=backstage"
+        knexConfig:
+          migrations: false
+          schemaName: 'backstage'
 
     # TechDocs configuration to fix missing config error
     techdocs:
@@ -1950,9 +1967,12 @@ spec:
           value: "backstage"
         - name: KNEX_SCHEMA
           value: "backstage"
-        # YugabyteDB compatibility settings with backstage as primary schema
+        # YugabyteDB compatibility settings - force backstage as only schema
         - name: PGOPTIONS
-          value: "-c search_path=backstage,backstage_plugin_app,backstage_plugin_proxy,backstage_plugin_scaffolder,backstage_plugin_techdocs,backstage_plugin_auth,backstage_plugin_catalog,backstage_plugin_permission,backstage_plugin_search,backstage_plugin_kubernetes,backstage_plugin_notifications,backstage_plugin_signals"
+          value: "-c search_path=backstage -c default_schema=backstage"
+        # Also try setting the default schema via environment
+        - name: PGSCHEMA
+          value: "backstage"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
         # Disable Backstage migrations - handled by migration coordinator
