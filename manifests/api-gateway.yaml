@@ -1252,8 +1252,8 @@ data:
           ssl: false
           # Force schema isolation - READ COMMITTED now enabled at YugabyteDB server level
           options: "-c search_path=backstage"
-        # Use single database without plugin schema isolation to prevent DDL conflicts
-        pluginDivisionMode: 'database'
+        # Use schema-based isolation within single database (YugabyteDB compatible)
+        pluginDivisionMode: 'schema'
         ensureExists: false
         # Force all operations to backstage schema only
         searchPath: ['backstage']
@@ -1702,7 +1702,47 @@ spec:
                 );
               "
               
-              echo "🔧 Creating plugin-specific tables..."
+              echo "🔧 Creating plugin-specific schemas and essential tables..."
+              
+              # Create plugin schemas (Backstage expects these with pluginDivisionMode: 'schema')
+              psql -c "
+                -- Create plugin-specific schemas
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_app;
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_proxy;
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_scaffolder;
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_techdocs;
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_auth;
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_catalog;
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_permission;
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_search;
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_kubernetes;
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_notifications;
+                CREATE SCHEMA IF NOT EXISTS backstage_plugin_signals;
+              "
+              
+              echo "🔧 Creating schema-specific migration tables..."
+              # Create knex tables in each plugin schema
+              for schema in backstage backstage_plugin_app backstage_plugin_proxy backstage_plugin_scaffolder backstage_plugin_techdocs backstage_plugin_auth backstage_plugin_catalog backstage_plugin_permission backstage_plugin_search backstage_plugin_kubernetes backstage_plugin_notifications backstage_plugin_signals; do
+                psql -c "
+                  CREATE TABLE IF NOT EXISTS ${schema}.knex_migrations (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255),
+                    batch INTEGER,
+                    migration_time TIMESTAMPTZ DEFAULT NOW()
+                  );
+                  
+                  CREATE TABLE IF NOT EXISTS ${schema}.knex_migrations_lock (
+                    index SERIAL PRIMARY KEY,
+                    is_locked INTEGER DEFAULT 0
+                  );
+                  
+                  -- Insert lock record if not exists
+                  INSERT INTO ${schema}.knex_migrations_lock (is_locked) 
+                  SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM ${schema}.knex_migrations_lock);
+                " || echo "Tables for $schema may already exist"
+              done
+              
+              echo "🔧 Creating shared tables in main backstage schema..."
               psql -c "
                 -- Create static assets cache table for app plugin
                 CREATE TABLE IF NOT EXISTS backstage.static_assets_cache (
@@ -1748,16 +1788,16 @@ spec:
                 );
               "
               
-              # Ensure lock table has entries and set permissions
-              psql -c "
-                INSERT INTO backstage.knex_migrations_lock (is_locked) 
-                SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM backstage.knex_migrations_lock);
-                
-                -- Set comprehensive permissions
-                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA backstage TO backstage_app;
-                GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA backstage TO backstage_app;
-                GRANT USAGE ON SCHEMA backstage TO backstage_app;
-              "
+              echo "🔧 Setting comprehensive permissions for all schemas..."
+              # Grant permissions to all schemas
+              for schema in backstage backstage_plugin_app backstage_plugin_proxy backstage_plugin_scaffolder backstage_plugin_techdocs backstage_plugin_auth backstage_plugin_catalog backstage_plugin_permission backstage_plugin_search backstage_plugin_kubernetes backstage_plugin_notifications backstage_plugin_signals; do
+                psql -c "
+                  GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schema} TO backstage_app;
+                  GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${schema} TO backstage_app;
+                  GRANT USAGE ON SCHEMA ${schema} TO backstage_app;
+                  GRANT CREATE ON SCHEMA ${schema} TO backstage_app;
+                " || echo "Permissions for $schema may already be set"
+              done
               
               # Create the index separately to avoid complex syntax
               psql -c "CREATE INDEX IF NOT EXISTS static_asset_cache_last_modified_at_idx ON backstage.static_assets_cache (last_modified_at);" || echo "Index may already exist"
