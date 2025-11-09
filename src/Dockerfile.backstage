@@ -71,6 +71,23 @@ RUN yarn add prop-types typescript @types/react @types/react-dom --dev || \
     npm install prop-types typescript @types/react @types/react-dom --save-dev --legacy-peer-deps || \
     echo "Warning: Could not install additional dependencies"
 
+# Install pure JavaScript PostgreSQL client and remove pg-native
+RUN echo "🔧 Installing pure JavaScript PostgreSQL client for YugabyteDB compatibility..." && \
+    npm install pg@8.8.0 --no-optional --legacy-peer-deps || \
+    yarn add pg@8.8.0 || \
+    echo "Warning: Could not install pg client" && \
+    echo "🔧 Removing pg-native to prevent native binding issues..." && \
+    rm -rf node_modules/pg-native 2>/dev/null || true && \
+    rm -rf */node_modules/pg-native 2>/dev/null || true && \
+    echo "🔧 Patching pg library to force pure JavaScript mode..." && \
+    if [ -f "node_modules/pg/lib/index.js" ]; then \
+        cp node_modules/pg/lib/index.js node_modules/pg/lib/index.js.backup && \
+        sed -i 's/var native = null/var native = null; \/\/ FORCED PURE JS MODE/g' node_modules/pg/lib/index.js && \
+        sed -i '/require.*pg-native/d' node_modules/pg/lib/index.js && \
+        echo "✅ pg library patched for pure JavaScript mode"; \
+    fi && \
+    echo "✅ Pure JavaScript PostgreSQL client configured"
+
 # Build the backend - MUST succeed for production image
 RUN if [ -d "packages/backend" ]; then \
         echo "Building backend..." && \
@@ -132,8 +149,8 @@ RUN rm -rf /tmp/* ~/.npm ~/.cache /var/cache/apk/* && \
 # Production stage - fully built and ready to run
 FROM node:18-alpine AS runtime
 
-# Install only minimal runtime dependencies
-RUN apk add --no-cache git curl
+# Install only minimal runtime dependencies including socat for TCP proxy
+RUN apk add --no-cache git curl socat
 
 # Enable corepack for proper yarn version
 RUN corepack enable
