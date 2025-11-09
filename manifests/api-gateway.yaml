@@ -343,69 +343,40 @@ spec:
               EOSQL
 
               psql -h "$PGHOST" -p "$PGPORT" -U "$VAULTADMIN_USER" -d "$DB" <<EOSQL
+              -- Create main backstage schema
               CREATE SCHEMA IF NOT EXISTS backstage AUTHORIZATION $ROLE_OWNER;
-              ALTER ROLE $ROLE_OWNER SET search_path = backstage;
+              
+              -- Set up database-level permissions for backstage user
               GRANT CONNECT ON DATABASE $DB TO $ROLE_OWNER;
+              GRANT CREATE ON DATABASE $DB TO $ROLE_OWNER;
+              GRANT TEMPORARY ON DATABASE $DB TO $ROLE_OWNER;
+              
+              -- Set up schema permissions for main backstage schema
+              GRANT USAGE, CREATE ON SCHEMA backstage TO $ROLE_OWNER;
               GRANT USAGE, CREATE ON SCHEMA backstage TO $ROLE_GROUP;
+              
+              -- Set up default search path for backstage user (ONLY backstage schema)
+              ALTER ROLE $ROLE_OWNER SET search_path = backstage;
+              
+              -- Set up table and sequence permissions for existing objects in backstage schema
+              GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA backstage TO $ROLE_OWNER;
               GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA backstage TO $ROLE_GROUP;
+              GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA backstage TO $ROLE_OWNER;
               GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA backstage TO $ROLE_GROUP;
+              
+              -- Set up default privileges for future objects in backstage schema
+              ALTER DEFAULT PRIVILEGES IN SCHEMA backstage
+                GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_OWNER;
               ALTER DEFAULT PRIVILEGES IN SCHEMA backstage
                 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
               ALTER DEFAULT PRIVILEGES IN SCHEMA backstage
+                GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_OWNER;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA backstage
                 GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
+                
+              -- Grant role membership
+              GRANT $ROLE_GROUP TO $ROLE_OWNER;
               
-              -- Grant CREATE privilege on database so user can create plugin schemas
-              GRANT CREATE ON DATABASE $DB TO $ROLE_OWNER;
-              
-              -- Pre-create all plugin schemas to avoid permission issues
-              CREATE SCHEMA IF NOT EXISTS app AUTHORIZATION $ROLE_OWNER;
-              CREATE SCHEMA IF NOT EXISTS proxy AUTHORIZATION $ROLE_OWNER;
-              CREATE SCHEMA IF NOT EXISTS scaffolder AUTHORIZATION $ROLE_OWNER;
-              CREATE SCHEMA IF NOT EXISTS techdocs AUTHORIZATION $ROLE_OWNER;
-              CREATE SCHEMA IF NOT EXISTS auth AUTHORIZATION $ROLE_OWNER;
-              CREATE SCHEMA IF NOT EXISTS catalog AUTHORIZATION $ROLE_OWNER;
-              CREATE SCHEMA IF NOT EXISTS permission AUTHORIZATION $ROLE_OWNER;
-              CREATE SCHEMA IF NOT EXISTS search AUTHORIZATION $ROLE_OWNER;
-              CREATE SCHEMA IF NOT EXISTS kubernetes AUTHORIZATION $ROLE_OWNER;
-              CREATE SCHEMA IF NOT EXISTS notifications AUTHORIZATION $ROLE_OWNER;
-              CREATE SCHEMA IF NOT EXISTS signals AUTHORIZATION $ROLE_OWNER;
-              
-              -- Grant permissions on all plugin schemas
-              GRANT USAGE, CREATE ON SCHEMA app TO $ROLE_GROUP;
-              GRANT USAGE, CREATE ON SCHEMA proxy TO $ROLE_GROUP;
-              GRANT USAGE, CREATE ON SCHEMA scaffolder TO $ROLE_GROUP;
-              GRANT USAGE, CREATE ON SCHEMA techdocs TO $ROLE_GROUP;
-              GRANT USAGE, CREATE ON SCHEMA auth TO $ROLE_GROUP;
-              GRANT USAGE, CREATE ON SCHEMA catalog TO $ROLE_GROUP;
-              GRANT USAGE, CREATE ON SCHEMA permission TO $ROLE_GROUP;
-              GRANT USAGE, CREATE ON SCHEMA search TO $ROLE_GROUP;
-              GRANT USAGE, CREATE ON SCHEMA kubernetes TO $ROLE_GROUP;
-              GRANT USAGE, CREATE ON SCHEMA notifications TO $ROLE_GROUP;
-              GRANT USAGE, CREATE ON SCHEMA signals TO $ROLE_GROUP;
-              
-              -- Set default privileges for each plugin schema
-              ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA proxy GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA proxy GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA scaffolder GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA scaffolder GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA techdocs GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA techdocs GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA catalog GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA catalog GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA permission GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA permission GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA search GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA search GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA kubernetes GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA kubernetes GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA notifications GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA notifications GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA signals GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE_GROUP;
-              ALTER DEFAULT PRIVILEGES IN SCHEMA signals GRANT USAGE, SELECT ON SEQUENCES TO $ROLE_GROUP;
               EOSQL
 
               if ! vault secrets list -format=json | jq -e 'has("yugabyte-db/")' >/dev/null 2>&1; then
