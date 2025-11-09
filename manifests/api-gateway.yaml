@@ -1283,8 +1283,8 @@ spec:
                 if [ -f "/app/app-config.yaml" ]; then
                   echo "Source config exists at /app/app-config.yaml" &&
                   mkdir -p /app/packages/backend/dist &&
-                  echo "🔄 Processing config with envsubst..." &&
-                  envsubst < /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
+                  echo "🔄 Processing config with shell parameter expansion..." &&
+                  sed "s/\$POSTGRES_HOST/$POSTGRES_HOST/g; s/\$POSTGRES_PORT/$POSTGRES_PORT/g; s/\$POSTGRES_USER/$POSTGRES_USER/g; s/\$POSTGRES_PASSWORD/$POSTGRES_PASSWORD/g; s/\$POSTGRES_DB/$POSTGRES_DB/g; s/\$BACKEND_SECRET/$BACKEND_SECRET/g" /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
                   echo "✅ Config processed and copied to /app/packages/backend/dist/app-config.yaml" &&
                   echo "📄 Processed config database section:" &&
                   grep -A 10 "database:" /app/packages/backend/dist/app-config.yaml || echo "No database section found" &&
@@ -1305,8 +1305,8 @@ spec:
               if [ -f "/app/app-config.yaml" ]; then
                 echo "Source config exists at /app/app-config.yaml" &&
                 mkdir -p /app/packages/backend/dist &&
-                echo "🔄 Processing config with envsubst..." &&
-                envsubst < /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
+                echo "🔄 Processing config with sed substitution..." &&
+                sed "s/\$POSTGRES_HOST/$POSTGRES_HOST/g; s/\$POSTGRES_PORT/$POSTGRES_PORT/g; s/\$POSTGRES_USER/$POSTGRES_USER/g; s/\$POSTGRES_PASSWORD/$POSTGRES_PASSWORD/g; s/\$POSTGRES_DB/$POSTGRES_DB/g; s/\$BACKEND_SECRET/$BACKEND_SECRET/g" /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
                 echo "✅ Config processed and copied to /app/packages/backend/dist/app-config.yaml" &&
                 ls -la /app/packages/backend/dist/app-config.yaml || echo "Config copy verification failed";
               else
@@ -1319,8 +1319,8 @@ spec:
               if [ -f "/app/app-config.yaml" ]; then
                 echo "Source config exists at /app/app-config.yaml" &&
                 mkdir -p /app/packages/backend/dist &&
-                echo "🔄 Processing config with envsubst..." &&
-                envsubst < /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
+                echo "🔄 Processing config with sed substitution..." &&
+                sed "s/\$POSTGRES_HOST/$POSTGRES_HOST/g; s/\$POSTGRES_PORT/$POSTGRES_PORT/g; s/\$POSTGRES_USER/$POSTGRES_USER/g; s/\$POSTGRES_PASSWORD/$POSTGRES_PASSWORD/g; s/\$POSTGRES_DB/$POSTGRES_DB/g; s/\$BACKEND_SECRET/$BACKEND_SECRET/g" /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
                 echo "✅ Config processed and copied to /app/packages/backend/dist/app-config.yaml" &&
                 ls -la /app/packages/backend/dist/app-config.yaml || echo "Config copy verification failed";
               else
