@@ -1151,8 +1151,110 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
-        # Completely disable plugin database isolation
+        # Force all plugins to use the same database connection
+        pluginDivisionMode: 'schema'
         ensureExists: false
+        # Override plugin database configurations to prevent separate database usage
+        plugin:
+          app:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
+          auth:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
+          catalog:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
+          permission:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
+          scaffolder:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
+          search:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
+          techdocs:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
+          kubernetes:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
+          notifications:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
+          signals:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
+          proxy:
+            client: pg
+            connection:
+              host: $POSTGRES_HOST
+              port: $POSTGRES_PORT
+              user: $POSTGRES_USER
+              password: $POSTGRES_PASSWORD
+              database: $POSTGRES_DB
+              ssl: false
 
     integrations:
       github:
