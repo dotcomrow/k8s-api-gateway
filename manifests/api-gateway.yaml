@@ -1953,7 +1953,7 @@ spec:
           echo "✅ Starting PostgreSQL proxy: localhost:6432 -> $POSTGRES_HOST:$POSTGRES_PORT"
           exec socat TCP-LISTEN:6432,reuseaddr,fork TCP:$POSTGRES_HOST:$POSTGRES_PORT
       - name: backstage
-        image: ghcr.io/dotcomrow/backstage-image:ts-20251109-230146
+        image: ghcr.io/dotcomrow/backstage-image:ts-20251109-232224
         workingDir: /app
         ports:
         - containerPort: 7007
@@ -2008,6 +2008,16 @@ spec:
           value: "1"
         - name: PG_NATIVE_MAX_CONN
           value: "0"
+        # Additional comprehensive pg-native disabling
+        - name: PG_NATIVE
+          value: "false"
+        - name: DISABLE_PG_NATIVE
+          value: "true"
+        - name: FORCE_PG_JS
+          value: "true"
+        # Force knex/pg to use pure JS mode
+        - name: KNEX_PG_NATIVE
+          value: "false"
         # Force pg library to never attempt native loading
         - name: PG_NATIVE
           value: "false"
