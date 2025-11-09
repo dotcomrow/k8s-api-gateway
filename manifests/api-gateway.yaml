@@ -1246,6 +1246,7 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
+          schema: backstage
         # Force single database usage - disable all plugin isolation
         pluginDivisionMode: 'schema'
         ensureExists: false
