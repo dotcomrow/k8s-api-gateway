@@ -71,6 +71,64 @@ subjects:
   namespace: k8s-api-gateway
 ---
 # =========================
+# RBAC for Jobs to Access Secrets and Jobs
+# =========================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: k8s-api-gateway
+  name: job-secret-reader
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: default-job-secret-reader
+  namespace: k8s-api-gateway
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: k8s-api-gateway
+roleRef:
+  kind: Role
+  name: job-secret-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# Cross-namespace permission to read jobs in vault namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: vault
+  name: vault-job-reader
+rules:
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k8s-api-gateway-job-reader
+  namespace: vault
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: k8s-api-gateway
+roleRef:
+  kind: Role
+  name: vault-job-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# =========================
 # Vault and YugabyteDB Initialization Jobs
 # =========================
 apiVersion: batch/v1
