@@ -1572,16 +1572,14 @@ spec:
           
           echo "🔐 Migration Coordinator: Getting database credentials from Vault..."
           
-          # Check if vault token exists and get it
-          if [ -f /vault-token/token ]; then
-            export VAULT_TOKEN="$(cat /vault-token/token)"
+          # Check if vault token exists and get it (correct filename is VAULT_TOKEN)
+          if [ -f /vault-token/VAULT_TOKEN ]; then
+            export VAULT_TOKEN="$(cat /vault-token/VAULT_TOKEN)"
             echo "✅ Using vault root token"
           else
-            echo "❌ Vault token not found at /vault-token/token"
+            echo "❌ Vault token not found at /vault-token/VAULT_TOKEN"
             echo "📁 Available files in /vault-token/:"
             ls -la /vault-token/ 2>/dev/null || echo "Directory /vault-token/ does not exist"
-            echo "📁 Available mounted volumes:"
-            mount | grep vault || echo "No vault mounts found"
             exit 1
           fi
           
