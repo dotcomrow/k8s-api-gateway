@@ -1755,6 +1755,12 @@ spec:
               # Create the index separately to avoid complex syntax
               psql -c "CREATE INDEX IF NOT EXISTS static_asset_cache_last_modified_at_idx ON backstage.static_assets_cache (last_modified_at);" || echo "Index may already exist"
               
+              # First add unique constraint to migrations table, then insert fake records
+              psql -c "
+                -- Add unique constraint on name column
+                ALTER TABLE backstage.knex_migrations ADD CONSTRAINT knex_migrations_name_unique UNIQUE (name);
+              " || echo "Unique constraint may already exist"
+              
               # Insert fake migration records to satisfy Backstage validation
               psql -c "
                 INSERT INTO backstage.knex_migrations (name, batch) VALUES 
@@ -1766,7 +1772,7 @@ spec:
                 ('20210311110000_init.js', 1),
                 ('20210727180000_delta_update.js', 1)
                 ON CONFLICT (name) DO NOTHING;
-              "
+              " || echo "Migration records may already exist"
               
               # Release the advisory lock
               psql -c "SELECT pg_advisory_unlock(12345);"
