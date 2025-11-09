@@ -79,7 +79,7 @@ metadata:
   name: copy-api-gateway-vault-root-token
   namespace: vault
 spec:
-  backoffLimit: 0
+  backoffLimit: 3
   template:
     spec:
       serviceAccountName: default
@@ -265,60 +265,49 @@ spec:
           secret:
             secretName: vault-root-token
       initContainers:
-        - name: wait-vault-token-copy
+        - name: wait-vault-token-secret
           image: alpine/k8s:1.31.4
           command:
           - sh
           - -c
           - |
-            echo "🔧 Waiting for Vault token copy job to complete..."
+            echo "🔧 Waiting for vault-root-token secret to be available..."
             
-            TOKEN_JOB_NAME="copy-api-gateway-vault-root-token"
-            TOKEN_NAMESPACE="vault"
+            SECRET_NAME="vault-root-token"
+            SECRET_NAMESPACE="k8s-api-gateway"
             
-            echo "🔍 Waiting for job: $TOKEN_JOB_NAME in namespace: $TOKEN_NAMESPACE"
+            echo "🔍 Waiting for secret: $SECRET_NAME in namespace: $SECRET_NAMESPACE"
             
-            # Wait for the job to exist
+            # Wait for the secret to exist with the VAULT_TOKEN key
             RETRY_COUNT=0
-            MAX_RETRIES=60
+            MAX_RETRIES=120  # 10 minutes total wait time
             while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-              if kubectl get job "$TOKEN_JOB_NAME" -n "$TOKEN_NAMESPACE" >/dev/null 2>&1; then
-                echo "✅ Found job $TOKEN_JOB_NAME"
-                break
+              if kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" >/dev/null 2>&1; then
+                # Check if the secret has the VAULT_TOKEN key
+                if kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" -o jsonpath='{.data.VAULT_TOKEN}' 2>/dev/null | grep -q .; then
+                  echo "✅ Found secret $SECRET_NAME with VAULT_TOKEN"
+                  break
+                else
+                  echo "📄 Secret $SECRET_NAME exists but missing VAULT_TOKEN key"
+                fi
+              else
+                echo "📄 Secret $SECRET_NAME not found yet"
               fi
               
               RETRY_COUNT=$((RETRY_COUNT + 1))
-              echo "⏳ Waiting for job $TOKEN_JOB_NAME to be created... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+              echo "⏳ Waiting for vault token secret... (attempt $RETRY_COUNT/$MAX_RETRIES)"
               
               if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-                echo "❌ Job $TOKEN_JOB_NAME not found after $MAX_RETRIES attempts"
+                echo "❌ Secret $SECRET_NAME not ready after $MAX_RETRIES attempts"
+                echo "📋 Current secrets in namespace $SECRET_NAMESPACE:"
+                kubectl get secrets -n "$SECRET_NAMESPACE" || true
                 exit 1
               fi
               
               sleep 5
             done
             
-            # Wait for the job to complete successfully
-            while true; do
-              JOB_STATUS=$(kubectl get job "$TOKEN_JOB_NAME" -n "$TOKEN_NAMESPACE" -o json 2>/dev/null || echo '{}')
-              
-              SUCCEEDED=$(echo "$JOB_STATUS" | jq -r '.status.succeeded // 0')
-              FAILED=$(echo "$JOB_STATUS" | jq -r '.status.failed // 0')
-              
-              if [ "$SUCCEEDED" -gt 0 ]; then
-                echo "✅ Vault token copy job completed successfully"
-                break
-              elif [ "$FAILED" -gt 0 ]; then
-                echo "❌ Vault token copy job failed"
-                kubectl logs job/"$TOKEN_JOB_NAME" -n "$TOKEN_NAMESPACE" --tail=20 || true
-                exit 1
-              else
-                echo "⏳ Vault token copy job still running..."
-                sleep 10
-              fi
-            done
-            
-            echo "✅ Vault token is ready, proceeding with database setup"
+            echo "✅ Vault token secret is ready, proceeding with database setup"
       containers:
         - name: setup-role
           image: hashicorp/vault:1.15.4
