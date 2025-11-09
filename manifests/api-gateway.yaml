@@ -2093,9 +2093,9 @@ spec:
                 else
                   echo "❌ Source config file /app/app-config.yaml not found";
                 fi &&
-                echo "🔧 Creating simple pg-native hijack..." &&
-                # Create simple hijack using printf to avoid YAML escaping issues
-                printf 'const Module = require("module"); const orig = Module.prototype.require; Module.prototype.require = function(id) { if (id === "pg-native" || id === "./native" || id.endsWith("/native")) { console.log("🚫 Blocked:", id); return orig.call(this, "./client"); } return orig.apply(this, arguments); }; console.log("✅ pg-native hijack active");' > /app/hijack-pg-native.js &&
+                echo "🔧 Creating pg-native hijack script..." &&
+                # Use base64 to avoid all shell escaping issues
+                echo "Y29uc3QgTW9kdWxlID0gcmVxdWlyZSgnbW9kdWxlJyk7CmNvbnN0IG9yaWcgPSBNb2R1bGUucHJvdG90eXBlLnJlcXVpcmU7Ck1vZHVsZS5wcm90b3R5cGUucmVxdWlyZSA9IGZ1bmN0aW9uKGlkKSB7CiAgaWYgKGlkID09PSAncGctbmF0aXZlJyB8fCBpZCA9PT0gJy4vbmF0aXZlJyB8fCBpZC5lbmRzV2l0aCgnL25hdGl2ZScpKSB7CiAgICBjb25zb2xlLmxvZygn8J+aqyBCbG9ja2VkIHBnLW5hdGl2ZTonLCBpZCk7CiAgICByZXR1cm4gb3JpZy5jYWxsKHRoaXMsICcuL2NsaWVudCcpOwogIH0KICByZXR1cm4gb3JpZy5hcHBseSh0aGlzLCBhcmd1bWVudHMpOwp9Owpjb25zb2xlLmxvZygn4pyFIHBnLW5hdGl2ZSBoaWphY2sgYWN0aXZlJyk7" | base64 -d > /app/hijack-pg-native.js &&
                 # Set environment variables for pure JS mode  
                 export NODE_ENV=production &&
                 export DISABLE_PG_NATIVE=true &&
