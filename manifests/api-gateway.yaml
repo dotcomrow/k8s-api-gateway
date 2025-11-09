@@ -1425,23 +1425,73 @@ spec:
           
           # Wait for backstage database to exist
           echo "🔍 Step 3: Waiting for backstage database to be created..."
+          
+          # First, check if we can get vaultadmin credentials from Vault
+          VAULTADMIN_USER=""
+          VAULTADMIN_PASS=""
+          
+          # Try to get vault token and vaultadmin credentials
+          if kubectl get secret vault-root-token -n k8s-api-gateway -o jsonpath='{.data.VAULT_TOKEN}' 2>/dev/null | base64 -d > /tmp/vault_token 2>/dev/null; then
+            export VAULT_TOKEN="$(cat /tmp/vault_token)"
+            export VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
+            
+            # Install curl to access Vault API
+            apk add --no-cache curl jq 2>/dev/null
+            
+            echo "🔍 Trying to get vaultadmin credentials from Vault..."
+            VAULT_RESPONSE=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/secret/data/vaultadmin" 2>/dev/null || echo "")
+            if [ -n "$VAULT_RESPONSE" ]; then
+              VAULTADMIN_PASS=$(echo "$VAULT_RESPONSE" | jq -r '.data.data.password // .data.data.value // empty' 2>/dev/null || echo "")
+              if [ -n "$VAULTADMIN_PASS" ]; then
+                VAULTADMIN_USER="vaultadmin"
+                echo "✅ Got vaultadmin credentials from Vault"
+              fi
+            fi
+          fi
+          
           RETRY_COUNT=0
           MAX_RETRIES=120
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            # Try to connect to yugabyte database and check if backstage database exists
-            if PGPASSWORD='yugabyte' psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='$POSTGRES_DB'" 2>/dev/null | grep -q "1"; then
-              echo "✅ Backstage database exists"
-              
-              # Also check if backstage schema exists
-              if PGPASSWORD='yugabyte' psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U yugabyte -d "$POSTGRES_DB" -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='backstage'" 2>/dev/null | grep -q "1"; then
-                echo "✅ Backstage schema exists"
-                echo "✅ Database setup complete, Backstage can start"
-                exit 0
-              else
-                echo "📄 Database exists but backstage schema not ready yet"
+            DB_FOUND=false
+            
+            # Try multiple connection methods
+            for USER_PASS in "yugabyte:yugabyte" "$VAULTADMIN_USER:$VAULTADMIN_PASS"; do
+              if [ -z "$USER_PASS" ] || [ "$USER_PASS" = ":" ]; then
+                continue
               fi
-            else
-              echo "📄 Backstage database not created yet"
+              
+              USER=$(echo "$USER_PASS" | cut -d: -f1)
+              PASS=$(echo "$USER_PASS" | cut -d: -f2)
+              
+              echo "🔍 Trying connection with user: $USER"
+              
+              # Try to connect and check if backstage database exists
+              if PGPASSWORD="$PASS" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$USER" -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='$POSTGRES_DB'" 2>/dev/null | grep -q "1"; then
+                echo "✅ Backstage database exists (verified with user: $USER)"
+                DB_FOUND=true
+                
+                # Also check if backstage schema exists
+                if PGPASSWORD="$PASS" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$USER" -d "$POSTGRES_DB" -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='backstage'" 2>/dev/null | grep -q "1"; then
+                  echo "✅ Backstage schema exists"
+                  echo "✅ Database setup complete, Backstage can start"
+                  exit 0
+                else
+                  echo "📄 Database exists but backstage schema not ready yet"
+                fi
+                break
+              else
+                # Try to list databases for debugging
+                DB_LIST=$(PGPASSWORD="$PASS" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$USER" -d yugabyte -tAc "SELECT datname FROM pg_database" 2>/dev/null || echo "")
+                if [ -n "$DB_LIST" ]; then
+                  echo "📋 Available databases with user $USER: $DB_LIST"
+                else
+                  echo "❌ Cannot connect with user: $USER"
+                fi
+              fi
+            done
+            
+            if [ "$DB_FOUND" = "false" ]; then
+              echo "📄 Backstage database not found with any credentials"
             fi
             
             RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -1449,9 +1499,13 @@ spec:
             
             if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
               echo "❌ Database setup not complete after $MAX_RETRIES attempts"
-              echo "📋 Available databases:"
-              PGPASSWORD='yugabyte' psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U yugabyte -d yugabyte -c "\l" 2>/dev/null || echo "Could not list databases"
               exit 1
+            fi
+            
+            # Add debug info every 20 attempts
+            if [ $((RETRY_COUNT % 20)) -eq 0 ]; then
+              echo "🔍 Debug: Checking if database setup job exists..."
+              kubectl get jobs -n k8s-api-gateway 2>/dev/null || echo "Cannot list jobs"
             fi
             
             sleep 5
