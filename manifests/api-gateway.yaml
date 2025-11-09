@@ -475,11 +475,15 @@ spec:
               GRANT CREATE ON DATABASE $DB TO $ROLE_OWNER;
               GRANT TEMPORARY ON DATABASE $DB TO $ROLE_OWNER;
               
-              -- Set up schema permissions for main backstage schema
+              -- Set up schema permissions for main backstage schema ONLY
               GRANT USAGE, CREATE ON SCHEMA backstage TO $ROLE_OWNER;
               GRANT USAGE, CREATE ON SCHEMA backstage TO $ROLE_GROUP;
               
-              -- Set up default search path for backstage user (ONLY backstage schema)
+              -- Explicitly DENY public schema access to prevent accidental usage
+              REVOKE ALL ON SCHEMA public FROM $ROLE_OWNER;
+              REVOKE ALL ON SCHEMA public FROM $ROLE_GROUP;
+              
+              -- Set up search path to backstage schema ONLY
               ALTER ROLE $ROLE_OWNER SET search_path = backstage;
               
               -- Set up table and sequence permissions for existing objects in backstage schema
@@ -1246,12 +1250,14 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
+          # Force schema isolation - only use backstage schema
           options: '-c search_path=backstage'
-        # Force single database usage - disable all plugin isolation
+        # Use single database with plugin schema isolation
         pluginDivisionMode: 'schema'
-        ensureExists: false
+        ensureExists: true
+        # Force all operations to backstage schema only
+        searchPath: ['backstage']
         knexConfig:
-          searchPath: ['backstage']
           pool:
             min: 3
             max: 12
@@ -1692,6 +1698,46 @@ spec:
             port: 7007
           initialDelaySeconds: 30
           periodSeconds: 10
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - sh
+              - -c
+              - |
+                echo "🧹 Backstage preStop: Cleaning up public schema before shutdown..."
+                
+                # Get database credentials from environment variables
+                export PGHOST="${POSTGRES_HOST}"
+                export PGPORT="${POSTGRES_PORT}"
+                export PGDATABASE="${POSTGRES_DB}"
+                export PGUSER="${POSTGRES_USER}"
+                export PGPASSWORD="${POSTGRES_PASSWORD}"
+                
+                # Quick cleanup of any public schema artifacts
+                psql -c "
+                  DO \$\$
+                  DECLARE
+                    r RECORD;
+                  BEGIN
+                    -- Clean up any tables that might have been created in public
+                    FOR r IN SELECT tablename FROM pg_tables 
+                             WHERE schemaname = 'public' 
+                               AND (tablename LIKE '%backstage%' 
+                                 OR tablename LIKE '%knex%'
+                                 OR tablename LIKE '%plugin%')
+                    LOOP
+                      EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+                      RAISE NOTICE 'PreStop cleanup - Dropped table: public.%', r.tablename;
+                    END LOOP;
+                  EXCEPTION
+                    WHEN OTHERS THEN
+                      RAISE NOTICE 'PreStop cleanup failed: %', SQLERRM;
+                  END
+                  \$\$;
+                " 2>/dev/null || echo "⚠️ PreStop cleanup failed (this is expected if DB is unavailable)"
+                
+                echo "✅ Backstage preStop cleanup completed"
       volumes:
       - name: backstage-config
         configMap:
@@ -1710,6 +1756,245 @@ spec:
     name: http
   selector:
     app: backstage
+---
+# Public Schema Cleanup Job for Backstage
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backstage-public-schema-cleanup
+  namespace: k8s-api-gateway
+  labels:
+    app: backstage-cleanup
+spec:
+  # Run every 30 minutes to ensure public schema stays clean
+  schedule: "*/30 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: backstage
+          containers:
+          - name: cleanup
+            image: postgres:15-alpine
+            env:
+            - name: PGHOST
+              value: "yugabytedb.yugabytedb.svc.cluster.local"
+            - name: PGPORT
+              value: "5433"
+            - name: PGDATABASE
+              value: "backstage"
+            command:
+            - sh
+            - -c
+            - |
+              echo "🧹 Starting public schema cleanup check..."
+              
+              # Get database credentials from Vault
+              export VAULT_ADDR="https://vault.vault.svc.cluster.local:8200"
+              export VAULT_TOKEN="$(cat /vault-token/token)"
+              
+              # Use vault to get DB credentials
+              CREDS_JSON="$(vault read -format=json yugabyte-db/static-creds/backstage-app)"
+              export PGUSER="$(echo "$CREDS_JSON" | jq -r .data.username)"
+              export PGPASSWORD="$(echo "$CREDS_JSON" | jq -r .data.password)"
+              
+              # Check for any backstage-related objects in public schema
+              OBJECTS=$(psql -t -c "
+                SELECT 
+                  schemaname, 
+                  tablename as object_name, 
+                  'table' as object_type
+                FROM pg_tables 
+                WHERE schemaname = 'public' 
+                  AND (tablename LIKE '%backstage%' 
+                    OR tablename LIKE '%knex%'
+                    OR tablename LIKE '%plugin%')
+                UNION ALL
+                SELECT 
+                  schemaname, 
+                  sequencename as object_name, 
+                  'sequence' as object_type  
+                FROM pg_sequences 
+                WHERE schemaname = 'public'
+                  AND (sequencename LIKE '%backstage%' 
+                    OR sequencename LIKE '%knex%'
+                    OR sequencename LIKE '%plugin%')
+                UNION ALL
+                SELECT 
+                  nspname as schemaname,
+                  proname as object_name,
+                  'function' as object_type
+                FROM pg_proc p 
+                JOIN pg_namespace n ON p.pronamespace = n.oid 
+                WHERE nspname = 'public' 
+                  AND (proname LIKE '%backstage%' 
+                    OR proname LIKE '%knex%'
+                    OR proname LIKE '%plugin%');
+              " | grep -v '^\s*$' || true)
+              
+              if [ -n "$OBJECTS" ]; then
+                echo "⚠️  WARNING: Found Backstage-related objects in public schema:"
+                echo "$OBJECTS"
+                echo "🧹 Cleaning up..."
+                
+                # Drop tables first (handles dependencies)
+                psql -c "
+                  DO \$\$
+                  DECLARE
+                    r RECORD;
+                  BEGIN
+                    -- Drop tables
+                    FOR r IN SELECT tablename FROM pg_tables 
+                             WHERE schemaname = 'public' 
+                               AND (tablename LIKE '%backstage%' 
+                                 OR tablename LIKE '%knex%'
+                                 OR tablename LIKE '%plugin%')
+                    LOOP
+                      EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+                      RAISE NOTICE 'Dropped table: public.%', r.tablename;
+                    END LOOP;
+                    
+                    -- Drop sequences
+                    FOR r IN SELECT sequencename FROM pg_sequences 
+                             WHERE schemaname = 'public'
+                               AND (sequencename LIKE '%backstage%' 
+                                 OR sequencename LIKE '%knex%'
+                                 OR sequencename LIKE '%plugin%')
+                    LOOP
+                      EXECUTE 'DROP SEQUENCE IF EXISTS public.' || quote_ident(r.sequencename) || ' CASCADE';
+                      RAISE NOTICE 'Dropped sequence: public.%', r.sequencename;
+                    END LOOP;
+                    
+                    -- Drop functions
+                    FOR r IN SELECT proname FROM pg_proc p 
+                             JOIN pg_namespace n ON p.pronamespace = n.oid 
+                             WHERE nspname = 'public' 
+                               AND (proname LIKE '%backstage%' 
+                                 OR proname LIKE '%knex%'
+                                 OR proname LIKE '%plugin%')
+                    LOOP
+                      EXECUTE 'DROP FUNCTION IF EXISTS public.' || quote_ident(r.proname) || ' CASCADE';
+                      RAISE NOTICE 'Dropped function: public.%', r.proname;
+                    END LOOP;
+                  END
+                  \$\$;
+                "
+                echo "✅ Cleanup completed"
+              else
+                echo "✅ Public schema is clean - no Backstage objects found"
+              fi
+            volumeMounts:
+            - name: root-token
+              mountPath: /vault-token
+              readOnly: true
+            resources:
+              requests: { cpu: "10m",  memory: "32Mi" }
+              limits:   { cpu: "100m", memory: "128Mi" }
+          volumes:
+          - name: root-token
+            secret:
+              secretName: vault-root-token
+              optional: false
+---
+# One-time Public Schema Cleanup Job (runs after Backstage initialization)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backstage-initial-cleanup
+  namespace: k8s-api-gateway
+  labels:
+    app: backstage-cleanup
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: backstage
+      initContainers:
+      # Wait for Backstage to be ready before cleaning up
+      - name: wait-for-backstage
+        image: curlimages/curl:8.1.2
+        command:
+        - sh
+        - -c
+        - |
+          echo "⏳ Waiting for Backstage to be healthy..."
+          until curl -f http://backstage.k8s-api-gateway.svc.cluster.local/health 2>/dev/null; do
+            echo "🔄 Backstage not ready yet, waiting..."
+            sleep 10
+          done
+          echo "✅ Backstage is healthy, proceeding with cleanup"
+          # Wait an additional 2 minutes to ensure all initialization is complete
+          sleep 120
+      containers:
+      - name: cleanup
+        image: postgres:15-alpine
+        env:
+        - name: PGHOST
+          value: "yugabytedb.yugabytedb.svc.cluster.local"
+        - name: PGPORT
+          value: "5433"
+        - name: PGDATABASE
+          value: "backstage"
+        command:
+        - sh
+        - -c
+        - |
+          echo "🧹 Running initial public schema cleanup after Backstage initialization..."
+          
+          # Get database credentials from Vault
+          export VAULT_ADDR="https://vault.vault.svc.cluster.local:8200"
+          export VAULT_TOKEN="$(cat /vault-token/token)"
+          
+          # Use vault to get DB credentials
+          CREDS_JSON="$(vault read -format=json yugabyte-db/static-creds/backstage-app)"
+          export PGUSER="$(echo "$CREDS_JSON" | jq -r .data.username)"
+          export PGPASSWORD="$(echo "$CREDS_JSON" | jq -r .data.password)"
+          
+          echo "🔍 Checking for any artifacts in public schema from initialization..."
+          
+          # Get a comprehensive list of all objects that might have been created during init
+          TABLES=$(psql -t -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN (SELECT tablename FROM pg_tables WHERE schemaname = 'information_schema');" | grep -v '^\s*$' || true)
+          
+          if [ -n "$TABLES" ]; then
+            echo "⚠️  Found tables in public schema post-initialization:"
+            echo "$TABLES"
+            
+            # Check if any are Backstage/Knex related
+            BACKSTAGE_TABLES=$(echo "$TABLES" | grep -E "(backstage|knex|plugin)" || true)
+            if [ -n "$BACKSTAGE_TABLES" ]; then
+              echo "🧹 Cleaning up Backstage-related tables from public schema..."
+              echo "$BACKSTAGE_TABLES" | while IFS= read -r table; do
+                if [ -n "$table" ]; then
+                  psql -c "DROP TABLE IF EXISTS public.\"$table\" CASCADE;" && echo "  ✅ Dropped: public.$table"
+                fi
+              done
+            fi
+          fi
+          
+          # Verify Backstage schema has the expected objects
+          BACKSTAGE_OBJECTS=$(psql -t -c "SELECT COUNT(*) FROM pg_tables WHERE schemaname = 'backstage';" | tr -d ' ')
+          echo "📊 Backstage schema contains $BACKSTAGE_OBJECTS tables"
+          
+          if [ "$BACKSTAGE_OBJECTS" -gt 0 ]; then
+            echo "✅ Backstage schema is populated correctly"
+          else
+            echo "⚠️  Warning: Backstage schema appears empty"
+          fi
+          
+          echo "✅ Initial cleanup completed"
+        volumeMounts:
+        - name: root-token
+          mountPath: /vault-token
+          readOnly: true
+        resources:
+          requests: { cpu: "50m",  memory: "64Mi" }
+          limits:   { cpu: "200m", memory: "256Mi" }
+      volumes:
+      - name: root-token
+        secret:
+          secretName: vault-root-token
+          optional: false
 ---
 # APISIX Upstream for Backstage
 apiVersion: apisix.apache.org/v2
