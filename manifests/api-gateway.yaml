@@ -1934,51 +1934,24 @@ spec:
           requests: { cpu: "50m", memory: "64Mi" }
           limits: { cpu: "200m", memory: "128Mi" }
       containers:
-      # PGBouncer sidecar to handle YugabyteDB connections and eliminate pg-native issues
-      - name: pgbouncer
-        image: pgbouncer/pgbouncer:1.21.0
+      # Simple PostgreSQL proxy sidecar using socat (more reliable than PGBouncer image issues)
+      - name: postgres-proxy
+        image: alpine:3.18
         ports:
         - containerPort: 6432
         env:
-        - name: DATABASES_HOST
+        - name: POSTGRES_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
-        - name: DATABASES_PORT
+        - name: POSTGRES_PORT
           value: "5433"
-        - name: DATABASES_USER
-          valueFrom:
-            secretKeyRef:
-              name: vault-secrets
-              key: POSTGRES_USER
-        - name: DATABASES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: vault-secrets
-              key: POSTGRES_PASSWORD
-        - name: DATABASES_DBNAME
-          value: "backstage"
         command:
         - sh
         - -c
         - |
-          echo "Creating PGBouncer config for YugabyteDB..."
-          mkdir -p /etc/pgbouncer
-          cat > /etc/pgbouncer/pgbouncer.ini << EOF
-          [databases]
-          backstage = host=$DATABASES_HOST port=$DATABASES_PORT user=$DATABASES_USER password=$DATABASES_PASSWORD dbname=$DATABASES_DBNAME
-          
-          [pgbouncer]
-          listen_addr = 0.0.0.0
-          listen_port = 6432
-          pool_mode = transaction
-          max_client_conn = 100
-          default_pool_size = 20
-          auth_type = plain
-          auth_file = /etc/pgbouncer/userlist.txt
-          server_reset_query = DISCARD ALL
-          EOF
-          printf '"%s" "%s"\n' "$DATABASES_USER" "$DATABASES_PASSWORD" > /etc/pgbouncer/userlist.txt
-          echo "✅ PGBouncer configured for YugabyteDB at $DATABASES_HOST:$DATABASES_PORT"
-          exec pgbouncer /etc/pgbouncer/pgbouncer.ini
+          echo "🔧 Installing socat for PostgreSQL proxy..."
+          apk add --no-cache socat
+          echo "✅ Starting PostgreSQL proxy: localhost:6432 -> $POSTGRES_HOST:$POSTGRES_PORT"
+          exec socat TCP-LISTEN:6432,reuseaddr,fork TCP:$POSTGRES_HOST:$POSTGRES_PORT
       - name: backstage
         image: ghcr.io/dotcomrow/backstage-image:ts-20251108-195559
         workingDir: /app
