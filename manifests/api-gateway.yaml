@@ -1250,8 +1250,8 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
-          # Force search_path at connection level with explicit schema setting, remove public access
-          options: "-c search_path=backstage -c default_schema=backstage -c default_tablespace=''"
+          # Force search_path at connection level, remove public access
+          options: "-c search_path=backstage"
         # Use schema-based isolation within single database (YugabyteDB compatible)
         pluginDivisionMode: 'schema'
         ensureExists: false
@@ -1304,7 +1304,7 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
-          options: "-c search_path=backstage -c default_schema=backstage -c default_tablespace=''"
+          options: "-c search_path=backstage"
           schema: "backstage"
         # Use schema-based isolation within single database (YugabyteDB compatible)
         pluginDivisionMode: 'schema'
@@ -1624,7 +1624,6 @@ spec:
           # Force the database user to default to backstage schema for all connections
           echo "🔧 Setting user default schema to backstage..."
           psql -c "ALTER USER \"$PGUSER\" SET search_path TO backstage;" || echo "⚠️ Could not set user search_path, continuing..."
-          psql -c "ALTER USER \"$PGUSER\" SET default_schema TO 'backstage';" || echo "⚠️ Could not set user default_schema, continuing..."
           
           echo "🔄 Migration Coordinator: Checking for migration lock..."
           
@@ -1977,9 +1976,9 @@ spec:
           value: "backstage"
         - name: KNEX_SCHEMA
           value: "backstage"
-        # YugabyteDB compatibility settings - force backstage as only schema, remove public access
+        # YugabyteDB compatibility settings - force backstage as only schema
         - name: PGOPTIONS
-          value: "-c search_path=backstage -c default_schema=backstage -c default_tablespace=''"
+          value: "-c search_path=backstage"
         # Also try setting the default schema via environment
         - name: PGSCHEMA
           value: "backstage"
