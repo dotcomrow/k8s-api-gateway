@@ -1671,7 +1671,7 @@ spec:
                 -- Set session isolation level
                 SET SESSION default_transaction_isolation = 'read committed';
                 
-                -- Create auth keys table first (critical for all plugins) - use IF NOT EXISTS
+                -- Create auth keys table first (critical for all plugins)
                 DROP TABLE IF EXISTS backstage.backstage_backend_public_keys__keys;
                 CREATE TABLE backstage.backstage_backend_public_keys__keys (
                   id VARCHAR(255) PRIMARY KEY,
@@ -1679,10 +1679,11 @@ spec:
                   expires_at TIMESTAMPTZ,
                   created_at TIMESTAMPTZ DEFAULT NOW()
                 );
-                
-                -- Verify the table was created
-                SELECT 'Auth keys table created successfully' as status;
-                \d backstage.backstage_backend_public_keys__keys;
+              "
+              
+              # Verify the table was created
+              echo "✅ Verifying auth keys table creation..."
+              psql -c "SELECT 'Auth keys table created successfully' as status, COUNT(*) as table_exists FROM information_schema.tables WHERE table_schema='backstage' AND table_name='backstage_backend_public_keys__keys';"
                 
                 -- Create main migration tracking tables
                 CREATE TABLE IF NOT EXISTS backstage.knex_migrations (
