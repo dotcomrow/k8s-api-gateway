@@ -67,19 +67,51 @@ RUN find /app -name "package.json" -type f -exec sed -i 's|"link:../app"|"file:.
         (rm -f yarn.lock && yarn install --network-timeout 300000)# Add missing dependencies that Backstage needs but aren't always installed
 # Including pg client for YugabyteDB compatibility
 RUN echo "🔧 Installing dependencies including pure JavaScript PostgreSQL client..." && \
-    yarn add prop-types typescript @types/react @types/react-dom @types/node pg@8.8.0 --dev --ignore-engines && \
-    echo "🔧 Removing pg-native to prevent native binding issues..." && \
+    yarn add prop-types typescript @types/react @types/react-dom @types/node pg@8.8.0 --dev && \
+    echo "🔧 COMPLETELY REMOVING pg-native support..." && \
+    # Remove all pg-native directories and files
     rm -rf node_modules/pg-native 2>/dev/null || true && \
     rm -rf */node_modules/pg-native 2>/dev/null || true && \
     find . -name "pg-native" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    echo "🔧 Patching pg library to force pure JavaScript mode..." && \
+    # Completely replace the native files with pure JS stubs
+    echo "🔧 Replacing pg native files with pure JS stubs..." && \
+    if [ -d "node_modules/pg/lib/native" ]; then \
+        rm -rf node_modules/pg/lib/native && \
+        mkdir -p node_modules/pg/lib/native && \
+        echo "// PURE JS MODE - Native bindings disabled" > node_modules/pg/lib/native/index.js && \
+        echo "module.exports = null;" >> node_modules/pg/lib/native/index.js && \
+        echo "// PURE JS MODE - Native client disabled" > node_modules/pg/lib/native/client.js && \
+        echo "module.exports = null;" >> node_modules/pg/lib/native/client.js && \
+        echo "✅ pg native files replaced with pure JS stubs"; \
+    fi && \
+    # Force pg to use pure JS mode by completely rewriting index.js
     if [ -f "node_modules/pg/lib/index.js" ]; then \
         cp node_modules/pg/lib/index.js node_modules/pg/lib/index.js.backup && \
-        sed -i 's/var native = null/var native = null; \/\/ FORCED PURE JS MODE/g' node_modules/pg/lib/index.js && \
-        sed -i '/require.*pg-native/d' node_modules/pg/lib/index.js && \
-        echo "✅ pg library patched for pure JavaScript mode"; \
+        # Rewrite index.js to never load native bindings
+        echo "var Client = require('./client');" > node_modules/pg/lib/index.js && \
+        echo "var defaults = require('./defaults');" >> node_modules/pg/lib/index.js && \
+        echo "var Connection = require('./connection');" >> node_modules/pg/lib/index.js && \
+        echo "var EventEmitter = require('events').EventEmitter;" >> node_modules/pg/lib/index.js && \
+        echo "var util = require('util');" >> node_modules/pg/lib/index.js && \
+        echo "var PG = function(clientConstructor) {" >> node_modules/pg/lib/index.js && \
+        echo "  EventEmitter.call(this);" >> node_modules/pg/lib/index.js && \
+        echo "  this.Client = clientConstructor || Client;" >> node_modules/pg/lib/index.js && \
+        echo "  this.Pool = require('pg-pool');" >> node_modules/pg/lib/index.js && \
+        echo "  this.Connection = Connection;" >> node_modules/pg/lib/index.js && \
+        echo "  this.types = require('pg-types');" >> node_modules/pg/lib/index.js && \
+        echo "  this.defaults = defaults;" >> node_modules/pg/lib/index.js && \
+        echo "  this.pools = require('./pools');" >> node_modules/pg/lib/index.js && \
+        echo "  this.native = null;" >> node_modules/pg/lib/index.js && \
+        echo "};" >> node_modules/pg/lib/index.js && \
+        echo "util.inherits(PG, EventEmitter);" >> node_modules/pg/lib/index.js && \
+        echo "module.exports = new PG(Client);" >> node_modules/pg/lib/index.js && \
+        echo "module.exports.connect = function(config, callback) {" >> node_modules/pg/lib/index.js && \
+        echo "  if (typeof config === 'function') { callback = config; config = {}; }" >> node_modules/pg/lib/index.js && \
+        echo "  var client = new Client(config); client.connect(callback); return client;" >> node_modules/pg/lib/index.js && \
+        echo "};" >> node_modules/pg/lib/index.js && \
+        echo "✅ pg library completely rewritten for pure JavaScript mode"; \
     fi && \
-    echo "✅ Pure JavaScript PostgreSQL client configured"
+    echo "✅ Pure JavaScript PostgreSQL client configured - NO NATIVE BINDINGS POSSIBLE"
 
 # Build the backend - MUST succeed for production image
 RUN if [ -d "packages/backend" ]; then \
@@ -167,6 +199,18 @@ COPY --from=builder --chown=backstage:nodejs /app /app
 RUN corepack install && \
     yarn install --production --frozen-lockfile --network-timeout 300000 || \
     npm install --only=production --legacy-peer-deps --no-audit --no-fund
+
+# Ensure pg-native stubs are in place in production image
+RUN echo "🔧 Ensuring pg-native stubs in production image..." && \
+    if [ -d "node_modules/pg" ]; then \
+        rm -rf node_modules/pg/lib/native 2>/dev/null || true && \
+        mkdir -p node_modules/pg/lib/native && \
+        echo "// PRODUCTION PURE JS MODE - Native bindings disabled" > node_modules/pg/lib/native/index.js && \
+        echo "module.exports = null;" >> node_modules/pg/lib/native/index.js && \
+        echo "// PRODUCTION PURE JS MODE - Native client disabled" > node_modules/pg/lib/native/client.js && \
+        echo "module.exports = null;" >> node_modules/pg/lib/native/client.js && \
+        echo "✅ Production pg native stubs created"; \
+    fi
 
 # Verify the build is complete and ready in production image (as root for git setup)
 RUN echo "Verifying production build completeness..." && \
