@@ -1250,13 +1250,13 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
-          # Force schema isolation - READ COMMITTED now enabled at YugabyteDB server level
-          options: "-c search_path=backstage"
+          # Include all plugin schemas in search path for schema-based isolation
+          options: "-c search_path=backstage,backstage_plugin_app,backstage_plugin_proxy,backstage_plugin_scaffolder,backstage_plugin_techdocs,backstage_plugin_auth,backstage_plugin_catalog,backstage_plugin_permission,backstage_plugin_search,backstage_plugin_kubernetes,backstage_plugin_notifications,backstage_plugin_signals"
         # Use schema-based isolation within single database (YugabyteDB compatible)
         pluginDivisionMode: 'schema'
         ensureExists: false
-        # Force all operations to backstage schema only
-        searchPath: ['backstage']
+        # Include all plugin schemas for schema-based isolation
+        searchPath: ['backstage', 'backstage_plugin_app', 'backstage_plugin_proxy', 'backstage_plugin_scaffolder', 'backstage_plugin_techdocs', 'backstage_plugin_auth', 'backstage_plugin_catalog', 'backstage_plugin_permission', 'backstage_plugin_search', 'backstage_plugin_kubernetes', 'backstage_plugin_notifications', 'backstage_plugin_signals']
         knexConfig:
           pool:
             min: 1
@@ -1808,18 +1808,21 @@ spec:
                 ALTER TABLE backstage.knex_migrations ADD CONSTRAINT knex_migrations_name_unique UNIQUE (name);
               " || echo "Unique constraint may already exist"
               
-              # Insert fake migration records to satisfy Backstage validation
-              psql -c "
-                INSERT INTO backstage.knex_migrations (name, batch) VALUES 
-                ('20210120143715_init.js', 1),
-                ('20210409225200_secrets.js', 1),
-                ('20220129100000_created_by.js', 1),
-                ('20240203232000_state.js', 1),
-                ('20240401213200_workspace.js', 1),
-                ('20210311110000_init.js', 1),
-                ('20210727180000_delta_update.js', 1)
-                ON CONFLICT (name) DO NOTHING;
-              " || echo "Migration records may already exist"
+              echo "🔧 Inserting fake migration records for all schemas..."
+              # Insert fake migration records to satisfy Backstage validation in each schema
+              for schema in backstage backstage_plugin_app backstage_plugin_proxy backstage_plugin_scaffolder backstage_plugin_techdocs backstage_plugin_auth backstage_plugin_catalog backstage_plugin_permission backstage_plugin_search backstage_plugin_kubernetes backstage_plugin_notifications backstage_plugin_signals; do
+                psql -c "
+                  INSERT INTO ${schema}.knex_migrations (name, batch) VALUES 
+                  ('20210120143715_init.js', 1),
+                  ('20210409225200_secrets.js', 1),
+                  ('20220129100000_created_by.js', 1),
+                  ('20240203232000_state.js', 1),
+                  ('20240401213200_workspace.js', 1),
+                  ('20210311110000_init.js', 1),
+                  ('20210727180000_delta_update.js', 1)
+                  ON CONFLICT (name) DO NOTHING;
+                " || echo "Migration records for $schema may already exist"
+              done
               
               # Release the advisory lock
               psql -c "SELECT pg_advisory_unlock(12345);"
@@ -1884,9 +1887,9 @@ spec:
           value: "5433"
         - name: POSTGRES_DB
           value: "backstage"
-        # YugabyteDB compatibility settings (READ COMMITTED now enabled server-wide)
+        # YugabyteDB compatibility settings with schema-based plugin isolation
         - name: PGOPTIONS
-          value: "-c search_path=backstage"
+          value: "-c search_path=backstage,backstage_plugin_app,backstage_plugin_proxy,backstage_plugin_scaffolder,backstage_plugin_techdocs,backstage_plugin_auth,backstage_plugin_catalog,backstage_plugin_permission,backstage_plugin_search,backstage_plugin_kubernetes,backstage_plugin_notifications,backstage_plugin_signals"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
         # Disable Backstage migrations - handled by migration coordinator
