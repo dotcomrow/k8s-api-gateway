@@ -1243,17 +1243,7 @@ data:
         credentials: true
       database:
         client: pg
-        connection:
-          host: $POSTGRES_HOST
-          port: $POSTGRES_PORT
-          user: $POSTGRES_USER
-          password: $POSTGRES_PASSWORD
-          database: $POSTGRES_DB
-          ssl: false
-          # Force search_path at connection level
-          options: "-c search_path=backstage"
-          # Explicit schema setting for Knex
-          schema: "backstage"
+        connection: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB?options=-c%20search_path%3Dbackstage"
         # Force use of pure JavaScript pg driver (not pg-native)
         acquireConnectionTimeout: 60000
         useNullAsDefault: false
@@ -2093,13 +2083,15 @@ spec:
                 else
                   echo "❌ Source config file /app/app-config.yaml not found";
                 fi &&
-                echo "🔧 Forcing pure JavaScript pg driver - removing native directory entirely..." &&
-                # Remove native directory completely to force JS fallback
-                rm -rf "/app/node_modules/pg/lib/native" &&
-                echo "✅ Native pg directory removed - pure JavaScript driver enforced" &&
-                # Use NODE_OPTIONS to disable native pg loading attempts
-                export NODE_OPTIONS="--max-old-space-size=14336" &&
+                echo "🔧 Forcing pure JavaScript pg driver with comprehensive environment controls..." &&
+                # Set multiple environment variables to force JS driver
+                export NODE_OPTIONS="--max-old-space-size=14336 --no-native-modules" &&
                 export DISABLE_PG_NATIVE=1 &&
+                export NODE_PG_FORCE_NATIVE=false &&
+                export NODE_PG_NO_NATIVE=true &&
+                export PG_NATIVE_MAX_CONN=0 &&
+                export NODE_ENV="production" &&
+                echo "✅ Comprehensive JS driver enforcement configured" &&
                 exec node "$BACKEND_JS";
               else
                 echo "❌ Bundle extraction failed - no backend entry point found anywhere" &&
@@ -2121,8 +2113,10 @@ spec:
                 echo "❌ Source config file /app/app-config.yaml not found";
               fi &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
+              export NODE_PG_FORCE_NATIVE=false &&
+              export NODE_PG_NO_NATIVE=true &&
+              export PG_NATIVE_MAX_CONN=0 &&
               exec node packages/backend/dist/index.js;
             elif [ -f "packages/backend/dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from packages/backend/dist/index.cjs.js" &&
@@ -2138,32 +2132,42 @@ spec:
                 echo "❌ Source config file /app/app-config.yaml not found";
               fi &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
+              export NODE_PG_FORCE_NATIVE=false &&
+              export NODE_PG_NO_NATIVE=true &&
+              export PG_NATIVE_MAX_CONN=0 &&
               exec node packages/backend/dist/index.cjs.js;
             elif [ -f "dist/packages/backend/index.js" ]; then
               echo "✅ Starting pre-built backend from dist/packages/backend/index.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
+              export NODE_PG_FORCE_NATIVE=false &&
+              export NODE_PG_NO_NATIVE=true &&
+              export PG_NATIVE_MAX_CONN=0 &&
               exec node dist/packages/backend/index.js;
             elif [ -f "dist/packages/backend/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from dist/packages/backend/index.cjs.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
+              export NODE_PG_FORCE_NATIVE=false &&
+              export NODE_PG_NO_NATIVE=true &&
+              export PG_NATIVE_MAX_CONN=0 &&
               exec node dist/packages/backend/index.cjs.js;
             elif [ -f "dist/index.js" ]; then
               echo "✅ Starting pre-built backend from dist/index.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
+              export NODE_PG_FORCE_NATIVE=false &&
+              export NODE_PG_NO_NATIVE=true &&
+              export PG_NATIVE_MAX_CONN=0 &&
               exec node dist/index.js;
             elif [ -f "dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from dist/index.cjs.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
-              rm -rf "/app/node_modules/pg/lib/native" &&
               export DISABLE_PG_NATIVE=1 &&
+              export NODE_PG_FORCE_NATIVE=false &&
+              export NODE_PG_NO_NATIVE=true &&
+              export PG_NATIVE_MAX_CONN=0 &&
               exec node dist/index.cjs.js;
             else
               echo "❌ ERROR: No pre-built backend found!" &&
