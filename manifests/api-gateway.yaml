@@ -2046,10 +2046,17 @@ spec:
           
           # Create fake pg-native module directory and files
           mkdir -p /app/node_modules/pg-native
-          echo '// Fake pg-native module to prevent require errors' > /app/node_modules/pg-native/index.js
-          echo 'console.log("⚠️ pg-native disabled - using pure JavaScript PostgreSQL driver");' >> /app/node_modules/pg-native/index.js  
-          echo '// Export the JavaScript Client instead of native' >> /app/node_modules/pg-native/index.js
-          echo 'module.exports = require("../pg/lib/client");' >> /app/node_modules/pg-native/index.js
+          echo '// Fake pg-native module that mimics the real pg-native interface' > /app/node_modules/pg-native/index.js
+          echo 'console.log("⚠️ pg-native disabled - using pure JavaScript PostgreSQL driver");' >> /app/node_modules/pg-native/index.js
+          echo '' >> /app/node_modules/pg-native/index.js
+          echo '// Create a fake Client constructor that throws an error' >> /app/node_modules/pg-native/index.js
+          echo 'function Client() {' >> /app/node_modules/pg-native/index.js
+          echo '  throw new Error("pg-native not available, use JavaScript client");' >> /app/node_modules/pg-native/index.js
+          echo '}' >> /app/node_modules/pg-native/index.js
+          echo '' >> /app/node_modules/pg-native/index.js
+          echo '// Export the Client constructor like pg-native would' >> /app/node_modules/pg-native/index.js
+          echo 'module.exports = Client;' >> /app/node_modules/pg-native/index.js
+          echo 'module.exports.Client = Client;' >> /app/node_modules/pg-native/index.js
           
           echo '{"name": "pg-native", "version": "1.0.0-fake", "description": "Fake pg-native", "main": "index.js"}' > /app/node_modules/pg-native/package.json
           
@@ -2060,13 +2067,12 @@ spec:
             # Create safe fallback files that properly export the JS client
             echo '// Safe native client fallback - prevents pg-native require errors' > /app/node_modules/pg/lib/native/client.js
             echo 'console.log("⚠️ pg native client disabled - using JavaScript client");' >> /app/node_modules/pg/lib/native/client.js
-            echo "module.exports = require('../client');" >> /app/node_modules/pg/lib/native/client.js
+            echo "module.exports = null;" >> /app/node_modules/pg/lib/native/client.js
             
             echo '// Safe native index fallback - prevents pg-native require errors' > /app/node_modules/pg/lib/native/index.js
             echo 'console.log("⚠️ pg native disabled - using JavaScript driver");' >> /app/node_modules/pg/lib/native/index.js
-            echo '// Export the same structure as the regular pg module' >> /app/node_modules/pg/lib/native/index.js
-            echo 'const { Client, Pool, types, defaults } = require("../index");' >> /app/node_modules/pg/lib/native/index.js
-            echo 'module.exports = { Client, Pool, types, defaults };' >> /app/node_modules/pg/lib/native/index.js
+            echo '// Export null to indicate native client unavailable' >> /app/node_modules/pg/lib/native/index.js
+            echo 'module.exports = null;' >> /app/node_modules/pg/lib/native/index.js
             
             echo "✅ pg native files patched successfully"
           fi
