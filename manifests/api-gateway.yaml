@@ -1151,6 +1151,17 @@ data:
           password: $POSTGRES_PASSWORD
           database: $POSTGRES_DB
           ssl: false
+        # Force single database usage - disable all plugin isolation
+        pluginDivisionMode: 'schema'
+        ensureExists: false
+        knexConfig:
+          pool:
+            min: 3
+            max: 12
+            acquireTimeoutMillis: 60000
+            createTimeoutMillis: 30000
+            destroyTimeoutMillis: 5000
+            idleTimeoutMillis: 30000
 
 
     integrations:
