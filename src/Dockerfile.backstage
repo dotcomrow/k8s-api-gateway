@@ -61,12 +61,10 @@ RUN git config --global user.email "build@backstage.local" && \
 RUN find /app -name "package.json" -type f -exec sed -i 's|"link:../app"|"file:../app"|g' {} \; && \
     find /app -name "package.json" -type f -exec sed -i 's|"link:|"file:|g' {} \;
 
-# Install dependencies with full memory
-RUN yarn install --network-timeout 300000 --ignore-engines || \
-    yarn install --network-timeout 300000 --mode loose --ignore-engines || \
-    (rm -f yarn.lock && yarn install --network-timeout 300000 --ignore-engines)
-
-# Add missing dependencies that Backstage needs but aren't always installed
+    # Install dependencies with full memory
+    RUN yarn install --network-timeout 300000 || \
+        yarn install --network-timeout 300000 --mode update-lockfile || \
+        (rm -f yarn.lock && yarn install --network-timeout 300000)# Add missing dependencies that Backstage needs but aren't always installed
 # Including pg client for YugabyteDB compatibility
 RUN echo "🔧 Installing dependencies including pure JavaScript PostgreSQL client..." && \
     yarn add prop-types typescript @types/react @types/react-dom @types/node pg@8.8.0 --dev --ignore-engines && \
@@ -87,12 +85,12 @@ RUN echo "🔧 Installing dependencies including pure JavaScript PostgreSQL clie
 RUN if [ -d "packages/backend" ]; then \
         echo "Building backend..." && \
         # Regenerate yarn.lock if corrupted \
-        (yarn install --ignore-engines 2>/dev/null || (rm -f yarn.lock && yarn install --ignore-engines)) && \
+        (yarn install 2>/dev/null || (rm -f yarn.lock && yarn install)) && \
         # Try different build approaches in order of preference \
-        (echo "Trying yarn build:backend..." && yarn build:backend --ignore-engines) || \
-        (echo "Trying workspace backend build..." && cd packages/backend && yarn build --ignore-engines) || \
+        (echo "Trying yarn build:backend..." && yarn build:backend) || \
+        (echo "Trying workspace backend build..." && cd packages/backend && yarn build) || \
         (echo "Trying TypeScript compilation..." && cd packages/backend && yarn tsc --skipLibCheck) || \
-        (echo "Installing TypeScript and trying..." && yarn add -W typescript@latest --dev --ignore-engines && cd packages/backend && yarn tsc --skipLibCheck) || \
+        (echo "Installing TypeScript and trying..." && yarn add -W typescript@latest --dev && cd packages/backend && yarn tsc --skipLibCheck) || \
         (echo "ERROR: All backend build attempts failed" && exit 1) && \
         echo "Backend build completed successfully"; \
     else \
