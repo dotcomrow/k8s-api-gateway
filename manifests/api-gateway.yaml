@@ -1244,20 +1244,18 @@ data:
       database:
         client: pg
         connection:
-          host: $POSTGRES_HOST
-          port: $POSTGRES_PORT
+          host: localhost
+          port: 6432
           user: $POSTGRES_USER
           password: $POSTGRES_PASSWORD
-          database: $POSTGRES_DB
+          database: backstage
           ssl: false
-          # Force search_path at connection level
-          options: "-c search_path=backstage"
-          # Explicit schema setting for Knex
-          schema: "backstage"
-        # Force use of pure JavaScript pg driver (not pg-native)
-        acquireConnectionTimeout: 60000
+        pool:
+          min: 2
+          max: 10
+          acquireTimeoutMillis: 60000
         useNullAsDefault: false
-        # Use schema-based isolation within single database (YugabyteDB compatible)
+        # Connect through PGBouncer sidecar for YugabyteDB compatibility
         pluginDivisionMode: 'schema'
         ensureExists: false
         # Include all plugin schemas for schema-based isolation
@@ -1936,6 +1934,51 @@ spec:
           requests: { cpu: "50m", memory: "64Mi" }
           limits: { cpu: "200m", memory: "128Mi" }
       containers:
+      # PGBouncer sidecar to handle YugabyteDB connections and eliminate pg-native issues
+      - name: pgbouncer
+        image: pgbouncer/pgbouncer:1.21.0
+        ports:
+        - containerPort: 6432
+        env:
+        - name: DATABASES_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: DATABASES_PORT
+          value: "5433"
+        - name: DATABASES_USER
+          valueFrom:
+            secretKeyRef:
+              name: vault-secrets
+              key: POSTGRES_USER
+        - name: DATABASES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: vault-secrets
+              key: POSTGRES_PASSWORD
+        - name: DATABASES_DBNAME
+          value: "backstage"
+        command:
+        - sh
+        - -c
+        - |
+          echo "Creating PGBouncer config for YugabyteDB..."
+          mkdir -p /etc/pgbouncer
+          cat > /etc/pgbouncer/pgbouncer.ini << EOF
+          [databases]
+          backstage = host=$DATABASES_HOST port=$DATABASES_PORT user=$DATABASES_USER password=$DATABASES_PASSWORD dbname=$DATABASES_DBNAME
+          
+          [pgbouncer]
+          listen_addr = 0.0.0.0
+          listen_port = 6432
+          pool_mode = transaction
+          max_client_conn = 100
+          default_pool_size = 20
+          auth_type = plain
+          auth_file = /etc/pgbouncer/userlist.txt
+          server_reset_query = DISCARD ALL
+          EOF
+          echo "\"$DATABASES_USER\" \"$DATABASES_PASSWORD\"" > /etc/pgbouncer/userlist.txt
+          echo "✅ PGBouncer configured for YugabyteDB at $DATABASES_HOST:$DATABASES_PORT"
+          exec pgbouncer /etc/pgbouncer/pgbouncer.ini
       - name: backstage
         image: ghcr.io/dotcomrow/backstage-image:ts-20251108-195559
         workingDir: /app
@@ -2093,16 +2136,21 @@ spec:
                 else
                   echo "❌ Source config file /app/app-config.yaml not found";
                 fi &&
-                echo "🔧 Creating pg-native hijack script..." &&
-                # Use base64 to avoid all shell escaping issues
-                echo "Y29uc3QgTW9kdWxlID0gcmVxdWlyZSgnbW9kdWxlJyk7CmNvbnN0IG9yaWcgPSBNb2R1bGUucHJvdG90eXBlLnJlcXVpcmU7Ck1vZHVsZS5wcm90b3R5cGUucmVxdWlyZSA9IGZ1bmN0aW9uKGlkKSB7CiAgaWYgKGlkID09PSAncGctbmF0aXZlJyB8fCBpZCA9PT0gJy4vbmF0aXZlJyB8fCBpZC5lbmRzV2l0aCgnL25hdGl2ZScpKSB7CiAgICBjb25zb2xlLmxvZygn8J+aqyBCbG9ja2VkIHBnLW5hdGl2ZTonLCBpZCk7CiAgICByZXR1cm4gb3JpZy5jYWxsKHRoaXMsICcuL2NsaWVudCcpOwogIH0KICByZXR1cm4gb3JpZy5hcHBseSh0aGlzLCBhcmd1bWVudHMpOwp9Owpjb25zb2xlLmxvZygn4pyFIHBnLW5hdGl2ZSBoaWphY2sgYWN0aXZlJyk7" | base64 -d > /app/hijack-pg-native.js &&
-                # Set environment variables for pure JS mode  
+                echo "🔧 Forcing pure JavaScript PostgreSQL mode for YugabyteDB..." &&
+                # Use the most aggressive approach to force pure JS mode
                 export NODE_ENV=production &&
+                export NODE_PG_FORCE_NATIVE=false &&
                 export DISABLE_PG_NATIVE=true &&
                 export PG_FORCE_NATIVE=false &&
-                export NODE_PG_FORCE_NATIVE=false &&
-                echo "✅ Module hijacking configured" &&
-                node -r /app/hijack-pg-native.js "$BACKEND_JS";
+                # Remove any native directories that might exist  
+                find /app -name "native" -type d -path "*/pg/*" -exec rm -rf {} + 2>/dev/null || true &&
+                find /app -name "*native*" -path "*/pg/*" -exec rm -f {} + 2>/dev/null || true &&
+                # Create stub files to prevent native loading
+                mkdir -p /app/node_modules/pg/lib 2>/dev/null || true &&
+                echo "module.exports = null;" > /app/node_modules/pg/lib/native.js 2>/dev/null || true &&
+                echo "throw new Error('Native bindings disabled');" > /app/node_modules/pg/lib/native/index.js 2>/dev/null || true &&
+                echo "✅ Pure JavaScript PostgreSQL mode enforced for YugabyteDB" &&
+                exec node "$BACKEND_JS";
               else
                 echo "❌ Bundle extraction failed - no backend entry point found anywhere" &&
                 echo "📁 Complete directory structure:" &&
@@ -2127,7 +2175,7 @@ spec:
               export NODE_PG_FORCE_NATIVE=false &&
               export NODE_PG_NO_NATIVE=true &&
               export PG_NATIVE_MAX_CONN=0 &&
-              node -r /app/hijack-pg-native.js packages/backend/dist/index.js;
+              exec node packages/backend/dist/index.js;
             elif [ -f "packages/backend/dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from packages/backend/dist/index.cjs.js" &&
               echo "🔧 Setting up config file with environment variable substitution..." &&
@@ -2146,7 +2194,7 @@ spec:
               export NODE_PG_FORCE_NATIVE=false &&
               export NODE_PG_NO_NATIVE=true &&
               export PG_NATIVE_MAX_CONN=0 &&
-              node -r /app/hijack-pg-native.js packages/backend/dist/index.cjs.js;
+              exec node packages/backend/dist/index.cjs.js;
             elif [ -f "dist/packages/backend/index.js" ]; then
               echo "✅ Starting pre-built backend from dist/packages/backend/index.js" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
