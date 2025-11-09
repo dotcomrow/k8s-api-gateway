@@ -1353,7 +1353,7 @@ spec:
       serviceAccountName: backstage
       initContainers:
       - name: wait-database-setup
-        image: postgres:15-alpine
+        image: alpine/k8s:1.31.4
         env:
         - name: POSTGRES_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
@@ -1412,7 +1412,7 @@ spec:
             sleep 5
           done
           
-          # Install netcat for connectivity tests
+          # Install required packages
           apk add --no-cache netcat-openbsd postgresql15-client
           
           # Wait for YugabyteDB to be reachable
