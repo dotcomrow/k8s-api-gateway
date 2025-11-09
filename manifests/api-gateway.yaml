@@ -2047,30 +2047,30 @@ spec:
         - |
           set -e
           
-          echo "🔧 Patching pg library to completely disable native loading..."
+          echo "🔧 Installing pure JavaScript PostgreSQL client for YugabyteDB..."
           
-          # Instead of patching pg-native, patch the main pg library to never try to load it
+          # Install pg2 (pure JS PostgreSQL client, no native dependencies)
+          cd /app
+          npm install --no-save pg@8.8.0 --no-optional
+          
+          # Remove any existing pg-native to prevent loading
+          rm -rf /app/node_modules/pg-native 2>/dev/null || true
+          
+          # Patch pg to never attempt native loading
           if [ -f "/app/node_modules/pg/lib/index.js" ]; then
-            echo "🔧 Patching main pg/lib/index.js to disable native loading..."
+            echo "🔧 Patching pg library to force pure JavaScript mode..."
             
-            # Backup original file
+            # Backup and patch
             cp /app/node_modules/pg/lib/index.js /app/node_modules/pg/lib/index.js.backup
             
-            # Simple replacement to disable native loading
-            sed -i 's/var native = null/var native = null; \/\/ PATCHED: force native to stay null/g' /app/node_modules/pg/lib/index.js
-            sed -i 's/native = require/\/\/ PATCHED: native = require/g' /app/node_modules/pg/lib/index.js
+            # Force native to always be null
+            sed -i 's/var native = null/var native = null; \/\/ FORCED PURE JS MODE/g' /app/node_modules/pg/lib/index.js
+            sed -i '/require.*pg-native/d' /app/node_modules/pg/lib/index.js
             
-            echo "✅ Main pg library patched to disable native loading"
+            echo "✅ pg library patched for pure JavaScript mode"
           fi
           
-          # Also ensure pg-native directory doesn't exist to prevent any loading attempts
-          if [ -d "/app/node_modules/pg-native" ]; then
-            echo "🔧 Removing existing pg-native directory..."
-            rm -rf /app/node_modules/pg-native
-            echo "✅ pg-native directory removed"
-          fi
-          
-          echo "✅ pg-native patching completed"
+          echo "✅ Pure JavaScript PostgreSQL client configured for YugabyteDB"
           
           echo "🔧 Loading database credentials from Vault..."
           if [ -f /vault/secrets/db-creds ]; then
@@ -2132,22 +2132,41 @@ spec:
               fi &&
               if [ -n "$BACKEND_JS" ] && [ -f "$BACKEND_JS" ]; then
                 echo "✅ Starting backend from extracted bundle: $BACKEND_JS" &&
-                echo "🔧 Setting up config file with environment variable substitution..." &&
-                if [ -f "/app/app-config.yaml" ]; then
-                  echo "Source config exists at /app/app-config.yaml" &&
-                  mkdir -p /app/packages/backend/dist &&
-                  echo "🔄 Processing config with shell parameter expansion..." &&
-                  sed "s/\$POSTGRES_HOST/$POSTGRES_HOST/g; s/\$POSTGRES_PORT/$POSTGRES_PORT/g; s/\$POSTGRES_USER/$POSTGRES_USER/g; s/\$POSTGRES_PASSWORD/$POSTGRES_PASSWORD/g; s/\$POSTGRES_DB/$POSTGRES_DB/g; s/\$BACKEND_SECRET/$BACKEND_SECRET/g" /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
-                  echo "✅ Config processed and copied to /app/packages/backend/dist/app-config.yaml" &&
-                  echo "📄 Processed config database section:" &&
-                  grep -A 10 "database:" /app/packages/backend/dist/app-config.yaml || echo "No database section found" &&
-                  ls -la /app/packages/backend/dist/app-config.yaml || echo "Config copy verification failed";
-                else
-                  echo "❌ Source config file /app/app-config.yaml not found";
-                fi &&
-                echo "🔧 Using PGBouncer sidecar for YugabyteDB connectivity..." &&
+                echo "🔧 Creating YugabyteDB configuration with pure JavaScript client..." &&
+                mkdir -p /app/packages/backend/dist &&
+                echo "🔄 Generating YugabyteDB config..." &&
+                echo "app:" > /app/packages/backend/dist/app-config.yaml &&
+                echo "  title: Backstage" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "  baseUrl: http://localhost:7007" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "backend:" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "  baseUrl: http://localhost:7007" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "  listen:" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "    port: 7007" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "    host: 0.0.0.0" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "  database:" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "    client: pg" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "    connection:" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "      host: localhost" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "      port: 6432" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "      user: $POSTGRES_USER" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "      password: $POSTGRES_PASSWORD" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "      database: $POSTGRES_DB" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "      ssl: false" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "    useNullAsDefault: false" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "    pool:" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "      min: 2" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "      max: 10" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "auth:" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "  providers: {}" >> /app/packages/backend/dist/app-config.yaml &&
+                echo "✅ YugabyteDB configuration created at /app/packages/backend/dist/app-config.yaml" &&
+                echo "📄 Generated YugabyteDB config database section:" &&
+                grep -A 12 "database:" /app/packages/backend/dist/app-config.yaml &&
+                ls -la /app/packages/backend/dist/app-config.yaml;
+                echo "🔧 Using TCP proxy sidecar for YugabyteDB connectivity..." &&
                 export NODE_ENV=production &&
-                echo "✅ Connecting to YugabyteDB via PGBouncer localhost:6432" &&
+                echo "✅ Connecting to YugabyteDB via pure JS PostgreSQL client (localhost:6432)" &&
                 exec node "$BACKEND_JS";
               else
                 echo "❌ Bundle extraction failed - no backend entry point found anywhere" &&
@@ -2157,17 +2176,32 @@ spec:
               fi;
             elif [ -f "packages/backend/dist/index.js" ]; then
               echo "✅ Starting pre-built backend from packages/backend/dist/index.js" &&
-              echo "🔧 Setting up config file with environment variable substitution..." &&
-              if [ -f "/app/app-config.yaml" ]; then
-                echo "Source config exists at /app/app-config.yaml" &&
-                mkdir -p /app/packages/backend/dist &&
-                echo "🔄 Processing config with sed substitution..." &&
-                sed "s/\$POSTGRES_HOST/$POSTGRES_HOST/g; s/\$POSTGRES_PORT/$POSTGRES_PORT/g; s/\$POSTGRES_USER/$POSTGRES_USER/g; s/\$POSTGRES_PASSWORD/$POSTGRES_PASSWORD/g; s/\$POSTGRES_DB/$POSTGRES_DB/g; s/\$BACKEND_SECRET/$BACKEND_SECRET/g" /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
-                echo "✅ Config processed and copied to /app/packages/backend/dist/app-config.yaml" &&
-                ls -la /app/packages/backend/dist/app-config.yaml || echo "Config copy verification failed";
-              else
-                echo "❌ Source config file /app/app-config.yaml not found";
-              fi &&
+              echo "🔧 Creating YugabyteDB configuration..." &&
+              mkdir -p /app/packages/backend/dist &&
+              echo "app:" > /app/packages/backend/dist/app-config.yaml &&
+              echo "  title: Backstage" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "  baseUrl: http://localhost:7007" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "backend:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "  baseUrl: http://localhost:7007" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "  listen:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    port: 7007" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    host: 0.0.0.0" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "  database:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    client: pg" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    connection:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      host: localhost" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      port: 6432" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      user: $POSTGRES_USER" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      password: $POSTGRES_PASSWORD" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      database: $POSTGRES_DB" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      ssl: false" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    useNullAsDefault: false" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    pool:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      min: 2" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      max: 10" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "auth:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "  providers: {}" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "✅ YugabyteDB config created" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
               export DISABLE_PG_NATIVE=1 &&
               export NODE_PG_FORCE_NATIVE=false &&
@@ -2176,17 +2210,32 @@ spec:
               exec node packages/backend/dist/index.js;
             elif [ -f "packages/backend/dist/index.cjs.js" ]; then
               echo "✅ Starting pre-built backend from packages/backend/dist/index.cjs.js" &&
-              echo "🔧 Setting up config file with environment variable substitution..." &&
-              if [ -f "/app/app-config.yaml" ]; then
-                echo "Source config exists at /app/app-config.yaml" &&
-                mkdir -p /app/packages/backend/dist &&
-                echo "🔄 Processing config with sed substitution..." &&
-                sed "s/\$POSTGRES_HOST/$POSTGRES_HOST/g; s/\$POSTGRES_PORT/$POSTGRES_PORT/g; s/\$POSTGRES_USER/$POSTGRES_USER/g; s/\$POSTGRES_PASSWORD/$POSTGRES_PASSWORD/g; s/\$POSTGRES_DB/$POSTGRES_DB/g; s/\$BACKEND_SECRET/$BACKEND_SECRET/g" /app/app-config.yaml > /app/packages/backend/dist/app-config.yaml &&
-                echo "✅ Config processed and copied to /app/packages/backend/dist/app-config.yaml" &&
-                ls -la /app/packages/backend/dist/app-config.yaml || echo "Config copy verification failed";
-              else
-                echo "❌ Source config file /app/app-config.yaml not found";
-              fi &&
+              echo "🔧 Creating YugabyteDB configuration..." &&
+              mkdir -p /app/packages/backend/dist &&
+              echo "app:" > /app/packages/backend/dist/app-config.yaml &&
+              echo "  title: Backstage" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "  baseUrl: http://localhost:7007" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "backend:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "  baseUrl: http://localhost:7007" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "  listen:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    port: 7007" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    host: 0.0.0.0" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "  database:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    client: pg" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    connection:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      host: localhost" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      port: 6432" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      user: $POSTGRES_USER" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      password: $POSTGRES_PASSWORD" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      database: $POSTGRES_DB" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      ssl: false" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    useNullAsDefault: false" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "    pool:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      min: 2" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "      max: 10" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "auth:" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "  providers: {}" >> /app/packages/backend/dist/app-config.yaml &&
+              echo "✅ YugabyteDB config created" &&
               echo "🔧 Forcing pure JavaScript pg driver..." &&
               export DISABLE_PG_NATIVE=1 &&
               export NODE_PG_FORCE_NATIVE=false &&
