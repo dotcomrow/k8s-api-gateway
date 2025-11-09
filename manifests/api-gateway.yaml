@@ -1243,8 +1243,20 @@ data:
         credentials: true
       database:
         client: pg
-        # Use connection string format to enforce schema in URL
-        connection: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=backstage&options=-c%20search_path%3Dbackstage"
+        connection:
+          host: $POSTGRES_HOST
+          port: $POSTGRES_PORT
+          user: $POSTGRES_USER
+          password: $POSTGRES_PASSWORD
+          database: $POSTGRES_DB
+          ssl: false
+          # Force search_path at connection level
+          options: "-c search_path=backstage"
+          # Explicit schema setting for Knex
+          schema: "backstage"
+        # Force use of pure JavaScript pg driver (not pg-native)
+        acquireConnectionTimeout: 60000
+        useNullAsDefault: false
         # Use schema-based isolation within single database (YugabyteDB compatible)
         pluginDivisionMode: 'schema'
         ensureExists: false
@@ -1263,6 +1275,8 @@ data:
           disableTransactions: true
           # Force all knex operations to use backstage schema by default
           schemaName: 'backstage'
+          # Force use of pure JavaScript pg driver instead of pg-native
+          useNullAsDefault: false
           # Prevent concurrent migrations by serializing database operations
           acquireConnectionTimeout: 120000
           # YugabyteDB compatibility settings
@@ -1972,6 +1986,16 @@ spec:
         - name: PGSCHEMA_DEFAULT
           value: "backstage"
         - name: NODE_PG_FORCE_NATIVE
+          value: "false"
+        # Completely disable native pg driver attempts
+        - name: NODE_PG_NO_NATIVE
+          value: "1"
+        - name: PG_NATIVE_MAX_CONN
+          value: "0"
+        # Force pg module to skip native binding completely
+        - name: NODE_ENV
+          value: "production"
+        - name: PG_FORCE_NATIVE
           value: "false"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
