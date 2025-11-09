@@ -1550,7 +1550,7 @@ spec:
             fieldRef:
               fieldPath: metadata.name
         - name: VAULT_ADDR
-          value: "https://vault.vault.svc.cluster.local:8200"
+          value: "http://vault.vault.svc.cluster.local:8200"
         command:
         - sh
         - -c
@@ -1571,9 +1571,26 @@ spec:
           mv vault /usr/local/bin/hashicorp-vault
           
           echo "🔐 Migration Coordinator: Getting database credentials from Vault..."
-          export VAULT_TOKEN="$(cat /vault-token/token)"
+          
+          # Check if vault token exists and get it
+          if [ -f /vault-token/token ]; then
+            export VAULT_TOKEN="$(cat /vault-token/token)"
+            echo "✅ Using vault root token"
+          else
+            echo "❌ Vault token not found at /vault-token/token"
+            echo "📁 Available files in /vault-token/:"
+            ls -la /vault-token/ 2>/dev/null || echo "Directory /vault-token/ does not exist"
+            echo "📁 Available mounted volumes:"
+            mount | grep vault || echo "No vault mounts found"
+            exit 1
+          fi
+          
+          # Test vault connectivity first
+          echo "🔗 Testing Vault connectivity..."
+          /usr/local/bin/hashicorp-vault status || echo "⚠️ Vault status check failed, continuing..."
           
           # Get database credentials from Vault using the renamed binary
+          echo "📖 Reading database credentials from Vault..."
           CREDS_JSON="$(/usr/local/bin/hashicorp-vault read -format=json yugabyte-db/static-creds/backstage-app)"
           export PGUSER="$(echo "$CREDS_JSON" | jq -r .data.username)"
           export PGPASSWORD="$(echo "$CREDS_JSON" | jq -r .data.password)"
