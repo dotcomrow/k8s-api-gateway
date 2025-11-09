@@ -1252,9 +1252,9 @@ data:
           ssl: false
           # Force schema isolation - READ COMMITTED now enabled at YugabyteDB server level
           options: "-c search_path=backstage"
-        # Use single database with plugin schema isolation
-        pluginDivisionMode: 'schema'
-        ensureExists: true
+        # Use single database without plugin schema isolation to prevent DDL conflicts
+        pluginDivisionMode: 'database'
+        ensureExists: false
         # Force all operations to backstage schema only
         searchPath: ['backstage']
         knexConfig:
@@ -1265,13 +1265,8 @@ data:
             createTimeoutMillis: 60000
             destroyTimeoutMillis: 10000
             idleTimeoutMillis: 60000
-          # YugabyteDB-specific settings - disable migrations entirely
-          migrations:
-            disableTransactions: true
-            tableName: 'knex_migrations'
-            schemaName: 'backstage'
-            directory: '/dev/null'
-            disableMigrationsListValidation: true
+          # YugabyteDB-specific settings - completely disable migrations
+          migrations: false
           # Prevent concurrent migrations by serializing database operations
           acquireConnectionTimeout: 120000
           # YugabyteDB compatibility settings
@@ -1676,13 +1671,18 @@ spec:
                 -- Set session isolation level
                 SET SESSION default_transaction_isolation = 'read committed';
                 
-                -- Create auth keys table first (critical for all plugins)
-                CREATE TABLE IF NOT EXISTS backstage.backstage_backend_public_keys__keys (
+                -- Create auth keys table first (critical for all plugins) - use IF NOT EXISTS
+                DROP TABLE IF EXISTS backstage.backstage_backend_public_keys__keys;
+                CREATE TABLE backstage.backstage_backend_public_keys__keys (
                   id VARCHAR(255) PRIMARY KEY,
                   key TEXT NOT NULL,
                   expires_at TIMESTAMPTZ,
                   created_at TIMESTAMPTZ DEFAULT NOW()
                 );
+                
+                -- Verify the table was created
+                SELECT 'Auth keys table created successfully' as status;
+                \d backstage.backstage_backend_public_keys__keys;
                 
                 -- Create main migration tracking tables
                 CREATE TABLE IF NOT EXISTS backstage.knex_migrations (
@@ -1842,6 +1842,11 @@ spec:
           value: "-c search_path=backstage"
         - name: BACKEND_SECRET
           value: "your-backend-secret-here-change-this"
+        # Disable Backstage migrations - handled by migration coordinator
+        - name: BACKSTAGE_BACKEND_DATABASE_MIGRATIONS_SKIP
+          value: "true"
+        - name: NODE_CONFIG_STRICT_MODE
+          value: "false"
         - name: GITHUB_TEAM
           value: "backstage_admin_access"
         command: ["/bin/sh", "-c"]
