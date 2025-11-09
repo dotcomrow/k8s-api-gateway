@@ -1953,7 +1953,7 @@ spec:
           echo "✅ Starting PostgreSQL proxy: localhost:6432 -> $POSTGRES_HOST:$POSTGRES_PORT"
           exec socat TCP-LISTEN:6432,reuseaddr,fork TCP:$POSTGRES_HOST:$POSTGRES_PORT
       - name: backstage
-        image: ghcr.io/dotcomrow/backstage-image:ts-20251109-232224
+        image: ghcr.io/dotcomrow/backstage-image:ts-20251109-234310
         workingDir: /app
         ports:
         - containerPort: 7007
