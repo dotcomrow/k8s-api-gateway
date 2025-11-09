@@ -359,7 +359,15 @@ spec:
                 echo "❌ Secret $SECRET_NAME not ready after $MAX_RETRIES attempts"
                 echo "📋 Current secrets in namespace $SECRET_NAMESPACE:"
                 kubectl get secrets -n "$SECRET_NAMESPACE" || true
+                echo "📄 Detailed secret info:"
+                kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" -o yaml 2>/dev/null || echo "Secret not found"
                 exit 1
+              fi
+              
+              # Add debugging every 10 attempts
+              if [ $((RETRY_COUNT % 10)) -eq 0 ]; then
+                echo "🔍 Debug: Current secrets in namespace:"
+                kubectl get secrets -n "$SECRET_NAMESPACE" | grep vault || echo "No vault-related secrets found"
               fi
               
               sleep 5
@@ -1331,63 +1339,88 @@ spec:
       serviceAccountName: backstage
       initContainers:
       - name: wait-database-setup
-        image: alpine/k8s:1.31.4
+        image: postgres:15-alpine
+        env:
+        - name: POSTGRES_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: POSTGRES_PORT
+          value: "5433"
+        - name: POSTGRES_DB
+          value: "backstage"
         command:
         - sh
         - -c
         - |
-          echo "🔧 Waiting for Backstage database setup job to complete..."
+          echo "🔧 Waiting for Backstage database to be ready..."
           
-          # Wait for database setup job to complete successfully
-          CONFIG_JOB_NAME="backstage-yugabyte-config"
-          CONFIG_NAMESPACE="k8s-api-gateway"
+          # First, wait for Vault token secret (same as the database job needs)
+          SECRET_NAME="vault-root-token"
+          SECRET_NAMESPACE="k8s-api-gateway"
           
-          echo "🔍 Waiting for job: $CONFIG_JOB_NAME in namespace: $CONFIG_NAMESPACE"
-          
-          # Wait for the job to exist
+          echo "🔍 Step 1: Waiting for Vault token secret..."
           RETRY_COUNT=0
           MAX_RETRIES=60
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if kubectl get job "$CONFIG_JOB_NAME" -n "$CONFIG_NAMESPACE" >/dev/null 2>&1; then
-              echo "✅ Found job $CONFIG_JOB_NAME"
-              break
+            if kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" >/dev/null 2>&1; then
+              if kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" -o jsonpath='{.data.VAULT_TOKEN}' 2>/dev/null | grep -q .; then
+                echo "✅ Vault token secret is available"
+                break
+              fi
             fi
             
             RETRY_COUNT=$((RETRY_COUNT + 1))
-            echo "⏳ Waiting for job $CONFIG_JOB_NAME to be created... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+            echo "⏳ Waiting for vault token... (attempt $RETRY_COUNT/$MAX_RETRIES)"
             
             if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-              echo "❌ Job $CONFIG_JOB_NAME not found after $MAX_RETRIES attempts"
-              echo "📋 Current jobs in namespace $CONFIG_NAMESPACE:"
-              kubectl get jobs -n "$CONFIG_NAMESPACE" || true
+              echo "❌ Vault token not available, but continuing to database check"
+              break
+            fi
+            sleep 5
+          done
+          
+          # Install netcat for connectivity tests
+          apk add --no-cache netcat-openbsd postgresql15-client
+          
+          # Wait for YugabyteDB to be reachable
+          echo "🔍 Step 2: Waiting for YugabyteDB to be reachable..."
+          until nc -z "$POSTGRES_HOST" "$POSTGRES_PORT"; do
+            echo "⏳ Waiting for YugabyteDB at $POSTGRES_HOST:$POSTGRES_PORT..."
+            sleep 5
+          done
+          echo "✅ YugabyteDB is reachable"
+          
+          # Wait for backstage database to exist
+          echo "🔍 Step 3: Waiting for backstage database to be created..."
+          RETRY_COUNT=0
+          MAX_RETRIES=120
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # Try to connect to yugabyte database and check if backstage database exists
+            if PGPASSWORD='yugabyte' psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='$POSTGRES_DB'" 2>/dev/null | grep -q "1"; then
+              echo "✅ Backstage database exists"
+              
+              # Also check if backstage schema exists
+              if PGPASSWORD='yugabyte' psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U yugabyte -d "$POSTGRES_DB" -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='backstage'" 2>/dev/null | grep -q "1"; then
+                echo "✅ Backstage schema exists"
+                echo "✅ Database setup complete, Backstage can start"
+                exit 0
+              else
+                echo "📄 Database exists but backstage schema not ready yet"
+              fi
+            else
+              echo "📄 Backstage database not created yet"
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⏳ Waiting for database setup... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+            
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "❌ Database setup not complete after $MAX_RETRIES attempts"
+              echo "📋 Available databases:"
+              PGPASSWORD='yugabyte' psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U yugabyte -d yugabyte -c "\l" 2>/dev/null || echo "Could not list databases"
               exit 1
             fi
             
             sleep 5
-          done
-          
-          # Wait for the job to complete
-          while true; do
-            JOB_STATUS=$(kubectl get job "$CONFIG_JOB_NAME" -n "$CONFIG_NAMESPACE" -o json 2>/dev/null || echo '{}')
-            
-            SUCCEEDED=$(echo "$JOB_STATUS" | jq -r '.status.succeeded // 0')
-            FAILED=$(echo "$JOB_STATUS" | jq -r '.status.failed // 0')
-            ACTIVE=$(echo "$JOB_STATUS" | jq -r '.status.active // 0')
-            
-            echo "📊 Job $CONFIG_JOB_NAME status - Succeeded: $SUCCEEDED, Failed: $FAILED, Active: $ACTIVE"
-            
-            if [ "$SUCCEEDED" -gt 0 ]; then
-              echo "✅ Job $CONFIG_JOB_NAME completed successfully"
-              echo "✅ Database setup complete, Backstage can start"
-              exit 0
-            elif [ "$FAILED" -gt 0 ]; then
-              echo "❌ Job $CONFIG_JOB_NAME failed. Checking logs:"
-              kubectl logs job/"$CONFIG_JOB_NAME" -n "$CONFIG_NAMESPACE" --tail=20 || true
-              exit 1
-            else
-              echo "⏳ Job $CONFIG_JOB_NAME still running..."
-              sleep 10
-            fi
           done
       containers:
       - name: backstage
