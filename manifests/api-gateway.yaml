@@ -1221,6 +1221,8 @@ spec:
           set -e
           echo "🔧 Loading database credentials from Vault..."
           if [ -f /vault/secrets/db-creds ]; then
+            echo "📄 Vault secrets file found, contents:"
+            cat /vault/secrets/db-creds
             source /vault/secrets/db-creds
             echo "✅ Database credentials loaded"
           else
@@ -1228,7 +1230,15 @@ spec:
             export POSTGRES_USER=""
             export POSTGRES_PASSWORD=""
           fi
+          echo "🔍 Debug - Environment variables:"
+          echo "POSTGRES_HOST: $POSTGRES_HOST"
+          echo "POSTGRES_PORT: $POSTGRES_PORT"
+          echo "POSTGRES_DB: $POSTGRES_DB"
+          echo "POSTGRES_USER: $POSTGRES_USER"
+          echo "POSTGRES_PASSWORD: [$(echo "$POSTGRES_PASSWORD" | wc -c) chars]"
           echo "🚀 Starting Backstage with loaded credentials..."
+          # Ensure all environment variables are exported for the nested shell
+          export POSTGRES_HOST POSTGRES_PORT POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD
           exec sh -c '
             echo "🚀 Starting pre-built Backstage application..." &&
             echo "📊 Container memory info:" &&
