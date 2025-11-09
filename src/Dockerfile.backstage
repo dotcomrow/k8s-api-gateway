@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for Backstage
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -62,23 +62,18 @@ RUN find /app -name "package.json" -type f -exec sed -i 's|"link:../app"|"file:.
     find /app -name "package.json" -type f -exec sed -i 's|"link:|"file:|g' {} \;
 
 # Install dependencies with full memory
-RUN yarn install --network-timeout 300000 || \
-    yarn install --network-timeout 300000 --mode loose || \
-    npm install --legacy-peer-deps --no-audit --no-fund
+RUN yarn install --network-timeout 300000 --ignore-engines || \
+    yarn install --network-timeout 300000 --mode loose --ignore-engines || \
+    (rm -f yarn.lock && yarn install --network-timeout 300000 --ignore-engines)
 
 # Add missing dependencies that Backstage needs but aren't always installed
-RUN yarn add prop-types typescript @types/react @types/react-dom --dev || \
-    npm install prop-types typescript @types/react @types/react-dom --save-dev --legacy-peer-deps || \
-    echo "Warning: Could not install additional dependencies"
-
-# Install pure JavaScript PostgreSQL client and remove pg-native
-RUN echo "🔧 Installing pure JavaScript PostgreSQL client for YugabyteDB compatibility..." && \
-    npm install pg@8.8.0 --no-optional --legacy-peer-deps || \
-    yarn add pg@8.8.0 || \
-    echo "Warning: Could not install pg client" && \
+# Including pg client for YugabyteDB compatibility
+RUN echo "🔧 Installing dependencies including pure JavaScript PostgreSQL client..." && \
+    yarn add prop-types typescript @types/react @types/react-dom @types/node pg@8.8.0 --dev --ignore-engines && \
     echo "🔧 Removing pg-native to prevent native binding issues..." && \
     rm -rf node_modules/pg-native 2>/dev/null || true && \
     rm -rf */node_modules/pg-native 2>/dev/null || true && \
+    find . -name "pg-native" -type d -exec rm -rf {} + 2>/dev/null || true && \
     echo "🔧 Patching pg library to force pure JavaScript mode..." && \
     if [ -f "node_modules/pg/lib/index.js" ]; then \
         cp node_modules/pg/lib/index.js node_modules/pg/lib/index.js.backup && \
@@ -91,12 +86,13 @@ RUN echo "🔧 Installing pure JavaScript PostgreSQL client for YugabyteDB compa
 # Build the backend - MUST succeed for production image
 RUN if [ -d "packages/backend" ]; then \
         echo "Building backend..." && \
+        # Regenerate yarn.lock if corrupted \
+        (yarn install --ignore-engines 2>/dev/null || (rm -f yarn.lock && yarn install --ignore-engines)) && \
         # Try different build approaches in order of preference \
-        (echo "Trying yarn build:backend..." && yarn build:backend) || \
-        (echo "Trying workspace backend build..." && cd packages/backend && yarn build) || \
-        (echo "Trying TypeScript compilation..." && cd packages/backend && yarn tsc) || \
-        (echo "Trying npx TypeScript..." && cd packages/backend && npx typescript) || \
-        (echo "Installing TypeScript globally and trying..." && npm install -g typescript && cd packages/backend && tsc) || \
+        (echo "Trying yarn build:backend..." && yarn build:backend --ignore-engines) || \
+        (echo "Trying workspace backend build..." && cd packages/backend && yarn build --ignore-engines) || \
+        (echo "Trying TypeScript compilation..." && cd packages/backend && yarn tsc --skipLibCheck) || \
+        (echo "Installing TypeScript and trying..." && yarn add -W typescript@latest --dev --ignore-engines && cd packages/backend && yarn tsc --skipLibCheck) || \
         (echo "ERROR: All backend build attempts failed" && exit 1) && \
         echo "Backend build completed successfully"; \
     else \
@@ -147,7 +143,7 @@ RUN rm -rf /tmp/* ~/.npm ~/.cache /var/cache/apk/* && \
     yarn cache clean 2>/dev/null || true
 
 # Production stage - fully built and ready to run
-FROM node:18-alpine AS runtime
+FROM node:20-alpine AS runtime
 
 # Install only minimal runtime dependencies including socat for TCP proxy
 RUN apk add --no-cache git curl socat
