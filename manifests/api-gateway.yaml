@@ -1241,11 +1241,10 @@ data:
         origin: http://localhost:3000
         methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
         credentials: true
-      # Disable automatic migrations - handled by migration coordinator
       database:
+        # Disable automatic migrations - handled by migration coordinator
         migrations:
           skip: true
-      database:
         client: pg
         connection:
           host: $POSTGRES_HOST
