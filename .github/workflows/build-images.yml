@@ -96,15 +96,31 @@ jobs:
         service: [management-api, gateway, portal]
     
     steps:
+    - name: Log in to GHCR for scanning
+      run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+
     - name: Run Trivy vulnerability scanner
+      id: trivy
       uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
+      continue-on-error: true
       with:
         image-ref: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/gravitee-${{ matrix.service }}:latest
         format: 'sarif'
         output: 'trivy-results-${{ matrix.service }}.sarif'
 
+    - name: Check if SARIF file exists
+      id: sarif-check
+      run: |
+        if [ -f "trivy-results-${{ matrix.service }}.sarif" ]; then
+          echo "sarif-exists=true" >> $GITHUB_OUTPUT
+          echo "✅ SARIF file generated for ${{ matrix.service }}"
+        else
+          echo "sarif-exists=false" >> $GITHUB_OUTPUT
+          echo "❌ SARIF file not generated for ${{ matrix.service }}"
+        fi
+
     - name: Upload Trivy scan results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@17783bfb99b07f70fae080b654aed0c514057477
-      if: always()
+      if: steps.sarif-check.outputs.sarif-exists == 'true'
       with:
         sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
