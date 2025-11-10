@@ -5,10 +5,9 @@ FROM graviteeio/apim-portal-ui:4.6.0
 USER root
 
 # Install debugging tools for troubleshooting
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     curl \
-    jq \
-    && rm -rf /var/lib/apt/lists/*
+    jq
 
 # Copy custom portal configuration and any custom assets
 COPY --chown=nginx:nginx src/gravitee-config/portal/ /usr/share/nginx/html/
