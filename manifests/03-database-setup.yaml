@@ -116,12 +116,15 @@ spec:
             max_ttl="720h"
           
           # Create static credentials for Gravitee
-          echo "🔑 Creating static database credentials for Gravitee..."
-          vault write yugabyte-db/static-roles/gravitee-app \
-            db_name=gravitee-db \
-            rotation_statements="ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';" \
-            username=gravitee_app \
-            rotation_period=86400
+          if vault read yugabyte-db/static-roles/gravitee-app >/dev/null 2>&1; then
+            echo "🔑 Static role 'gravitee-app' already exists, skipping creation."
+          else
+            vault write yugabyte-db/static-roles/gravitee-app \
+              db_name=gravitee-db \
+              rotation_statements="ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';" \
+              username=gravitee_app \
+              rotation_period=86400
+          fi
           
           # Generate JWT secret for Gravitee
           JWT_SECRET=$(openssl rand -base64 64)
