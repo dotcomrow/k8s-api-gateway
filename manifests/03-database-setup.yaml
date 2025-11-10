@@ -70,29 +70,29 @@ spec:
           
           # Create Gravitee database if it doesn't exist
           echo "🗄️ Creating Gravitee database..."
-          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d yugabyte -c \
+          PGPASSWORD="$VAULT_TOKEN" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U vaultadmin -d yugabyte -c \
             "CREATE DATABASE $YUGABYTE_DATABASE;" 2>/dev/null || echo "📋 Database '$YUGABYTE_DATABASE' already exists"
           
           # Create Gravitee database user
           GRAVITEE_DB_PASSWORD=$(openssl rand -base64 32)
           echo "👤 Creating Gravitee database user..."
-          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d yugabyte -c \
+          PGPASSWORD="$VAULT_TOKEN" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U vaultadmin -d yugabyte -c \
             "CREATE USER gravitee_app WITH PASSWORD '$GRAVITEE_DB_PASSWORD';" 2>/dev/null || echo "👤 User 'gravitee_app' already exists"
           
           # Grant permissions to Gravitee user
           echo "🔐 Granting permissions to Gravitee user..."
-          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -c \
+          PGPASSWORD="$VAULT_TOKEN" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U vaultadmin -d "$YUGABYTE_DATABASE" -c \
             "GRANT ALL PRIVILEGES ON DATABASE $YUGABYTE_DATABASE TO gravitee_app;"
-          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -c \
+          PGPASSWORD="$VAULT_TOKEN" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U vaultadmin -d "$YUGABYTE_DATABASE" -c \
             "GRANT ALL ON SCHEMA public TO gravitee_app;"
-          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -c \
+          PGPASSWORD="$VAULT_TOKEN" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U vaultadmin -d "$YUGABYTE_DATABASE" -c \
             "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO gravitee_app;"
-          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -c \
+          PGPASSWORD="$VAULT_TOKEN" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U vaultadmin -d "$YUGABYTE_DATABASE" -c \
             "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO gravitee_app;"
           
           # Create gravitee schema in the database
           echo "📋 Creating Gravitee schema..."
-          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -c \
+          PGPASSWORD="$VAULT_TOKEN" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U vaultadmin -d "$YUGABYTE_DATABASE" -c \
             "CREATE SCHEMA IF NOT EXISTS gravitee AUTHORIZATION gravitee_app;"
           
           # Configure Vault database engine for YugabyteDB
@@ -104,8 +104,8 @@ spec:
             plugin_name=postgresql-database-plugin \
             connection_url="postgresql://{{username}}:{{password}}@$YUGABYTE_HOST:$YUGABYTE_PORT/$YUGABYTE_DATABASE?sslmode=disable" \
             allowed_roles="gravitee-app" \
-            username="yugabyte" \
-            password="yugabyte"
+            username="vaultadmin" \
+            password="$VAULT_TOKEN"
           
           # Create Vault role for Gravitee database access
           vault write yugabyte-db/roles/gravitee-app \
