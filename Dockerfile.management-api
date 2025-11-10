@@ -5,13 +5,12 @@ FROM graviteeio/apim-management-api:4.6.0
 USER root
 
 # Install additional tools and PostgreSQL client for YugabyteDB
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     postgresql-client \
     curl \
     wget \
     jq \
-    netcat-openbsd \
-    && rm -rf /var/lib/apt/lists/*
+    netcat-openbsd
 
 # Add enhanced PostgreSQL/YugabyteDB JDBC driver
 RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar \
