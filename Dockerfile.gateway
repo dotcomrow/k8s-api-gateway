@@ -12,14 +12,10 @@ RUN apk add --no-cache \
     tcpdump
 
 # Copy custom gateway configuration for Kubernetes and APISIX integration
-COPY --chown=gravitee:gravitee src/gravitee-config/gateway/gravitee.yml /opt/graviteeio-gateway/config/
+COPY --chown=graviteeio:gravitee src/gravitee-config/gateway/gravitee.yml /opt/graviteeio-gateway/config/
 
-# Create logs directory with proper permissions
-RUN mkdir -p /opt/graviteeio-gateway/logs && \
-    chown -R gravitee:gravitee /opt/graviteeio-gateway/logs
-
-# Switch back to gravitee user
-USER gravitee
+# Switch back to gravitee user (logs directory already exists with correct permissions)
+USER graviteeio
 
 # Expose gateway port
 EXPOSE 8082

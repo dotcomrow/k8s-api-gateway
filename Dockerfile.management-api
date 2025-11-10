@@ -17,14 +17,10 @@ RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/post
     -O /opt/graviteeio-management-api/lib/postgresql-42.7.4.jar
 
 # Copy custom configuration with YugabyteDB and Vault integration
-COPY --chown=gravitee:gravitee src/gravitee-config/management-api/gravitee.yml /opt/graviteeio-management-api/config/
+COPY --chown=graviteeio:gravitee src/gravitee-config/management-api/gravitee.yml /opt/graviteeio-management-api/config/
 
-# Create logs directory with proper permissions
-RUN mkdir -p /opt/graviteeio-management-api/logs && \
-    chown -R gravitee:gravitee /opt/graviteeio-management-api/logs
-
-# Switch back to gravitee user
-USER gravitee
+# Switch back to gravitee user (logs directory already exists with correct permissions)
+USER graviteeio
 
 # Expose management API port
 EXPOSE 8083
