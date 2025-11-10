@@ -117,6 +117,7 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "5"
+    linkerd.io/inject: "disabled"
 spec:
   template:
     metadata:
