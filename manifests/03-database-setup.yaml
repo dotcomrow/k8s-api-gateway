@@ -54,7 +54,7 @@ spec:
           echo "🔧 Setting up YugabyteDB for Gravitee..."
           
           # Install required packages
-          apk add --no-cache postgresql15-client curl netcat-openbsd
+          apk add --no-cache postgresql15-client curl netcat-openbsd openssl
           
           # Login to Vault
           export VAULT_TOKEN=$(cat /vault-token/VAULT_TOKEN)
