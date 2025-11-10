@@ -45,17 +45,20 @@ jobs:
     - name: Log in to GHCR
       run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
 
+    - name: Set timestamp tag
+      id: set-tag
+      run: |
+        echo "tag=ts-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+        echo "latest_tag=ts-latest" >> "$GITHUB_OUTPUT"
+
     - name: Generate image metadata
       id: meta
       uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893
       with:
         images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/gravitee-${{ matrix.service }}
         tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix={{branch}}-
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=raw,value={{branch}}-{{date 'YYYYMMDD-HHmmss'}},enable={{is_default_branch}}
+          type=raw,value=${{ steps.set-tag.outputs.tag }}
+          type=raw,value=${{ steps.set-tag.outputs.latest_tag }}
         labels: |
           org.opencontainers.image.title=Gravitee ${{ matrix.service }}
           org.opencontainers.image.description=Custom Gravitee.io ${{ matrix.service }} with YugabyteDB support
@@ -79,10 +82,16 @@ jobs:
     - name: Generate build summary
       run: |
         echo "## 🚀 Gravitee ${{ matrix.service }} Build Complete" >> $GITHUB_STEP_SUMMARY
-        echo "- **Image**: \`${{ env.REGISTRY }}/${{ env.NAMESPACE }}/gravitee-${{ matrix.service }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "- **Tags**: ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Service**: ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Registry**: \`${{ env.REGISTRY }}/${{ env.NAMESPACE }}/gravitee-${{ matrix.service }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timestamp Tag**: \`${{ steps.set-tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Latest Tag**: \`${{ steps.set-tag.outputs.latest_tag }}\`" >> $GITHUB_STEP_SUMMARY
         echo "- **Platforms**: linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
-        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**To deploy this version, update the manifest:**" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`yaml" >> $GITHUB_STEP_SUMMARY
+        echo "image: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/gravitee-${{ matrix.service }}:${{ steps.set-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
   security-scan:
     needs: build
