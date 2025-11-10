@@ -79,6 +79,11 @@ spec:
           set -e
           echo "🔐 Setting up APISIX secrets in Vault..."
           
+          # Install openssl (Alpine Linux)
+          echo "📦 Installing openssl..."
+          apk add --no-cache openssl
+          echo "✅ OpenSSL installed"
+          
           # Login to Vault using root token
           export VAULT_TOKEN=$(cat /vault-token/VAULT_TOKEN)
           echo "🔓 Logging into Vault..."
