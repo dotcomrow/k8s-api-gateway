@@ -10,6 +10,9 @@ metadata:
     linkerd.io/inject: "disabled"
 spec:
   template:
+    metadata:
+      annotations:
+        linkerd.io/inject: "disabled"
     spec:
       serviceAccountName: default
       restartPolicy: OnFailure

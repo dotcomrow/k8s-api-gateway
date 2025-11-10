@@ -122,6 +122,7 @@ spec:
   template:
     metadata:
       annotations:
+        linkerd.io/inject: "disabled"
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "apisix"
         vault.hashicorp.com/agent-inject-secret-admin: "secret/apisix/admin"
