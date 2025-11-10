@@ -1,0 +1,310 @@
+---
+# Gravitee Management API Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gravitee-management-api
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gravitee-management-api
+  template:
+    metadata:
+      labels:
+        app: gravitee-management-api
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "gravitee"
+        vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
+        vault.hashicorp.com/agent-inject-template-db-creds: |
+          {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
+          export YUGABYTE_USER="{{ .Data.username }}"
+          export YUGABYTE_PASSWORD="{{ .Data.password }}"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-jwt: "secret/gravitee/jwt"
+        vault.hashicorp.com/agent-inject-template-jwt: |
+          {{- with secret "secret/gravitee/jwt" -}}
+          export JWT_SECRET="{{ .Data.secret }}"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-apisix: "secret/apisix/admin"
+        vault.hashicorp.com/agent-inject-template-apisix: |
+          {{- with secret "secret/apisix/admin" -}}
+          export APISIX_ADMIN_KEY="{{ .Data.key }}"
+          {{- end }}
+    spec:
+      serviceAccountName: gravitee
+      initContainers:
+      - name: wait-database-setup
+        image: alpine/k8s:1.31.4
+        env:
+        - name: YUGABYTE_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: YUGABYTE_PORT
+          value: "5433"
+        - name: YUGABYTE_DATABASE
+          value: "gravitee"
+        command:
+        - sh
+        - -c
+        - |
+          echo "🔧 Waiting for Gravitee database to be ready..."
+          
+          # Install required packages
+          apk add --no-cache netcat-openbsd postgresql15-client
+          
+          # Wait for YugabyteDB to be reachable
+          echo "🔍 Waiting for YugabyteDB to be reachable..."
+          until nc -z "$YUGABYTE_HOST" "$YUGABYTE_PORT"; do
+            echo "⏳ Waiting for YugabyteDB at $YUGABYTE_HOST:$YUGABYTE_PORT..."
+            sleep 5
+          done
+          echo "✅ YugabyteDB is reachable"
+          
+          # Wait for gravitee database to exist
+          echo "🔍 Waiting for gravitee database to be created..."
+          RETRY_COUNT=0
+          MAX_RETRIES=120
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # Try to connect with yugabyte user first
+            if PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='$YUGABYTE_DATABASE'" 2>/dev/null | grep -q "1"; then
+              echo "✅ Gravitee database exists"
+              
+              # Check if gravitee schema exists
+              if PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='gravitee'" 2>/dev/null | grep -q "1"; then
+                echo "✅ Gravitee schema exists"
+                echo "✅ Database setup complete, Gravitee can start"
+                exit 0
+              else
+                echo "📄 Database exists but gravitee schema not ready yet"
+              fi
+              break
+            else
+              echo "📄 Gravitee database not found yet"
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⏳ Waiting for database setup... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+            
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "❌ Database setup not complete after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            sleep 5
+          done
+      containers:
+      - name: gravitee-management-api
+        image: ghcr.io/dotcomrow/gravitee-management-api:latest
+        ports:
+        - containerPort: 8083
+        env:
+        - name: YUGABYTE_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: YUGABYTE_PORT
+          value: "5433"
+        - name: YUGABYTE_DATABASE
+          value: "gravitee"
+        - name: YUGABYTE_SCHEMA
+          value: "gravitee"
+        - name: K8S_NAMESPACE
+          value: "k8s-api-gateway"
+        - name: APISIX_SYNC_ENABLED
+          value: "true"
+        - name: APISIX_ADMIN_URL
+          value: "http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180"
+        - name: JWT_ISSUER
+          value: "k8s-api-gateway"
+        - name: JWT_EXPIRE_AFTER
+          value: "604800"
+        - name: PORTAL_URL
+          value: "http://gravitee-portal.k8s-api-gateway.svc.cluster.local:8080"
+        - name: GATEWAY_URL
+          value: "http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          echo "🔧 Loading secrets from Vault..."
+          if [ -f /vault/secrets/db-creds ]; then
+            source /vault/secrets/db-creds
+            echo "✅ Database credentials loaded"
+          fi
+          if [ -f /vault/secrets/jwt ]; then
+            source /vault/secrets/jwt
+            echo "✅ JWT secret loaded"
+          fi
+          if [ -f /vault/secrets/apisix ]; then
+            source /vault/secrets/apisix
+            echo "✅ APISIX admin key loaded"
+          fi
+          
+          echo "🚀 Starting Gravitee Management API..."
+          exec java -jar /opt/graviteeio-management-api/gravitee-rest-api-standalone.jar
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+        livenessProbe:
+          httpGet:
+            path: /management/platform
+            port: 8083
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /management/platform
+            port: 8083
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+# Gravitee Gateway Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gravitee-gateway
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gravitee-gateway
+  template:
+    metadata:
+      labels:
+        app: gravitee-gateway
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "gravitee"
+        vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
+        vault.hashicorp.com/agent-inject-template-db-creds: |
+          {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
+          export YUGABYTE_USER="{{ .Data.username }}"
+          export YUGABYTE_PASSWORD="{{ .Data.password }}"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-apisix: "secret/apisix/admin"
+        vault.hashicorp.com/agent-inject-template-apisix: |
+          {{- with secret "secret/apisix/admin" -}}
+          export APISIX_ADMIN_KEY="{{ .Data.key }}"
+          {{- end }}
+    spec:
+      serviceAccountName: gravitee
+      containers:
+      - name: gravitee-gateway
+        image: ghcr.io/dotcomrow/gravitee-gateway:latest
+        ports:
+        - containerPort: 8082
+        env:
+        - name: YUGABYTE_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: YUGABYTE_PORT
+          value: "5433"
+        - name: YUGABYTE_DATABASE
+          value: "gravitee"
+        - name: YUGABYTE_SCHEMA
+          value: "gravitee"
+        - name: K8S_NAMESPACE
+          value: "k8s-api-gateway"
+        - name: APISIX_SYNC_ENABLED
+          value: "true"
+        - name: APISIX_ADMIN_URL
+          value: "http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          echo "🔧 Loading secrets from Vault..."
+          if [ -f /vault/secrets/db-creds ]; then
+            source /vault/secrets/db-creds
+            echo "✅ Database credentials loaded"
+          fi
+          if [ -f /vault/secrets/apisix ]; then
+            source /vault/secrets/apisix
+            echo "✅ APISIX admin key loaded"
+          fi
+          
+          echo "🚀 Starting Gravitee Gateway..."
+          exec java -jar /opt/graviteeio-gateway/gravitee-gateway-standalone.jar
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /_node/health
+            port: 8082
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /_node/health
+            port: 8082
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+# Gravitee Portal Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gravitee-portal
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gravitee-portal
+  template:
+    metadata:
+      labels:
+        app: gravitee-portal
+    spec:
+      serviceAccountName: gravitee
+      containers:
+      - name: gravitee-portal
+        image: ghcr.io/dotcomrow/gravitee-portal:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORTAL_OAUTH_CLIENT_ID
+          value: "gravitee-portal"
+        - name: PORTAL_OAUTH_SERVER_URL
+          value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10

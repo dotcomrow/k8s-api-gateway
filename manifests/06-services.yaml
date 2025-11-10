@@ -1,0 +1,112 @@
+---
+# Gravitee Management API Service
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  name: gravitee-management-api
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  ports:
+  - port: 8083
+    targetPort: 8083
+    name: http
+  selector:
+    app: gravitee-management-api
+---
+# Gravitee Gateway Service
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  name: gravitee-gateway
+  namespace: k8s-api-gateway
+spec:
+  ports:
+  - port: 8082
+    targetPort: 8082
+    name: http
+  selector:
+    app: gravitee-gateway
+---
+# Gravitee Portal Service
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  name: gravitee-portal
+  namespace: k8s-api-gateway
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: gravitee-portal
+---
+# APISIX etcd Service
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  name: apisix-etcd
+  namespace: k8s-api-gateway
+spec:
+  ports:
+  - port: 2379
+    targetPort: 2379
+    name: client
+  - port: 2380
+    targetPort: 2380
+    name: peer
+  selector:
+    app: apisix-etcd
+---
+# APISIX Service (Internal Only)
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  name: apisix
+  namespace: k8s-api-gateway
+  annotations:
+    # Internal API Gateway - not exposed externally
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+spec:
+  ports:
+  - port: 80
+    targetPort: 9080
+    name: http
+  - port: 443
+    targetPort: 9443
+    name: https
+  - port: 9091
+    targetPort: 9091
+    name: metrics
+  selector:
+    app: apisix
+  type: ClusterIP  # Internal only - no external LoadBalancer needed
+---
+# APISIX Admin Service (for Gravitee integration)
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  name: apisix-admin
+  namespace: k8s-api-gateway
+spec:
+  ports:
+  - port: 9180
+    targetPort: 9180
+    name: admin
+  selector:
+    app: apisix
+  type: ClusterIP

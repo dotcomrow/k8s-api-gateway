@@ -1,0 +1,213 @@
+---
+# ConfigMap for APISIX Route Configuration Job
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apisix-routes-config
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+data:
+  configure-routes.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "🔧 Configuring APISIX routes for Gravitee portal access..."
+    
+    # Wait for APISIX Admin API to be ready
+    until curl -f -s http://apisix-admin:9180/apisix/admin/routes -H "X-API-KEY: $APISIX_ADMIN_KEY" > /dev/null 2>&1; do
+      echo "⏳ Waiting for APISIX Admin API..."
+      sleep 5
+    done
+    
+    echo "✅ APISIX Admin API is ready"
+    
+    # Create route for Gravitee Portal (public access)
+    echo "🌐 Creating Gravitee Portal route..."
+    curl -X PUT "http://apisix-admin:9180/apisix/admin/routes/gravitee-portal" \
+      -H "X-API-KEY: $APISIX_ADMIN_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "gravitee-portal",
+        "desc": "Route to Gravitee Portal for API browsing and access requests",
+        "uri": "/portal/*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "upstream": {
+          "type": "roundrobin",
+          "nodes": {
+            "gravitee-portal.k8s-api-gateway.svc.cluster.local:8080": 1
+          }
+        },
+        "plugins": {
+          "cors": {
+            "allow_origins": "*",
+            "allow_methods": "GET,POST,PUT,DELETE,OPTIONS",
+            "allow_headers": "*",
+            "expose_headers": "*"
+          },
+          "proxy-rewrite": {
+            "regex_uri": ["^/portal(.*)", "$1"]
+          }
+        }
+      }'
+    
+    # Create route for Gravitee Management API (authenticated access)
+    echo "🔐 Creating Gravitee Management API route..."
+    curl -X PUT "http://apisix-admin:9180/apisix/admin/routes/gravitee-management-api" \
+      -H "X-API-KEY: $APISIX_ADMIN_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "gravitee-management-api",
+        "desc": "Route to Gravitee Management API for portal backend",
+        "uri": "/management/*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "upstream": {
+          "type": "roundrobin",
+          "nodes": {
+            "gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083": 1
+          }
+        },
+        "plugins": {
+          "cors": {
+            "allow_origins": "*",
+            "allow_methods": "GET,POST,PUT,DELETE,OPTIONS",
+            "allow_headers": "*",
+            "expose_headers": "*"
+          },
+          "proxy-rewrite": {
+            "regex_uri": ["^/management(.*)", "$1"]
+          }
+        }
+      }'
+    
+    # Create route for Gravitee Gateway (API runtime)  
+    echo "⚡ Creating Gravitee Gateway route..."
+    curl -X PUT "http://apisix-admin:9180/apisix/admin/routes/gravitee-gateway" \
+      -H "X-API-KEY: $APISIX_ADMIN_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "gravitee-gateway",
+        "desc": "Route to Gravitee Gateway for API runtime execution",
+        "uri": "/gateway/*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+        "upstream": {
+          "type": "roundrobin",
+          "nodes": {
+            "gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082": 1
+          }
+        },
+        "plugins": {
+          "proxy-rewrite": {
+            "regex_uri": ["^/gateway(.*)", "$1"]
+          }
+        }
+      }'
+    
+    echo "✅ APISIX routes configured successfully"
+    echo "📋 Portal Access:"
+    echo "   - Gravitee Portal: http://<apisix-host>/portal/"
+    echo "   - Management API: http://<apisix-host>/management/"
+    echo "   - Gateway Runtime: http://<apisix-host>/gateway/"
+---
+# Job to configure APISIX routes after deployment
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-apisix-routes
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "apisix"
+        vault.hashicorp.com/agent-inject-secret-admin: "secret/apisix/admin"
+        vault.hashicorp.com/agent-inject-template-admin: |
+          {{- with secret "secret/apisix/admin" -}}
+          export APISIX_ADMIN_KEY="{{ .Data.key }}"
+          {{- end }}
+    spec:
+      serviceAccountName: apisix
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-apisix
+        image: curlimages/curl:8.0.1
+        command:
+        - sh
+        - -c
+        - |
+          echo "⏳ Waiting for APISIX to be ready..."
+          RETRY_COUNT=0
+          MAX_RETRIES=120
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if curl -f -s http://apisix:80/ > /dev/null 2>&1; then
+              echo "✅ APISIX is ready"
+              exit 0
+            fi
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⏳ Waiting for APISIX... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+            sleep 5
+          done
+          echo "❌ APISIX not ready after $MAX_RETRIES attempts"
+          exit 1
+      - name: wait-for-gravitee
+        image: curlimages/curl:8.0.1
+        command:
+        - sh  
+        - -c
+        - |
+          echo "⏳ Waiting for Gravitee services to be ready..."
+          RETRY_COUNT=0
+          MAX_RETRIES=120
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # Check Gravitee Management API
+            if curl -f -s http://gravitee-management-api:8083/management/platform > /dev/null 2>&1; then
+              echo "✅ Gravitee Management API is ready"
+              
+              # Check Gravitee Gateway  
+              if curl -f -s http://gravitee-gateway:8082/_node/health > /dev/null 2>&1; then
+                echo "✅ Gravitee Gateway is ready"
+                
+                # Check Gravitee Portal
+                if curl -f -s http://gravitee-portal:8080/ > /dev/null 2>&1; then
+                  echo "✅ Gravitee Portal is ready"
+                  echo "✅ All Gravitee services are ready"
+                  exit 0
+                fi
+              fi
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⏳ Waiting for Gravitee services... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+            sleep 10
+          done
+          echo "❌ Gravitee services not ready after $MAX_RETRIES attempts"
+          exit 1
+      containers:
+      - name: configure-routes
+        image: curlimages/curl:8.0.1
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          # Load APISIX admin key from Vault
+          if [ -f /vault/secrets/admin ]; then
+            source /vault/secrets/admin
+            echo "✅ APISIX admin key loaded from Vault"
+          else
+            echo "❌ Failed to load APISIX admin key from Vault"
+            exit 1
+          fi
+          
+          # Execute route configuration script
+          /scripts/configure-routes.sh
+        volumeMounts:
+        - name: routes-config
+          mountPath: /scripts
+      volumes:
+      - name: routes-config
+        configMap:
+          name: apisix-routes-config
+          defaultMode: 0755

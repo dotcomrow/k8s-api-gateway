@@ -1,0 +1,30 @@
+# Git and IDE files
+.git
+.gitignore
+.github/workflows
+*.md
+README*
+
+# Build artifacts  
+build-gravitee-images.sh
+verify-migration.sh
+
+# Documentation
+ARCHITECTURE.md
+GRAVITEE_*.md
+MIGRATION_*.md
+
+# Node.js (if any)
+node_modules
+npm-debug.log
+package-lock.json
+
+# Temporary files
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+
+# Only include what's needed for the build
+!src/
+!Dockerfile.*

@@ -1,0 +1,172 @@
+---
+# YugabyteDB Gravitee Database Setup Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-yugabyte-gravitee-db
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  template:
+    spec:
+      serviceAccountName: default
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-vault-token
+        image: alpine:3.20
+        command:
+        - sh
+        - -c
+        - |
+          echo "⏳ Waiting for vault root token to be available..."
+          while [ ! -f /vault-token/VAULT_TOKEN ]; do
+            echo "🔁 Waiting for Vault token file..."
+            sleep 5
+          done
+          echo "✅ Vault token is available"
+        volumeMounts:
+        - name: root-token
+          mountPath: /vault-token
+      containers:
+      - name: setup-database
+        image: hashicorp/vault:1.17.2
+        env:
+        - name: VAULT_ADDR
+          value: "https://vault.vault.svc.cluster.local:8200"
+        - name: VAULT_SKIP_VERIFY
+          value: "true"
+        - name: YUGABYTE_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: YUGABYTE_PORT
+          value: "5433"
+        - name: YUGABYTE_DATABASE
+          value: "gravitee"
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "🔧 Setting up YugabyteDB for Gravitee..."
+          
+          # Install required packages
+          apk add --no-cache postgresql15-client curl netcat-openbsd
+          
+          # Login to Vault
+          export VAULT_TOKEN=$(cat /vault-token/VAULT_TOKEN)
+          echo "🔓 Logging into Vault..."
+          
+          # Wait for YugabyteDB to be ready
+          echo "🔍 Waiting for YugabyteDB to be ready..."
+          until nc -z "$YUGABYTE_HOST" "$YUGABYTE_PORT"; do
+            echo "⏳ Waiting for YugabyteDB at $YUGABYTE_HOST:$YUGABYTE_PORT..."
+            sleep 5
+          done
+          echo "✅ YugabyteDB is reachable"
+          
+          # Create Gravitee database if it doesn't exist
+          echo "🗄️ Creating Gravitee database..."
+          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d yugabyte -c \
+            "CREATE DATABASE $YUGABYTE_DATABASE;" 2>/dev/null || echo "📋 Database '$YUGABYTE_DATABASE' already exists"
+          
+          # Create Gravitee database user
+          GRAVITEE_DB_PASSWORD=$(openssl rand -base64 32)
+          echo "👤 Creating Gravitee database user..."
+          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d yugabyte -c \
+            "CREATE USER gravitee_app WITH PASSWORD '$GRAVITEE_DB_PASSWORD';" 2>/dev/null || echo "👤 User 'gravitee_app' already exists"
+          
+          # Grant permissions to Gravitee user
+          echo "🔐 Granting permissions to Gravitee user..."
+          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -c \
+            "GRANT ALL PRIVILEGES ON DATABASE $YUGABYTE_DATABASE TO gravitee_app;"
+          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -c \
+            "GRANT ALL ON SCHEMA public TO gravitee_app;"
+          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -c \
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO gravitee_app;"
+          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -c \
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO gravitee_app;"
+          
+          # Create gravitee schema in the database
+          echo "📋 Creating Gravitee schema..."
+          PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -c \
+            "CREATE SCHEMA IF NOT EXISTS gravitee AUTHORIZATION gravitee_app;"
+          
+          # Configure Vault database engine for YugabyteDB
+          echo "⚙️ Configuring Vault database engine..."
+          vault secrets enable -path=yugabyte-db database || echo "📋 Database engine already enabled"
+          
+          # Configure YugabyteDB connection in Vault
+          vault write yugabyte-db/config/gravitee-db \
+            plugin_name=postgresql-database-plugin \
+            connection_url="postgresql://{{username}}:{{password}}@$YUGABYTE_HOST:$YUGABYTE_PORT/$YUGABYTE_DATABASE?sslmode=disable" \
+            allowed_roles="gravitee-app" \
+            username="yugabyte" \
+            password="yugabyte"
+          
+          # Create Vault role for Gravitee database access
+          vault write yugabyte-db/roles/gravitee-app \
+            db_name=gravitee-db \
+            creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; \
+                                GRANT gravitee_app TO \"{{name}}\";" \
+            default_ttl="24h" \
+            max_ttl="720h"
+          
+          # Create static credentials for Gravitee
+          echo "🔑 Creating static database credentials for Gravitee..."
+          vault write yugabyte-db/static-roles/gravitee-app \
+            db_name=gravitee-db \
+            rotation_statements="ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';" \
+            username=gravitee_app \
+            rotation_period=86400
+          
+          # Generate JWT secret for Gravitee
+          JWT_SECRET=$(openssl rand -base64 64)
+          vault kv put secret/gravitee/jwt secret="$JWT_SECRET"
+          echo "🔐 JWT secret stored in Vault"
+          
+          # Create Vault policy for Gravitee
+          vault policy write gravitee - <<EOF
+          # Allow reading database credentials
+          path "yugabyte-db/static-creds/gravitee-app" {
+            capabilities = ["read"]
+          }
+          
+          # Allow reading JWT secret
+          path "secret/data/gravitee/jwt" {
+            capabilities = ["read"]
+          }
+          
+          # Allow reading APISIX admin key
+          path "secret/data/apisix/admin" {
+            capabilities = ["read"]
+          }
+          EOF
+          
+          # Create Vault policy for APISIX
+          vault policy write apisix - <<EOF
+          # Allow reading APISIX admin key
+          path "secret/data/apisix/admin" {
+            capabilities = ["read"]
+          }
+          EOF
+          
+          # Verify database setup
+          echo "🔍 Verifying database setup..."
+          PGPASSWORD="$GRAVITEE_DB_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -c \
+            "SELECT current_database(), current_user, version();" || {
+              echo "❌ Database verification failed"
+              exit 1
+            }
+          
+          echo "✅ YugabyteDB setup for Gravitee complete!"
+          echo "📋 Database: $YUGABYTE_DATABASE"
+          echo "👤 User: gravitee_app"
+          echo "🔐 Credentials stored in Vault at yugabyte-db/static-creds/gravitee-app"
+        volumeMounts:
+        - name: root-token
+          mountPath: /vault-token
+      volumes:
+      - name: root-token
+        secret:
+          secretName: vault-root-token
+          optional: false

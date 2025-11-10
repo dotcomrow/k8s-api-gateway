@@ -1,0 +1,36 @@
+# Gravitee.io Gateway with Enhanced Monitoring
+FROM graviteeio/apim-gateway:4.6.0
+
+# Switch to root for package installations  
+USER root
+
+# Install monitoring and debugging tools
+RUN apt-get update && apt-get install -y \
+    curl \
+    netcat-openbsd \
+    jq \
+    tcpdump \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy custom gateway configuration for Kubernetes and APISIX integration
+COPY --chown=gravitee:gravitee src/gravitee-config/gateway/gravitee.yml /opt/graviteeio-gateway/config/
+
+# Create logs directory with proper permissions
+RUN mkdir -p /opt/graviteeio-gateway/logs && \
+    chown -R gravitee:gravitee /opt/graviteeio-gateway/logs
+
+# Switch back to gravitee user
+USER gravitee
+
+# Expose gateway port
+EXPOSE 8082
+
+# Enhanced health check for Kubernetes readiness/liveness probes  
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+    CMD curl -f http://localhost:8082/_node/health || exit 1
+
+# Set working directory
+WORKDIR /opt/graviteeio-gateway
+
+# Default command (can be overridden in Kubernetes)
+CMD ["./bin/gravitee"]

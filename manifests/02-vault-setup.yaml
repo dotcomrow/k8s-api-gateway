@@ -1,0 +1,150 @@
+---
+# Job to copy Vault root token from vault namespace to api-gateway namespace
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: copy-api-gateway-vault-root-token
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  template:
+    spec:
+      serviceAccountName: default
+      restartPolicy: OnFailure
+      containers:
+      - name: copy-secret
+        image: alpine/k8s:1.31.4
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          if kubectl get secret vault-root-token -n k8s-api-gateway >/dev/null 2>&1; then
+            echo "🔄 Vault root token already exists in k8s-api-gateway namespace"
+          else
+            echo "🔁 Copying 'vault-root-token' from vault → api-gateway..."
+            kubectl get secret vault-root-token -n vault -o yaml | \
+              sed 's/namespace: vault/namespace: k8s-api-gateway/' | \
+              kubectl apply -f -
+            echo "✅ Secret copied successfully."
+          fi
+      volumes:
+      - name: root-token
+        secret:
+          secretName: vault-root-token
+          optional: false
+---
+# APISIX Database Setup Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-apisix-db
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  template:
+    spec:
+      serviceAccountName: default
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-vault-token
+        image: alpine:3.20
+        command:
+        - sh
+        - -c
+        - |
+          echo "⏳ Waiting for vault root token to be available..."
+          while [ ! -f /vault-token/VAULT_TOKEN ]; do
+            echo "🔁 Waiting for Vault token file..."
+            sleep 5
+          done
+          echo "✅ Vault token is available"
+        volumeMounts:
+        - name: root-token
+          mountPath: /vault-token
+      containers:
+      - name: setup-apisix-secrets
+        image: hashicorp/vault:1.17.2
+        env:
+        - name: VAULT_ADDR
+          value: "https://vault.vault.svc.cluster.local:8200"
+        - name: VAULT_SKIP_VERIFY
+          value: "true"
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "🔐 Setting up APISIX secrets in Vault..."
+          
+          # Login to Vault using root token
+          export VAULT_TOKEN=$(cat /vault-token/VAULT_TOKEN)
+          echo "🔓 Logging into Vault..."
+          
+          # Generate secure APISIX admin key
+          APISIX_ADMIN_KEY=$(openssl rand -hex 32)
+          echo "🔑 Generated APISIX admin key"
+          
+          # Store APISIX admin key in Vault
+          vault kv put secret/apisix/admin key="$APISIX_ADMIN_KEY"
+          echo "✅ APISIX admin key stored in Vault at secret/apisix/admin"
+          
+          # Verify the secret was stored
+          vault kv get secret/apisix/admin
+          echo "✅ APISIX admin key stored in Vault"
+          
+          # Configure Vault policies and Kubernetes auth roles
+          echo "⚙️ Setting up Vault policies and Kubernetes authentication..."
+          
+          # Create Gravitee policy
+          vault policy write gravitee - <<'EOF'
+          # Allow reading database credentials
+          path "yugabyte-db/static-creds/gravitee-app" {
+            capabilities = ["read"]
+          }
+          
+          # Allow reading JWT secret
+          path "secret/data/gravitee/jwt" {
+            capabilities = ["read"]
+          }
+          
+          # Allow reading APISIX admin key
+          path "secret/data/apisix/admin" {
+            capabilities = ["read"]
+          }
+          EOF
+          
+          # Create APISIX policy
+          vault policy write apisix - <<'EOF'
+          # Allow reading APISIX admin key
+          path "secret/data/apisix/admin" {
+            capabilities = ["read"]
+          }
+          EOF
+          
+          # Configure Kubernetes authentication roles
+          # Note: Assumes Kubernetes auth method is already configured by vault setup
+          vault write auth/kubernetes/role/gravitee \
+            bound_service_account_names="gravitee" \
+            bound_service_account_namespaces="k8s-api-gateway" \
+            policies="gravitee" \
+            ttl="24h"
+          
+          vault write auth/kubernetes/role/apisix \
+            bound_service_account_names="apisix" \
+            bound_service_account_namespaces="k8s-api-gateway" \
+            policies="apisix" \
+            ttl="24h"
+          
+          echo "✅ Vault policies and authentication configured"
+          echo "✅ APISIX secrets setup complete"
+        volumeMounts:
+        - name: root-token
+          mountPath: /vault-token
+      volumes:
+      - name: root-token
+        secret:
+          secretName: vault-root-token
+          optional: false

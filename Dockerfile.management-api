@@ -1,0 +1,41 @@
+# Gravitee.io Management API with YugabyteDB Support
+FROM graviteeio/apim-management-api:4.6.0
+
+# Switch to root for package installations
+USER root
+
+# Install additional tools and PostgreSQL client for YugabyteDB
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    curl \
+    wget \
+    jq \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add enhanced PostgreSQL/YugabyteDB JDBC driver
+RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar \
+    -O /opt/graviteeio-management-api/lib/postgresql-42.7.4.jar
+
+# Copy custom configuration with YugabyteDB and Vault integration
+COPY --chown=gravitee:gravitee src/gravitee-config/management-api/gravitee.yml /opt/graviteeio-management-api/config/
+
+# Create logs directory with proper permissions
+RUN mkdir -p /opt/graviteeio-management-api/logs && \
+    chown -R gravitee:gravitee /opt/graviteeio-management-api/logs
+
+# Switch back to gravitee user
+USER gravitee
+
+# Expose management API port
+EXPOSE 8083
+
+# Enhanced health check for Kubernetes readiness/liveness probes
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
+    CMD curl -f http://localhost:8083/management/platform || exit 1
+
+# Set working directory
+WORKDIR /opt/graviteeio-management-api
+
+# Default command (can be overridden in Kubernetes)
+CMD ["./bin/gravitee"]

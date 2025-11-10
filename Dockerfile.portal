@@ -1,0 +1,30 @@
+# Gravitee.io Portal UI with Custom Configuration
+FROM graviteeio/apim-portal-ui:4.6.0
+
+# Switch to root for package installations
+USER root
+
+# Install debugging tools for troubleshooting
+RUN apt-get update && apt-get install -y \
+    curl \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy custom portal configuration and any custom assets
+COPY --chown=nginx:nginx src/gravitee-config/portal/ /usr/share/nginx/html/
+
+# Ensure proper permissions on web content
+RUN chown -R nginx:nginx /usr/share/nginx/html/
+
+# Switch back to nginx user
+USER nginx
+
+# Expose portal port
+EXPOSE 8080
+
+# Enhanced health check for Kubernetes readiness/liveness probes
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
+    CMD curl -f http://localhost:8080 || exit 1
+
+# Default command (nginx handles this)
+CMD ["nginx", "-g", "daemon off;"]

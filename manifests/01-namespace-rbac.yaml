@@ -1,0 +1,163 @@
+---
+# Namespace for the API Gateway
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    linkerd.io/inject: "enabled"
+    linkerd.io/skip-outbound-ports: "8200"
+    scheduler.alpha.kubernetes.io/node-selector: "dedicated=work-node"
+  labels:
+    name: k8s-api-gateway
+    tier: internal
+    field.cattle.io/projectId: "local:infrastructure"
+---
+# Service Accounts
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: apisix
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gravitee
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+---
+# RBAC for APISIX (needed for service discovery and CRD management)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: apisix
+rules:
+- apiGroups: [""]
+  resources: ["endpoints", "services", "secrets", "configmaps", "pods", "nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["*"]
+- apiGroups: ["discovery.k8s.io"]
+  resources: ["endpointslices"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apisix.apache.org"]
+  resources: ["apisixroutes", "apisixupstreams", "apisixtlses", "apisixconsumers", "apisixpluginconfigs", "apisixglobalrules"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+---
+# RBAC for Gravitee (service discovery and secrets access)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gravitee
+rules:
+- apiGroups: [""]
+  resources: ["services", "endpoints", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["discovery.k8s.io"]
+  resources: ["endpointslices"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+---
+# RBAC for Jobs to Access Secrets and Jobs
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: k8s-api-gateway
+  name: job-secret-reader
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "create", "update", "patch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: default-job-secret-reader
+  namespace: k8s-api-gateway
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: k8s-api-gateway
+roleRef:
+  kind: Role
+  name: job-secret-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gravitee-secret-reader
+  namespace: k8s-api-gateway
+subjects:
+- kind: ServiceAccount
+  name: gravitee
+  namespace: k8s-api-gateway
+roleRef:
+  kind: Role
+  name: job-secret-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# Cluster role bindings
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: apisix
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: apisix
+subjects:
+- kind: ServiceAccount
+  name: apisix
+  namespace: k8s-api-gateway
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gravitee
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gravitee
+subjects:
+- kind: ServiceAccount
+  name: gravitee
+  namespace: k8s-api-gateway
+---
+# Cross-namespace access for vault token copying
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-secret-reader
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+  resourceNames: ["vault-root-token"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: default-vault-secret-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vault-secret-reader
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: k8s-api-gateway

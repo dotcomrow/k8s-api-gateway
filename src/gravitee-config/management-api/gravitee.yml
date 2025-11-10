@@ -1,0 +1,136 @@
+############################################################################################################
+# Gravitee.io Management API Configuration for YugabyteDB and Vault Integration
+############################################################################################################
+gravitee:
+  # Management configuration
+  management:
+    type: jdbc
+    jdbc:
+      driver: org.postgresql.Driver
+      host: ${YUGABYTE_HOST:yugabytedb-service.k8s-api-gateway.svc.cluster.local}
+      port: ${YUGABYTE_PORT:5433}
+      database: ${YUGABYTE_DATABASE:gravitee}
+      username: ${YUGABYTE_USER:gravitee_app}
+      password: ${YUGABYTE_PASSWORD}
+      schema: ${YUGABYTE_SCHEMA:gravitee}
+      # Connection pool settings optimized for YugabyteDB
+      pool:
+        acquireRetry: 3
+        initialSize: 5
+        maxSize: 20
+        maxWait: 30000
+        minSize: 5
+        maxIdleTime: 300000
+        validationQuery: "SELECT 1"
+        testOnBorrow: true
+        testOnReturn: false
+        testWhileIdle: true
+        timeBetweenEvictionRunsMillis: 30000
+        minEvictableIdleTimeMillis: 60000
+
+  # Analytics repository configuration  
+  analytics:
+    type: jdbc
+    jdbc:
+      driver: org.postgresql.Driver
+      host: ${YUGABYTE_HOST:yugabytedb-service.k8s-api-gateway.svc.cluster.local}
+      port: ${YUGABYTE_PORT:5433}
+      database: ${YUGABYTE_DATABASE:gravitee}
+      username: ${YUGABYTE_USER:gravitee_app}
+      password: ${YUGABYTE_PASSWORD}
+      schema: ${YUGABYTE_SCHEMA:gravitee}
+
+  # Rate limiting repository
+  ratelimit:
+    type: jdbc
+    jdbc:
+      driver: org.postgresql.Driver
+      host: ${YUGABYTE_HOST:yugabytedb-service.k8s-api-gateway.svc.cluster.local}
+      port: ${YUGABYTE_PORT:5433}
+      database: ${YUGABYTE_DATABASE:gravitee}
+      username: ${YUGABYTE_USER:gravitee_app}
+      password: ${YUGABYTE_PASSWORD}
+      schema: ${YUGABYTE_SCHEMA:gravitee}
+
+# HTTP server configuration
+jetty:
+  port: 8083
+  host: 0.0.0.0
+  
+# JWT configuration for API security
+jwt:
+  secret: ${JWT_SECRET}
+  expire-after: ${JWT_EXPIRE_AFTER:604800}
+  issuer: ${JWT_ISSUER:k8s-api-gateway}
+
+# CORS configuration
+http:
+  cors:
+    allow-origin: '*'
+    allow-headers: 'Cache-Control, Pragma, Origin, Authorization, Content-Type, X-Requested-With, If-Match, If-None-Match, X-Gravitee-*'
+    allow-methods: 'OPTIONS, GET, POST, PUT, DELETE, PATCH'
+    exposed-headers: 'ETag, X-Gravitee-*'
+    max-age: 1728000
+
+# Kubernetes service discovery integration
+services:
+  discovery:
+    kubernetes:
+      enabled: true
+      service:
+        namespace: ${K8S_NAMESPACE:k8s-api-gateway}
+      # Auto-discovery via annotations
+      annotations:
+        gravitee.io/expose: "true"
+        gravitee.io/context-path: ""
+        gravitee.io/auth-required: ""
+        gravitee.io/approval-required: ""
+
+# APISIX integration for route synchronization  
+plugins:
+  path: ${gravitee.home}/plugins
+  
+# External services integration
+external:
+  apisix:
+    enabled: ${APISIX_SYNC_ENABLED:true}
+    admin-url: ${APISIX_ADMIN_URL:http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180}
+    admin-key: ${APISIX_ADMIN_KEY}
+    sync-interval: ${APISIX_SYNC_INTERVAL:30000}
+
+# Security configuration
+security:
+  keystore:
+    type: ${KEYSTORE_TYPE:JKS}
+    path: ${KEYSTORE_PATH:${gravitee.home}/security/keystore.jks}
+    password: ${KEYSTORE_PASSWORD}
+  truststore:
+    type: ${TRUSTSTORE_TYPE:JKS}
+    path: ${TRUSTSTORE_PATH:${gravitee.home}/security/truststore.jks}
+    password: ${TRUSTSTORE_PASSWORD}
+
+# Email configuration (for notifications)
+email:
+  enabled: ${EMAIL_ENABLED:true}
+  host: ${EMAIL_HOST}
+  port: ${EMAIL_PORT:587}
+  username: ${EMAIL_USERNAME}
+  password: ${EMAIL_PASSWORD}
+  protocol: smtp
+  subject: ${EMAIL_SUBJECT:[Gravitee.io] %s}
+  from: ${EMAIL_FROM:noreply@k8s-api-gateway.local}
+
+# Portal configuration
+portal:
+  url: ${PORTAL_URL:http://gravitee-portal.k8s-api-gateway.svc.cluster.local:8080}
+  
+# API Gateway configuration
+gateway:
+  url: ${GATEWAY_URL:http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082}
+
+# Logging
+logging:
+  level:
+    io.gravitee: ${GRAVITEE_LOG_LEVEL:INFO}
+    org.springframework: ${SPRING_LOG_LEVEL:WARN}
+    org.eclipse.jetty: ${JETTY_LOG_LEVEL:WARN}
