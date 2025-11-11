@@ -68,11 +68,6 @@ spec:
           done
           echo "✅ YugabyteDB is reachable"
           
-          # Create Gravitee database if it doesn't exist
-          echo "🗄️ Creating Gravitee database..."
-          PGPASSWORD="$VAULT_TOKEN" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U vaultadmin -d yugabyte -c \
-            "CREATE DATABASE $YUGABYTE_DATABASE;" 2>/dev/null || echo "📋 Database '$YUGABYTE_DATABASE' already exists"
-          
           # Create Gravitee database user
           GRAVITEE_DB_PASSWORD=$(openssl rand -base64 32)
           echo "👤 Creating Gravitee database user..."
@@ -94,18 +89,6 @@ spec:
           echo "📋 Creating Gravitee schema..."
           PGPASSWORD="$VAULT_TOKEN" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U vaultadmin -d "$YUGABYTE_DATABASE" -c \
             "CREATE SCHEMA IF NOT EXISTS gravitee AUTHORIZATION gravitee_app;"
-          
-          # Configure Vault database engine for YugabyteDB
-          echo "⚙️ Configuring Vault database engine..."
-          vault secrets enable -path=yugabyte-db database || echo "📋 Database engine already enabled"
-          
-          # Create Vault role for Gravitee database access
-          vault write yugabyte-db/roles/gravitee-app \
-            db_name=gravitee-db \
-            creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; \
-                                GRANT gravitee_app TO \"{{name}}\";" \
-            default_ttl="24h" \
-            max_ttl="720h"
           
           # Create static credentials for Gravitee
           vault delete yugabyte-db/static-roles/gravitee-app >/dev/null 2>&1 || true
