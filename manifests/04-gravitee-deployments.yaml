@@ -283,7 +283,7 @@ spec:
       serviceAccountName: gravitee
       containers:
       - name: gravitee-portal
-        image: ghcr.io/dotcomrow/gravitee-portal:ts-20251110-231721
+        image: ghcr.io/dotcomrow/gravitee-portal:ts-20251110-231717
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
