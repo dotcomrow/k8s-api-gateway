@@ -98,14 +98,7 @@ spec:
           # Configure Vault database engine for YugabyteDB
           echo "⚙️ Configuring Vault database engine..."
           vault secrets enable -path=yugabyte-db database || echo "📋 Database engine already enabled"
-          
-          # Configure YugabyteDB connection in Vault
-          vault write yugabyte-db/config/gravitee-db \
-            plugin_name=postgresql-database-plugin \
-            connection_url="postgresql://{{username}}:{{password}}@$YUGABYTE_HOST:$YUGABYTE_PORT/$YUGABYTE_DATABASE?sslmode=disable" \
-            allowed_roles="gravitee-app" \
-            username="vaultadmin" \
-            password="$VAULT_TOKEN"
+        
           
           # Create Vault role for Gravitee database access
           vault write yugabyte-db/roles/gravitee-app \
