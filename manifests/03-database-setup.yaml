@@ -98,7 +98,6 @@ spec:
           # Configure Vault database engine for YugabyteDB
           echo "⚙️ Configuring Vault database engine..."
           vault secrets enable -path=yugabyte-db database || echo "📋 Database engine already enabled"
-        
           
           # Create Vault role for Gravitee database access
           vault write yugabyte-db/roles/gravitee-app \
