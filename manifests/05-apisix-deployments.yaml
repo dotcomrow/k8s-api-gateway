@@ -49,6 +49,8 @@ data:
       events:
         module: lua-resty-events
 
+    plugin_attr: {}
+
     deployment:
       role: data_plane
       role_data_plane:
@@ -172,7 +174,7 @@ spec:
           
           # Load APISIX admin key from Vault
           if [ -f /vault/secrets/admin ]; then
-            source /vault/secrets/admin
+            . /vault/secrets/admin
             echo "✅ APISIX admin key loaded from Vault"
           else
             echo "❌ Failed to load APISIX admin key from Vault"
