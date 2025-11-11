@@ -93,10 +93,10 @@ spec:
           # Create static credentials for Gravitee
           vault delete yugabyte-db/static-roles/gravitee-app >/dev/null 2>&1 || true
           vault write yugabyte-db/static-roles/gravitee-app \
-            db_name=gravitee-db \
-            rotation_statements="ALTER USER \"{{name}}\" WITH PASSWORD '{{password}}';" \
-            username=gravitee_app \
-            rotation_period=86400
+            db_name="yugabyte" \
+            username="gravitee_app" \
+            rotation_statements="ALTER ROLE gravitee_app WITH PASSWORD '{{password}}';" \
+            rotation_period="720h"
           
           # Generate JWT secret for Gravitee
           JWT_SECRET=$(openssl rand -base64 64)
