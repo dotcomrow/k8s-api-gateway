@@ -241,7 +241,7 @@ spec:
           fi
           
           echo "🚀 Starting Gravitee Gateway..."
-          exec java -jar /opt/graviteeio-gateway/gravitee-gateway-standalone.jar
+          exec ./bin/gravitee
         resources:
           requests:
             cpu: "100m"
