@@ -108,7 +108,7 @@ spec:
             max_ttl="720h"
           
           # Create static credentials for Gravitee
-          if vault list yugabyte-db/static-roles | grep -q '^gravitee-app$'; then
+          if vault read yugabyte-db/static-roles/gravitee-app >/dev/null 2>&1; then
             echo "🔑 Static role 'gravitee-app' already exists, skipping creation."
           else
             vault write yugabyte-db/static-roles/gravitee-app \
