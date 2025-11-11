@@ -22,7 +22,7 @@ spec:
         vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
         vault.hashicorp.com/agent-inject-template-db-creds: |
           {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
-          export YUGABYTE_USER="{{ .Data.username }}"
+          export YUGABYTE_USER="gravitee_app"
           export YUGABYTE_PASSWORD="{{ .Data.password }}"
           {{- end }}
         vault.hashicorp.com/agent-inject-secret-jwt: "secret/gravitee/jwt"
@@ -69,12 +69,12 @@ spec:
           RETRY_COUNT=0
           MAX_RETRIES=120
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            # Try to connect with yugabyte user first
-            if PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='$YUGABYTE_DATABASE'" 2>/dev/null | grep -q "1"; then
+            # Try to connect with gravitee_app user only
+            if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='$YUGABYTE_DATABASE'" 2>/dev/null | grep -q "1"; then
               echo "✅ Gravitee database exists"
               
               # Check if gravitee schema exists
-              if PGPASSWORD="yugabyte" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U yugabyte -d "$YUGABYTE_DATABASE" -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='gravitee'" 2>/dev/null | grep -q "1"; then
+              if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='gravitee'" 2>/dev/null | grep -q "1"; then
                 echo "✅ Gravitee schema exists"
                 echo "✅ Database setup complete, Gravitee can start"
                 exit 0
@@ -187,7 +187,7 @@ spec:
         vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
         vault.hashicorp.com/agent-inject-template-db-creds: |
           {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
-          export YUGABYTE_USER="{{ .Data.username }}"
+          export YUGABYTE_USER="gravitee_app"
           export YUGABYTE_PASSWORD="{{ .Data.password }}"
           {{- end }}
         vault.hashicorp.com/agent-inject-secret-apisix: "secret/apisix/admin"
