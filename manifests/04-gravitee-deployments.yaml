@@ -143,7 +143,7 @@ spec:
           fi
           
           echo "🚀 Starting Gravitee Management API..."
-          exec java -jar /opt/graviteeio-management-api/gravitee-rest-api-standalone.jar
+          exec ./bin/gravitee
         resources:
           requests:
             cpu: "200m"
