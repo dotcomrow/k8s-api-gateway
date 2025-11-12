@@ -198,11 +198,11 @@ spec:
           
           echo "🚀 Initializing APISIX..."
           cd /usr/local/apisix
-          /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua init
+          /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua init
           echo "🔗 Initializing etcd..."
-          /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua init_etcd
+          /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua init_etcd
           echo "▶️ Starting APISIX..."
-          /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua start
+          /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua start
           apisix_exit_code=$?
           if [ $apisix_exit_code -ne 0 ]; then
             echo "❌ APISIX failed to start. Exit code: $apisix_exit_code"
