@@ -15,6 +15,8 @@ RUN apk add --no-cache \
 # Add enhanced PostgreSQL/YugabyteDB JDBC driver
 RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar \
     -O /usr/local/lib/postgresql-42.7.4.jar
+# Also copy the JDBC driver to the Gravitee lib directory for classpath loading
+RUN cp /usr/local/lib/postgresql-42.7.4.jar /opt/graviteeio-management-api/lib/postgresql-42.7.4.jar
 
 # Copy custom configuration with YugabyteDB and Vault integration
 COPY --chown=graviteeio:gravitee src/gravitee-config/management-api/gravitee.yml /opt/graviteeio-management-api/config/

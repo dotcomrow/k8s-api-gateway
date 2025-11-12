@@ -13,6 +13,8 @@ RUN apk add --no-cache \
 
 RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar \
     -O /usr/local/lib/postgresql-42.7.4.jar
+# Also copy the JDBC driver to the Gravitee lib directory for classpath loading
+RUN cp /usr/local/lib/postgresql-42.7.4.jar /opt/graviteeio-gateway/lib/postgresql-42.7.4.jar
 # Copy custom gateway configuration for Kubernetes and APISIX integration
 COPY --chown=graviteeio:gravitee src/gravitee-config/gateway/gravitee.yml /opt/graviteeio-gateway/config/
 
