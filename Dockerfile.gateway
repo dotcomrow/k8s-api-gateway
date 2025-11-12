@@ -11,6 +11,8 @@ RUN apk add --no-cache \
     jq \
     tcpdump
 
+RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar \
+    -O /opt/graviteeio-gateway/lib/postgresql-42.7.4.jar
 # Copy custom gateway configuration for Kubernetes and APISIX integration
 COPY --chown=graviteeio:gravitee src/gravitee-config/gateway/gravitee.yml /opt/graviteeio-gateway/config/
 

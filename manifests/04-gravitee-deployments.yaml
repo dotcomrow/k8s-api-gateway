@@ -121,6 +121,8 @@ spec:
           value: "gravitee_app"
         - name: MANAGEMENT_JDBC_PASSWORD
           value: "$(YUGABYTE_PASSWORD)"
+        - name: ANALYTICS_TYPE
+          value: "jdbc"
         - name: K8S_NAMESPACE
           value: "k8s-api-gateway"
         - name: APISIX_SYNC_ENABLED

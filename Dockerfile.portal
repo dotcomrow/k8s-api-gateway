@@ -9,6 +9,8 @@ RUN apk add --no-cache \
     curl \
     jq
 
+RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar \
+    -O /opt/graviteeio-portal/lib/postgresql-42.7.4.jar
 # Copy custom portal configuration and any custom assets
 COPY --chown=nginx:nginx src/gravitee-config/portal/ /usr/share/nginx/html/
 
