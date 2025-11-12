@@ -330,8 +330,7 @@ spec:
               cd /usr/local/apisix/conf
               yq e '
                 .deployment.admin.admin_key[0].key = strenv(APISIX_ADMIN_KEY) |
-                .apisix.data_encryption.keyring[0] = strenv(APISIX_ENCRYPTION_KEY_1) |
-                .apisix.data_encryption.keyring[1] = strenv(APISIX_ENCRYPTION_KEY_2)
+                .apisix.data_encryption.keyring = [strenv(APISIX_ENCRYPTION_KEY_1), strenv(APISIX_ENCRYPTION_KEY_2)]
               ' config.yaml > /tmp/config.yaml
               echo "🔐 Updated all keys in configuration using yq"
               echo "🔍 Verifying replaced values:"
