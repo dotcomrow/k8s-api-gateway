@@ -67,6 +67,16 @@ spec:
             sleep 5
           done
           echo "✅ YugabyteDB is reachable"
+          export PGPASSWORD="$VAULT_TOKEN"
+          VAULTADMIN_USER=vaultadmin
+
+          while :; do
+            DB_EXISTS="$(psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$VAULTADMIN_USER" -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='$YUGABYTE_DATABASE'" 2>/dev/null || true)"
+            [ "$DB_EXISTS" = "1" ] && { echo "✅ DB '$YUGABYTE_DATABASE' exists"; break; }
+            echo "📦 Creating DB '$YUGABYTE_DATABASE'..."
+            createdb -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$VAULTADMIN_USER" -O "$VAULTADMIN_USER" "$YUGABYTE_DATABASE" 2>/dev/null && { echo "✅ DB created"; break; }
+            sleep 3
+          done
           
           # Create Gravitee database user
           GRAVITEE_DB_PASSWORD=$(openssl rand -base64 32)
