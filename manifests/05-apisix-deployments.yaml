@@ -195,7 +195,7 @@ spec:
           # Replace placeholder keys with real ones - both encryption keys and admin key
           sed -e "s/PLACEHOLDER_KEY_1_WILL_BE_REPLACED/$APISIX_ENCRYPTION_KEY_1/g" \
             -e "s/PLACEHOLDER_KEY_2_WILL_BE_REPLACED/$APISIX_ENCRYPTION_KEY_2/g" \
-            -e "s/#ADMIN_KEY_BLOCK#/  - name: \"admin\"\n    key: $APISIX_ADMIN_KEY\n    role: admin/g" \
+            -e "s/#ADMIN_KEY_BLOCK#/  - name: \"admin\"\\n    key: $APISIX_ADMIN_KEY\\n    role: admin/g" \
             config.yaml > config-default.yaml
           
           echo "🔐 Updated all keys in configuration"
