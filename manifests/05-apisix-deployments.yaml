@@ -312,49 +312,53 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-                      echo "🔧 Starting APISIX with robust config patching..."
-                      echo "📦 Required packages already installed in image."
-                      # Load APISIX admin key from Vault
-                      if [ -f /vault/secrets/admin ]; then
-                        . /vault/secrets/admin
-                        echo "✅ APISIX admin key loaded from Vault"
-                      else
-                        echo "❌ Failed to load APISIX admin key from Vault"
-                        exit 1
-                      fi
-                      # Generate random encryption keys directly in container
-                      APISIX_ENCRYPTION_KEY_1="$(openssl rand -hex 16)"
-                      APISIX_ENCRYPTION_KEY_2="$(openssl rand -hex 16)"
-                      echo "✅ Generated encryption keys successfully"
-                      # Patch config file using yq
-                      cd /usr/local/apisix/conf
-                      yq e '
-                        .deployment.admin.admin_key[0].key = strenv(APISIX_ADMIN_KEY) |
-                        .apisix.data_encryption.keyring[0] = strenv(APISIX_ENCRYPTION_KEY_1) |
-                        .apisix.data_encryption.keyring[1] = strenv(APISIX_ENCRYPTION_KEY_2)
-                      ' config.yaml > config-patched.yaml
-                      mv config-patched.yaml config.yaml
-                      echo "🔐 Updated all keys in configuration using yq"
-                      echo "🚀 Initializing APISIX..."
-                      cd /usr/local/apisix
-                      /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua init
-                      echo "🔗 Initializing etcd..."
-                      /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua init_etcd
-                      echo "▶️ Starting APISIX..."
-                      /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua start
-                      apisix_exit_code=$?
-                      if [ $apisix_exit_code -ne 0 ]; then
-                        echo "❌ APISIX failed to start. Exit code: $apisix_exit_code"
-                        echo "🔍 Dumping config file for debugging:"
-                        cat /usr/local/apisix/conf/config.yaml || echo "(config file missing)"
-                        echo "🔍 Listing contents of /usr/local/apisix/conf:"
-                        ls -l /usr/local/apisix/conf
-                        echo "🔍 Listing contents of /usr/local/apisix:"
-                        ls -l /usr/local/apisix
-                        echo "🔍 Printing last 50 lines of /usr/local/apisix/logs/error.log (if exists):"
-                        tail -50 /usr/local/apisix/logs/error.log || echo "(no error log found)"
-                        exit $apisix_exit_code
-                      fi
+              echo "🔧 Starting APISIX with robust config patching..."
+              echo "📦 Required packages already installed in image."
+              # Load APISIX admin key from Vault
+              if [ -f /vault/secrets/admin ]; then
+                . /vault/secrets/admin
+                echo "✅ APISIX admin key loaded from Vault"
+              else
+                echo "❌ Failed to load APISIX admin key from Vault"
+                exit 1
+              fi
+              # Generate random encryption keys directly in container
+              APISIX_ENCRYPTION_KEY_1="$(openssl rand -hex 16)"
+              APISIX_ENCRYPTION_KEY_2="$(openssl rand -hex 16)"
+              echo "✅ Generated encryption keys successfully"
+              # Patch config file using yq to /tmp/config.yaml (writable)
+              cd /usr/local/apisix/conf
+              yq e '
+                .deployment.admin.admin_key[0].key = strenv(APISIX_ADMIN_KEY) |
+                .apisix.data_encryption.keyring[0] = strenv(APISIX_ENCRYPTION_KEY_1) |
+                .apisix.data_encryption.keyring[1] = strenv(APISIX_ENCRYPTION_KEY_2)
+              ' config.yaml > /tmp/config.yaml
+              echo "🔐 Updated all keys in configuration using yq"
+              echo "🔍 Verifying replaced values:"
+              grep ADMIN_KEY_PLACEHOLDER /tmp/config.yaml && echo "❌ ADMIN_KEY_PLACEHOLDER not replaced" && exit 1 || echo "✅ ADMIN_KEY replaced"
+              grep 'keyring' /tmp/config.yaml
+              echo "🚀 Initializing APISIX..."
+              cd /usr/local/apisix
+              # Use patched config for APISIX startup
+              APISIX_CONFIG_PATH=/tmp/config.yaml
+              /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua init -c $APISIX_CONFIG_PATH
+              echo "🔗 Initializing etcd..."
+              /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua init_etcd -c $APISIX_CONFIG_PATH
+              echo "▶️ Starting APISIX..."
+              /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua start -c $APISIX_CONFIG_PATH
+              apisix_exit_code=$?
+              if [ $apisix_exit_code -ne 0 ]; then
+                echo "❌ APISIX failed to start. Exit code: $apisix_exit_code"
+                echo "🔍 Dumping config file for debugging:"
+                cat /tmp/config.yaml || echo "(config file missing)"
+                echo "🔍 Listing contents of /usr/local/apisix/conf:"
+                ls -l /usr/local/apisix/conf
+                echo "🔍 Listing contents of /usr/local/apisix:"
+                ls -l /usr/local/apisix
+                echo "🔍 Printing last 50 lines of /usr/local/apisix/logs/error.log (if exists):"
+                tail -50 /usr/local/apisix/logs/error.log || echo "(no error log found)"
+                exit $apisix_exit_code
+              fi
           ports:
             - containerPort: 9080
             - containerPort: 9180
