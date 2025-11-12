@@ -325,6 +325,8 @@ spec:
             memory: "128Mi"
         livenessProbe:
           httpGet:
+          - name: YUGABYTE_SCHEMA
+            value: "gravitee"
             path: /
             port: 8080
           initialDelaySeconds: 30
