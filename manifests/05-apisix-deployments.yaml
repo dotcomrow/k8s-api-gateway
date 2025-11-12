@@ -51,6 +51,10 @@ data:
 
     plugin_attr: {}
 
+    nginx_config:
+      error_log: "/usr/local/apisix/logs/error.log"
+      worker_processes: "auto"
+
     deployment:
       role: data_plane
       role_data_plane:
