@@ -32,7 +32,7 @@ jobs:
     
     strategy:
       matrix:
-        service: [management-api, gateway, portal]
+        service: [management-api, gateway, portal, apisix]
     
     steps:
     - name: Checkout repository

@@ -160,17 +160,16 @@ spec:
           echo "etcd is ready"
       containers:
       - name: apisix
-        image: apache/apisix:3.6.0-debian
+        # Use custom APISIX image with required packages
+        image: ghcr.io/dotcomrow/apisix:ts-20251111-apisix-custom
         command: ["/bin/sh"]
-        args: 
+        args:
         - -c
         - |
           echo "🔧 Starting APISIX with custom configuration..."
           
-          # Install required packages
-          echo "📦 Installing required packages..."
-          apt-get update -qq && apt-get install -y -qq openssl netcat-openbsd
-          echo "✅ Packages installed successfully"
+          # Required packages are pre-installed in the custom image
+          echo "📦 Required packages already installed in image."
           
           # Load APISIX admin key from Vault
           if [ -f /vault/secrets/admin ]; then
