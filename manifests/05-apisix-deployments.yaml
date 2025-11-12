@@ -58,9 +58,7 @@ data:
       admin:
         admin_key_required: true
         admin_key:
-          - name: "admin"
-            key: APISIX_ADMIN_KEY_PLACEHOLDER
-            role: admin
+          ADMIN_KEY_BLOCK_PLACEHOLDER
         enable_admin_cors: true
         enable_admin_ui: true
         allow_admin:
@@ -192,9 +190,9 @@ spec:
           
           # Replace placeholder keys with real ones - both encryption keys and admin key
           sed -e "s/PLACEHOLDER_KEY_1_WILL_BE_REPLACED/$APISIX_ENCRYPTION_KEY_1/g" \
-              -e "s/PLACEHOLDER_KEY_2_WILL_BE_REPLACED/$APISIX_ENCRYPTION_KEY_2/g" \
-              -e "s/APISIX_ADMIN_KEY_PLACEHOLDER/$APISIX_ADMIN_KEY/g" \
-              config.yaml > config-default.yaml
+            -e "s/PLACEHOLDER_KEY_2_WILL_BE_REPLACED/$APISIX_ENCRYPTION_KEY_2/g" \
+            -e "s/ADMIN_KEY_BLOCK_PLACEHOLDER/  - name: \"admin\"\\n    key: $APISIX_ADMIN_KEY\\n    role: admin/g" \
+            config.yaml > config-default.yaml
           
           echo "🔐 Updated all keys in configuration"
           
