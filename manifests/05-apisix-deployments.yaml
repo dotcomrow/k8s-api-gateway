@@ -144,6 +144,7 @@ spec:
           {{- with secret "secret/apisix/admin" -}}
           export APISIX_ADMIN_KEY="{{ .Data.key }}"
           {{- end }}
+        vault.hashicorp.com/agent-log-level: debug
     spec:
       serviceAccountName: apisix
       initContainers:
