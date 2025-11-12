@@ -296,12 +296,22 @@ spec:
       serviceAccountName: apisix
       initContainers:
       - name: wait-etcd
-                  containers:
-                  - name: apisix
-                    image: ghcr.io/dotcomrow/gravitee-apisix:ts-20251112-000708
-                    command: ["/bin/sh", "-c"]
-                    args:
-                    - |
+        image: alpine/k8s:1.31.4
+        command: 
+        - sh
+        - -c
+        - |
+          until nc -z apisix-etcd 2379; do
+            echo "Waiting for etcd..."
+            sleep 2
+          done
+          echo "etcd is ready"
+      containers:
+        - name: apisix
+          image: ghcr.io/dotcomrow/gravitee-apisix:ts-20251112-000708
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
                       echo "🔧 Starting APISIX with robust config patching..."
                       echo "📦 Required packages already installed in image."
                       # Load APISIX admin key from Vault
@@ -345,53 +355,35 @@ spec:
                         tail -50 /usr/local/apisix/logs/error.log || echo "(no error log found)"
                         exit $apisix_exit_code
                       fi
-                    ports:
-                    - containerPort: 9080
-                    - containerPort: 9180
-                    - containerPort: 9443
-                    - containerPort: 9091
-                    volumeMounts:
-                    - name: apisix-config
-                      mountPath: /usr/local/apisix/conf/config.yaml
-                      subPath: config.yaml
-                    env:
-                    - name: APISIX_STAND_ALONE
-                      value: "false"
-                    resources:
-                      requests:
-                        cpu: "200m"
-                        memory: "256Mi"
-                      limits:
-                        cpu: "1000m"
-                        memory: "1Gi"
-                    livenessProbe:
-                      tcpSocket:
-                        port: 9080
-                      initialDelaySeconds: 90
-                      periodSeconds: 30
-                    readinessProbe:
-                      tcpSocket:
-                        port: 9080
-                      initialDelaySeconds: 60
-                      periodSeconds: 15
-          value: "false"
-        resources:
-          requests:
-            cpu: "200m"
-            memory: "256Mi"
-          limits:
-            cpu: "1000m"
-            memory: "1Gi"
-        livenessProbe:
-          tcpSocket:
-            port: 9080
-          initialDelaySeconds: 90
-          periodSeconds: 30
-        readinessProbe:
-          tcpSocket:
-            port: 9080
-          initialDelaySeconds: 60
-          periodSeconds: 15
+          ports:
+            - containerPort: 9080
+            - containerPort: 9180
+            - containerPort: 9443
+            - containerPort: 9091
+          volumeMounts:
+            - name: apisix-config
+              mountPath: /usr/local/apisix/conf/config.yaml
+              subPath: config.yaml
+          env:
+            - name: APISIX_STAND_ALONE
+              value: "false"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+            livenessProbe:
+              tcpSocket:
+                port: 9080
+              initialDelaySeconds: 90
+              periodSeconds: 30
+            readinessProbe:
+              tcpSocket:
+                port: 9080
+              initialDelaySeconds: 60
+              periodSeconds: 15
       volumes:
       - name: apisix-config
         configMap:
