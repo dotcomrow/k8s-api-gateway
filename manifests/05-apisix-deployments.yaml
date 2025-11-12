@@ -204,7 +204,20 @@ spec:
           echo "🔗 Initializing etcd..."
           /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua init_etcd
           echo "▶️ Starting APISIX..."
-          exec /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua start
+          /usr/local/openresty/luajit/bin/luajit ./apisix/cli/apisix.lua start
+          apisix_exit_code=$?
+          if [ $apisix_exit_code -ne 0 ]; then
+            echo "❌ APISIX failed to start. Exit code: $apisix_exit_code"
+            echo "🔍 Dumping config file for debugging:"
+            cat /usr/local/apisix/conf/config-default.yaml || echo "(config file missing)"
+            echo "🔍 Listing contents of /usr/local/apisix/conf:"
+            ls -l /usr/local/apisix/conf
+            echo "🔍 Listing contents of /usr/local/apisix:"
+            ls -l /usr/local/apisix
+            echo "🔍 Printing last 50 lines of /usr/local/apisix/logs/error.log (if exists):"
+            tail -50 /usr/local/apisix/logs/error.log || echo "(no error log found)"
+            exit $apisix_exit_code
+          fi
         ports:
         - containerPort: 9080
         - containerPort: 9180
