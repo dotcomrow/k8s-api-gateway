@@ -325,9 +325,10 @@ spec:
               # Generate random encryption keys directly in container
               APISIX_ENCRYPTION_KEY_1="$(openssl rand -hex 16)"
               APISIX_ENCRYPTION_KEY_2="$(openssl rand -hex 16)"
-              echo "✅ Generated encryption keys successfully"
+              echo "✅ Generated encryption keys successfully: $APISIX_ENCRYPTION_KEY_1, $APISIX_ENCRYPTION_KEY_2"
               # Patch config file using yq to /tmp/config.yaml (writable)
               cd /usr/local/apisix/conf
+              export APISIX_ADMIN_KEY APISIX_ENCRYPTION_KEY_1 APISIX_ENCRYPTION_KEY_2
               yq e '
                 .deployment.admin.admin_key[0].key = strenv(APISIX_ADMIN_KEY) |
                 .apisix.data_encryption.keyring = [strenv(APISIX_ENCRYPTION_KEY_1), strenv(APISIX_ENCRYPTION_KEY_2)]
@@ -335,7 +336,8 @@ spec:
               echo "🔐 Updated all keys in configuration using yq"
               echo "🔍 Verifying replaced values:"
               grep ADMIN_KEY_PLACEHOLDER /tmp/config.yaml && echo "❌ ADMIN_KEY_PLACEHOLDER not replaced" && exit 1 || echo "✅ ADMIN_KEY replaced"
-              grep 'keyring' /tmp/config.yaml
+              echo "🔍 Patched keyring section:"
+              yq e '.apisix.data_encryption.keyring' /tmp/config.yaml
               echo "🚀 Initializing APISIX..."
               cd /usr/local/apisix
               # Use patched config for APISIX startup
