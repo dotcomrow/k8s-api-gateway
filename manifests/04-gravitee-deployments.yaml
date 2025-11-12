@@ -110,6 +110,20 @@ spec:
           value: "gravitee"
         - name: YUGABYTE_SCHEMA
           value: "gravitee"
+        # Gravitee repository config for Yugabyte/PostgreSQL
+        - name: MANAGEMENT_TYPE
+          value: "jdbc"
+        - name: MANAGEMENT_JDBC_DRIVER
+          value: "org.postgresql.Driver"
+        - name: MANAGEMENT_JDBC_URL
+          value: "jdbc:postgresql://yb-tserver-service.yugabyte.svc.cluster.local:5433/gravitee"
+        - name: MANAGEMENT_JDBC_USERNAME
+          value: "gravitee_app"
+        - name: MANAGEMENT_JDBC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-db-creds
+              key: password
         - name: K8S_NAMESPACE
           value: "k8s-api-gateway"
         - name: APISIX_SYNC_ENABLED
@@ -212,6 +226,20 @@ spec:
           value: "gravitee"
         - name: YUGABYTE_SCHEMA
           value: "gravitee"
+        # Gravitee repository config for Yugabyte/PostgreSQL
+        - name: MANAGEMENT_TYPE
+          value: "jdbc"
+        - name: MANAGEMENT_JDBC_DRIVER
+          value: "org.postgresql.Driver"
+        - name: MANAGEMENT_JDBC_URL
+          value: "jdbc:postgresql://yb-tserver-service.yugabyte.svc.cluster.local:5433/gravitee"
+        - name: MANAGEMENT_JDBC_USERNAME
+          value: "gravitee_app"
+        - name: MANAGEMENT_JDBC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-db-creds
+              key: password
         - name: K8S_NAMESPACE
           value: "k8s-api-gateway"
         - name: APISIX_SYNC_ENABLED
