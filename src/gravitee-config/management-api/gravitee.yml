@@ -27,6 +27,8 @@ gravitee:
         testWhileIdle: true
         timeBetweenEvictionRunsMillis: 30000
         minEvictableIdleTimeMillis: 60000
+        poolName: "${HOSTNAME}-gravitee-mgmt-jdbc"
+        registerMbeans: false
 
   # Analytics repository configuration  
   analytics:
@@ -39,6 +41,21 @@ gravitee:
       username: ${YUGABYTE_USER:gravitee_app}
       password: ${YUGABYTE_PASSWORD}
       schema: ${YUGABYTE_SCHEMA:gravitee}
+      pool:
+        acquireRetry: 3
+        initialSize: 5
+        maxSize: 20
+        maxWait: 30000
+        minSize: 5
+        maxIdleTime: 300000
+        validationQuery: "SELECT 1"
+        testOnBorrow: true
+        testOnReturn: false
+        testWhileIdle: true
+        timeBetweenEvictionRunsMillis: 30000
+        minEvictableIdleTimeMillis: 60000
+        poolName: "${HOSTNAME}-gravitee-analytics-jdbc"
+        registerMbeans: false
 
   # Rate limiting repository
   ratelimit:
@@ -51,6 +68,21 @@ gravitee:
       username: ${YUGABYTE_USER:gravitee_app}
       password: ${YUGABYTE_PASSWORD}
       schema: ${YUGABYTE_SCHEMA:gravitee}
+      pool:
+        acquireRetry: 3
+        initialSize: 5
+        maxSize: 20
+        maxWait: 30000
+        minSize: 5
+        maxIdleTime: 300000
+        validationQuery: "SELECT 1"
+        testOnBorrow: true
+        testOnReturn: false
+        testWhileIdle: true
+        timeBetweenEvictionRunsMillis: 30000
+        minEvictableIdleTimeMillis: 60000
+        poolName: "${HOSTNAME}-gravitee-ratelimit-jdbc"
+        registerMbeans: false
 
 # HTTP server configuration
 jetty:
