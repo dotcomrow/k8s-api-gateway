@@ -6,7 +6,7 @@ metadata:
   name: gravitee-management-api
   namespace: k8s-api-gateway
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   replicas: 1
   selector:
@@ -249,6 +249,23 @@ spec:
           {{- end }}
     spec:
       serviceAccountName: gravitee
+      initContainers:
+      - name: wait-management-ready
+        image: curlimages/curl:8.11.1
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: MANAGEMENT_HEALTH_URL
+          value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management/platform"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          echo "🔍 Waiting for Gravitee Management API before starting gateway..."
+          until curl -fsS "$MANAGEMENT_HEALTH_URL" >/dev/null 2>&1; do
+            echo "⏳ Management API not ready yet, retrying in 5s..."
+            sleep 5
+          done
+          echo "✅ Management API is reachable, continuing startup."
       containers:
       - name: gravitee-gateway
         image: ghcr.io/dotcomrow/gravitee-gateway:ts-20251112-214915
@@ -357,6 +374,23 @@ spec:
         linkerd.io/inject: "disabled"
     spec:
       serviceAccountName: gravitee
+      initContainers:
+      - name: wait-management-ready
+        image: curlimages/curl:8.11.1
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: MANAGEMENT_HEALTH_URL
+          value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management/platform"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          echo "🔍 Waiting for Gravitee Management API before starting portal..."
+          until curl -fsS "$MANAGEMENT_HEALTH_URL" >/dev/null 2>&1; do
+            echo "⏳ Management API not ready yet, retrying in 5s..."
+            sleep 5
+          done
+          echo "✅ Management API is reachable, continuing startup."
       containers:
       - name: gravitee-portal
         image: ghcr.io/dotcomrow/gravitee-portal:ts-20251112-214917
