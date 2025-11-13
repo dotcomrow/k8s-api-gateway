@@ -203,7 +203,13 @@ spec:
           export MANAGEMENT_JDBC_USERNAME="${MANAGEMENT_JDBC_USERNAME:-gravitee_app}"
 
           echo "🚀 Starting Gravitee Management API..."
-          exec ./bin/gravitee
+          set +e
+          ./bin/gravitee
+          EXIT_CODE=$?
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "❌ Gravitee Management API exited with code $EXIT_CODE. Holding pod for investigation (not restarting)..."
+            while true; do sleep 3600; done
+          fi
         resources:
           requests:
             cpu: "200m"
