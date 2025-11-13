@@ -177,6 +177,18 @@ spec:
           value: "http://gravitee-portal.k8s-api-gateway.svc.cluster.local:8080"
         - name: GATEWAY_URL
           value: "http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082"
+        - name: EMAIL_HOST
+          value: ""
+        - name: EMAIL_PORT
+          value: "587"
+        - name: EMAIL_USERNAME
+          value: ""
+        - name: EMAIL_PASSWORD
+          value: ""
+        - name: EMAIL_FROM
+          value: "noreply@k8s-api-gateway.local"
+        - name: EMAIL_SUBJECT
+          value: "[Gravitee.io] %s"
         command: ["/bin/sh", "-c"]
         args:
         - |
