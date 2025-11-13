@@ -52,10 +52,10 @@ spec:
         - -c
         - |
           echo "🔧 Waiting for Gravitee database to be ready..."
-          
+
           # Install required packages
           apk add --no-cache netcat-openbsd postgresql15-client
-          
+
           # Wait for YugabyteDB to be reachable
           echo "🔍 Waiting for YugabyteDB to be reachable..."
           until nc -z "$YUGABYTE_HOST" "$YUGABYTE_PORT"; do
@@ -63,32 +63,40 @@ spec:
             sleep 5
           done
           echo "✅ YugabyteDB is reachable"
-          
+
           # Wait for gravitee database to exist
           echo "🔍 Waiting for gravitee database to be created..."
           RETRY_COUNT=0
           MAX_RETRIES=120
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            # Try to connect with gravitee_app user only
-            if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='$YUGABYTE_DATABASE'" 2>/dev/null | grep -q "1"; then
+            if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d yugabyte -tAc \
+              "SELECT 1 FROM pg_database WHERE datname='$YUGABYTE_DATABASE'" 2>/dev/null | grep -q "1"; then
               echo "✅ Gravitee database exists"
-              
-              # Check if gravitee schema exists
-              if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='gravitee'" 2>/dev/null | grep -q "1"; then
-                echo "✅ Gravitee schema exists"
+
+              # Ensure gravitee schema exists and set role search_path
+              echo "🔧 Ensuring 'gravitee' schema and search_path..."
+              PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 <<'SQL'
+              CREATE SCHEMA IF NOT EXISTS gravitee AUTHORIZATION gravitee_app;
+              ALTER ROLE gravitee_app IN DATABASE gravitee SET search_path = gravitee, public;
+              SQL
+
+              # Re-check the schema exists
+              if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
+                "SELECT 1 FROM information_schema.schemata WHERE schema_name='gravitee'" 2>/dev/null | grep -q "1"; then
+                echo "✅ Gravitee schema exists and role search_path is set"
                 echo "✅ Database setup complete, Gravitee can start"
                 exit 0
               else
-                echo "📄 Database exists but gravitee schema not ready yet"
+                echo "❌ Gravitee schema verification failed after creation attempt"
+                exit 1
               fi
-              break
             else
               echo "📄 Gravitee database not found yet"
             fi
-            
+
             RETRY_COUNT=$((RETRY_COUNT + 1))
             echo "⏳ Waiting for database setup... (attempt $RETRY_COUNT/$MAX_RETRIES)"
-            
+
             if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
               echo "❌ Database setup not complete after $MAX_RETRIES attempts"
               exit 1
@@ -110,19 +118,22 @@ spec:
           value: "gravitee"
         - name: YUGABYTE_SCHEMA
           value: "gravitee"
+
         # Gravitee repository config for Yugabyte/PostgreSQL
         - name: MANAGEMENT_TYPE
           value: "jdbc"
         - name: MANAGEMENT_JDBC_DRIVER
           value: "org.postgresql.Driver"
         - name: MANAGEMENT_JDBC_URL
-          value: "jdbc:postgresql://yb-tserver-service.yugabyte.svc.cluster.local:5433/gravitee"
+          value: "jdbc:postgresql://yb-tserver-service.yugabyte.svc.cluster.local:5433/gravitee?currentSchema=gravitee"
         - name: MANAGEMENT_JDBC_USERNAME
           value: "gravitee_app"
-        - name: MANAGEMENT_JDBC_PASSWORD
-          value: "$(YUGABYTE_PASSWORD)"
+        # NOTE: Password comes from Vault and is exported in the wrapper script
+        # - name: MANAGEMENT_JDBC_PASSWORD  <-- intentionally not set here
+
         - name: ANALYTICS_TYPE
           value: "jdbc"
+
         - name: K8S_NAMESPACE
           value: "k8s-api-gateway"
         - name: APISIX_SYNC_ENABLED
@@ -143,18 +154,25 @@ spec:
           set -e
           echo "🔧 Loading secrets from Vault..."
           if [ -f /vault/secrets/db-creds ]; then
-            source /vault/secrets/db-creds
+            # shellcheck disable=SC1091
+            . /vault/secrets/db-creds
             echo "✅ Database credentials loaded"
           fi
           if [ -f /vault/secrets/jwt ]; then
-            source /vault/secrets/jwt
+            # shellcheck disable=SC1091
+            . /vault/secrets/jwt
             echo "✅ JWT secret loaded"
           fi
           if [ -f /vault/secrets/apisix ]; then
-            source /vault/secrets/apisix
+            # shellcheck disable=SC1091
+            . /vault/secrets/apisix
             echo "✅ APISIX admin key loaded"
           fi
-          
+
+          # Wire JDBC creds for Gravitee from Vault-provided env
+          export MANAGEMENT_JDBC_PASSWORD="$YUGABYTE_PASSWORD"
+          export MANAGEMENT_JDBC_USERNAME="${MANAGEMENT_JDBC_USERNAME:-gravitee_app}"
+
           echo "🚀 Starting Gravitee Management API..."
           exec ./bin/gravitee
         resources:
@@ -225,17 +243,18 @@ spec:
           value: "gravitee"
         - name: YUGABYTE_SCHEMA
           value: "gravitee"
-        # Gravitee repository config for Yugabyte/PostgreSQL
+
+        # Gravitee repository config for Yugabyte/PostgreSQL (gateway also needs to reach management store)
         - name: MANAGEMENT_TYPE
           value: "jdbc"
         - name: MANAGEMENT_JDBC_DRIVER
           value: "org.postgresql.Driver"
         - name: MANAGEMENT_JDBC_URL
-          value: "jdbc:postgresql://yb-tserver-service.yugabyte.svc.cluster.local:5433/gravitee"
+          value: "jdbc:postgresql://yb-tserver-service.yugabyte.svc.cluster.local:5433/gravitee?currentSchema=gravitee"
         - name: MANAGEMENT_JDBC_USERNAME
           value: "gravitee_app"
-        - name: MANAGEMENT_JDBC_PASSWORD
-          value: "$(YUGABYTE_PASSWORD)"
+        # Password comes from Vault -> exported below
+
         - name: K8S_NAMESPACE
           value: "k8s-api-gateway"
         - name: APISIX_SYNC_ENABLED
@@ -256,14 +275,20 @@ spec:
           set -e
           echo "🔧 Loading secrets from Vault..."
           if [ -f /vault/secrets/db-creds ]; then
-            source /vault/secrets/db-creds
+            # shellcheck disable=SC1091
+            . /vault/secrets/db-creds
             echo "✅ Database credentials loaded"
           fi
           if [ -f /vault/secrets/apisix ]; then
-            source /vault/secrets/apisix
+            # shellcheck disable=SC1091
+            . /vault/secrets/apisix
             echo "✅ APISIX admin key loaded"
           fi
-          
+
+          # Wire JDBC creds for Gravitee from Vault-provided env
+          export MANAGEMENT_JDBC_PASSWORD="$YUGABYTE_PASSWORD"
+          export MANAGEMENT_JDBC_USERNAME="${MANAGEMENT_JDBC_USERNAME:-gravitee_app}"
+
           echo "🚀 Starting Gravitee Gateway..."
           exec ./bin/gravitee
         resources:
