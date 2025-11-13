@@ -85,6 +85,21 @@ spec:
               if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
                 "SELECT 1 FROM information_schema.schemata WHERE schema_name='gravitee'" 2>/dev/null | grep -q "1"; then
                 echo "✅ Gravitee schema exists and role search_path is set"
+
+                echo "🔍 Checking Liquibase changelog and ratelimit schema consistency..."
+                SUB_COLUMN_EXISTS=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
+                  "SELECT 1 FROM information_schema.columns WHERE table_schema='gravitee' AND table_name='ratelimit' AND column_name='subscription'" 2>/dev/null | tr -d '[:space:]')
+                CHANGESET_LOGGED=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
+                  "SELECT 1 FROM gravitee.databasechangelog WHERE id='1.25.2' AND author='GraviteeSource Team' AND filename='liquibase/changelogs/v1_25_2/schema.yml'" 2>/dev/null | tr -d '[:space:]')
+                if [ "$SUB_COLUMN_EXISTS" = "1" ] && [ "$CHANGESET_LOGGED" != "1" ]; then
+                  echo "⚠️  Detected legacy ratelimit.subscription column without matching Liquibase changelog entry."
+                  echo "    Dropping column so Gravitee can re-run the official migration..."
+                  PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 \
+                    -c "ALTER TABLE gravitee.ratelimit DROP COLUMN IF EXISTS subscription;"
+                else
+                  echo "✅ Liquibase changelog and ratelimit schema look consistent"
+                fi
+
                 echo "✅ Database setup complete, Gravitee can start"
                 exit 0
               else
