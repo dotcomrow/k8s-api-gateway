@@ -17,6 +17,7 @@ spec:
       labels:
         app: gravitee-management-api
       annotations:
+        linkerd.io/inject: "disabled"
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "gravitee"
         vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
@@ -75,10 +76,10 @@ spec:
 
               # Ensure gravitee schema exists and set role search_path
               echo "🔧 Ensuring 'gravitee' schema and search_path..."
-              PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 <<'SQL'
-              CREATE SCHEMA IF NOT EXISTS gravitee AUTHORIZATION gravitee_app;
-              ALTER ROLE gravitee_app IN DATABASE gravitee SET search_path = gravitee, public;
-              SQL
+              PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 \
+                -c "CREATE SCHEMA IF NOT EXISTS gravitee AUTHORIZATION gravitee_app;"
+              PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 \
+                -c "ALTER ROLE gravitee_app IN DATABASE gravitee SET search_path = gravitee, public;"
 
               # Re-check the schema exists
               if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
@@ -213,6 +214,7 @@ spec:
       labels:
         app: gravitee-gateway
       annotations:
+        linkerd.io/inject: "disabled"
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "gravitee"
         vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
@@ -328,6 +330,8 @@ spec:
     metadata:
       labels:
         app: gravitee-portal
+      annotations:
+        linkerd.io/inject: "disabled"
     spec:
       serviceAccountName: gravitee
       containers:
