@@ -187,14 +187,18 @@ spec:
           httpGet:
             path: /management/platform
             port: 8083
-          initialDelaySeconds: 60
+          initialDelaySeconds: 180
           periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 6
         readinessProbe:
           httpGet:
             path: /management/platform
             port: 8083
-          initialDelaySeconds: 30
-          periodSeconds: 10
+          initialDelaySeconds: 90
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 6
 ---
 # Gravitee Gateway Deployment
 apiVersion: apps/v1
@@ -304,14 +308,18 @@ spec:
           httpGet:
             path: /_node/health
             port: 8082
-          initialDelaySeconds: 60
+          initialDelaySeconds: 180
           periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 6
         readinessProbe:
           httpGet:
             path: /_node/health
             port: 8082
-          initialDelaySeconds: 30
-          periodSeconds: 10
+          initialDelaySeconds: 90
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 6
 ---
 # Gravitee Portal Deployment
 apiVersion: apps/v1
@@ -356,11 +364,15 @@ spec:
           httpGet:
             path: /
             port: 8080
-          initialDelaySeconds: 30
+          initialDelaySeconds: 90
           periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 6
         readinessProbe:
           httpGet:
             path: /
             port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 10
+          initialDelaySeconds: 45
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 6
