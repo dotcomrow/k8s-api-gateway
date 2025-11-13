@@ -304,6 +304,8 @@ spec:
           value: "jdbc:postgresql://yb-tserver-service.yugabyte.svc.cluster.local:5433/gravitee?currentSchema=gravitee"
         - name: MANAGEMENT_JDBC_USERNAME
           value: "gravitee_app"
+        - name: MANAGEMENT_JDBC_LIQUIBASE_ENABLED
+          value: "false"
         # Password comes from Vault -> exported below
 
         - name: K8S_NAMESPACE
@@ -415,6 +417,8 @@ spec:
           value: "gravitee-portal"
         - name: PORTAL_OAUTH_SERVER_URL
           value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
+        - name: MANAGEMENT_JDBC_LIQUIBASE_ENABLED
+          value: "false"
         resources:
           requests:
             cpu: "50m"
