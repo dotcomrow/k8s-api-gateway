@@ -100,6 +100,19 @@ spec:
                   echo "✅ Liquibase changelog and ratelimit schema look consistent"
                 fi
 
+                USERS_TABLE_EXISTS=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
+                  "SELECT 1 FROM information_schema.tables WHERE table_schema='gravitee' AND table_name='users'" 2>/dev/null | tr -d '[:space:]')
+                USERS_CHANGESET_LOGGED=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
+                  "SELECT 1 FROM gravitee.databasechangelog WHERE id='1.14.0' AND author='GraviteeSource Team' AND filename='liquibase/changelogs/v1_14_0/schema.yml'" 2>/dev/null | tr -d '[:space:]')
+                if [ "$USERS_TABLE_EXISTS" = "1" ] && [ "$USERS_CHANGESET_LOGGED" != "1" ]; then
+                  echo "⚠️  Found gravitee.users table without matching Liquibase changeSet marker."
+                  echo "    Dropping table to allow Liquibase to recreate it cleanly..."
+                  PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 \
+                    -c "DROP TABLE IF EXISTS gravitee.users CASCADE;"
+                else
+                  echo "✅ Liquibase changelog and users table look consistent"
+                fi
+
                 echo "✅ Database setup complete, Gravitee can start"
                 exit 0
               else
