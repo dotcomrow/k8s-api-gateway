@@ -161,7 +161,9 @@ spec:
         # - name: MANAGEMENT_JDBC_PASSWORD  <-- intentionally not set here
 
         - name: ANALYTICS_TYPE
-          value: "jdbc"
+          value: "none"
+        - name: ANALYTICS_JDBC_LIQUIBASE_ENABLED
+          value: "false"
 
         - name: K8S_NAMESPACE
           value: "k8s-api-gateway"
