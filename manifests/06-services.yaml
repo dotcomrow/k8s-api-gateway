@@ -39,6 +39,15 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "4"
+    teleport.dev/name: "gravitee-portal"
+    teleport.dev/protocol: "http"
+    teleport.dev/public_addr: "gravitee-portal.app.suncoast.systems"
+    teleport.dev/labels: "environment=production,service=gravitee-portal"
+  labels:
+    teleport.dev/enroll: "true"
+    app.kubernetes.io/name: gravitee-portal
+    app.kubernetes.io/component: gravitee
+    teleport.dev/app: "gravitee-portal"
 spec:
   ports:
   - port: 8080
