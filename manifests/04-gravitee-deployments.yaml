@@ -598,7 +598,7 @@ data:
         }
 
         location /next/ {
-            alias /rw.mount/www/next/browser/;
+            alias /usr/share/nginx/html/next/browser/;
             try_files $uri $uri/ /next/index.html;
             sub_filter '<base href="/"' '<base href="/next/"';
             sub_filter_once on;
@@ -606,7 +606,7 @@ data:
 
         location / {
             try_files $uri $uri/ /index.html =404;
-            root /rw.mount/www;
+            root /usr/share/nginx/html;
             sub_filter '<base href="/"' '<base href="/"';
             sub_filter_once on;
         }
