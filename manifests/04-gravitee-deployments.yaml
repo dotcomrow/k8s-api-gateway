@@ -739,12 +739,13 @@ data:
     
     # Health check configuration
     node:
-      cache:
-        enabled: false
-      heartbeat:
-        enabled: false
-      alert:
-        enabled: false
+      services:
+        cache:
+          enabled: false
+        heartbeat:
+          enabled: false
+        alert:
+          enabled: false
       name: ${NODE_NAME:gravitee-gateway}
       metadata:
         node.id: ${NODE_ID:${random.uuid}}
