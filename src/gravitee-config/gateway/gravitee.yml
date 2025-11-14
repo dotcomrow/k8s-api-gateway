@@ -14,6 +14,8 @@ http:
 # Cache configuration (use Hazelcast since Ehcache plugin is not packaged in our custom image)
 cache:
   type: hazelcast
+  hazelcast:
+    config: ${gravitee.home}/config/hazelcast-cache.xml
 
 # Sharding tags for multi-gateway deployments
 sharding_tags: ${SHARDING_TAGS:}

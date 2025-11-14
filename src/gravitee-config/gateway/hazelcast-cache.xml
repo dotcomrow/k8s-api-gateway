@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hazelcast xmlns="http://www.hazelcast.com/schema/config"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://www.hazelcast.com/schema/config
+           http://www.hazelcast.com/schema/config/hazelcast-config-5.3.xsd">
+
+    <cluster-name>gravitee-gateway-cache</cluster-name>
+    <network>
+        <port auto-increment="true" port-count="20">5701</port>
+        <join>
+            <!-- Disable multicast to avoid cross-cluster noise in k8s -->
+            <multicast enabled="false"/>
+            <!-- Use TCP discovery pinned to localhost so each pod keeps an isolated cache -->
+            <tcp-ip enabled="true">
+                <member>127.0.0.1</member>
+            </tcp-ip>
+        </join>
+    </network>
+
+    <map name="default">
+        <backup-count>0</backup-count>
+        <time-to-live-seconds>0</time-to-live-seconds>
+        <in-memory-format>BINARY</in-memory-format>
+    </map>
+</hazelcast>
