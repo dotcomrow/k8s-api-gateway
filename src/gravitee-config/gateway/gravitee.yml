@@ -11,11 +11,9 @@ http:
   port: 8082
   host: 0.0.0.0
   
-# Cache configuration
+# Cache configuration (use Hazelcast since Ehcache plugin is not packaged in our custom image)
 cache:
-  type: ehcache
-  ehcache:
-    config: ${gravitee.home}/config/ehcache.xml
+  type: hazelcast
 
 # Sharding tags for multi-gateway deployments
 sharding_tags: ${SHARDING_TAGS:}
@@ -104,6 +102,12 @@ analytics:
 
 # Health check configuration
 node:
+  cache:
+    enabled: false
+  heartbeat:
+    enabled: false
+  alert:
+    enabled: false
   services:
     cache:
       enabled: false
