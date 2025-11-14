@@ -446,6 +446,14 @@ spec:
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 6
+        volumeMounts:
+        - name: gateway-config
+          mountPath: /opt/graviteeio-gateway/config/gravitee.yml
+          subPath: gravitee.yml
+      volumes:
+      - name: gateway-config
+        configMap:
+          name: gravitee-gateway-config
 ---
 # Gravitee Portal Deployment
 apiVersion: apps/v1
@@ -622,4 +630,151 @@ data:
             root   /rw.mount/www;
         }
     }
+---
+# Gravitee Gateway config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gravitee-gateway-config
+  namespace: k8s-api-gateway
+data:
+  gravitee.yml: |-
+    ############################################################################################################
+    # Gravitee.io API Gateway Configuration for YugabyteDB and APISIX Integration
+    ############################################################################################################
+    gravitee:
+      # Management API connection
+      management:
+        url: http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083
+    
+    # HTTP server configuration  
+    http:
+      port: 8082
+      host: 0.0.0.0
+      
+    # Cache configuration
+    cache:
+      type: ehcache
+      ehcache:
+        config: ${gravitee.home}/config/ehcache.xml
+    
+    # Sharding tags for multi-gateway deployments
+    sharding_tags: ${SHARDING_TAGS:}
+    
+    # Multi-tenant configuration  
+    tenant: ${TENANT:}
+    
+    # Plugin repository
+    plugins:
+      path: ${gravitee.home}/plugins
+    
+    # Gateway services
+    services:
+      # Kubernetes service discovery
+      discovery:
+        kubernetes:
+          enabled: true
+          service:
+            namespace: ${K8S_NAMESPACE:k8s-api-gateway}
+    
+      # Sync service for management repository
+      sync:
+        # Synchronization delay
+        delay: 5000
+        unit: MILLISECONDS
+        distributed: false
+    
+      # Monitoring and metrics  
+      monitoring:
+        delay: 5000
+        unit: MILLISECONDS
+        distributed: false
+    
+      cache:
+        enabled: false
+    
+      heartbeat:
+        enabled: false
+    
+      alert:
+        enabled: false
+    
+      # APISIX route sync service
+      apisix-sync:
+        enabled: ${APISIX_SYNC_ENABLED:true}
+        admin-url: ${APISIX_ADMIN_URL:http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180}
+        admin-key: ${APISIX_ADMIN_KEY}
+        sync-interval: ${APISIX_SYNC_INTERVAL:30000}
+    
+    # Security configuration
+    security:
+      keystore:
+        type: ${KEYSTORE_TYPE:JKS}  
+        path: ${KEYSTORE_PATH:${gravitee.home}/security/keystore.jks}
+        password: ${KEYSTORE_PASSWORD}
+      truststore:
+        type: ${TRUSTSTORE_TYPE:JKS}
+        path: ${TRUSTSTORE_PATH:${gravitee.home}/security/truststore.jks}
+        password: ${TRUSTSTORE_PASSWORD}
+    
+    # Rate limiting - using YugabyteDB for distributed rate limiting
+    ratelimit:
+      type: jdbc
+      jdbc:
+        driver: org.postgresql.Driver
+        host: ${YUGABYTE_HOST:yugabytedb-service.k8s-api-gateway.svc.cluster.local}
+        port: ${YUGABYTE_PORT:5433}
+        database: ${YUGABYTE_DATABASE:gravitee}
+        username: ${YUGABYTE_USER:gravitee_app} 
+        password: ${YUGABYTE_PASSWORD}
+        schema: ${YUGABYTE_SCHEMA:gravitee}
+    
+    # Analytics configuration
+    analytics:
+      type: jdbc
+      jdbc:
+        driver: org.postgresql.Driver
+        host: ${YUGABYTE_HOST:yugabytedb-service.k8s-api-gateway.svc.cluster.local}
+        port: ${YUGABYTE_PORT:5433}
+        database: ${YUGABYTE_DATABASE:gravitee}
+        username: ${YUGABYTE_USER:gravitee_app}
+        password: ${YUGABYTE_PASSWORD}
+        schema: ${YUGABYTE_SCHEMA:gravitee}
+    
+    # Distributed cache for API keys and subscriptions (already configured above)
+    
+    # Health check configuration
+    node:
+      cache:
+        enabled: false
+      heartbeat:
+        enabled: false
+      alert:
+        enabled: false
+      name: ${NODE_NAME:gravitee-gateway}
+      metadata:
+        node.id: ${NODE_ID:${random.uuid}}
+    
+    # Logging configuration
+    logging:
+      level:
+        io.gravitee: ${GRAVITEE_LOG_LEVEL:INFO}
+        org.springframework: ${SPRING_LOG_LEVEL:WARN}
+        org.eclipse.jetty: ${JETTY_LOG_LEVEL:WARN}
+    
+    # Reporters - send metrics to multiple systems
+    reporters:
+      # File reporter for debugging
+      file:
+        enabled: true
+        fileName: ${gravitee.home}/logs/gravitee_metrics_%s.json
+    
+    # API endpoints exposure  
+    api:
+      # Health check endpoint
+      health:
+        enabled: true
+      # Node information endpoint  
+      node:
+        enabled: true
 ---
