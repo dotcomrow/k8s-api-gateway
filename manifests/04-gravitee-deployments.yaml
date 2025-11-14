@@ -232,16 +232,14 @@ spec:
             cpu: "2000m"
             memory: "2Gi"
         livenessProbe:
-          httpGet:
-            path: /management/platform
+          tcpSocket:
             port: 8083
           initialDelaySeconds: 480
           periodSeconds: 30
           timeoutSeconds: 5
           failureThreshold: 6
         readinessProbe:
-          httpGet:
-            path: /management/platform
+          tcpSocket:
             port: 8083
           initialDelaySeconds: 240
           periodSeconds: 20
