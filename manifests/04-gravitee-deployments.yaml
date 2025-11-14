@@ -373,17 +373,11 @@ spec:
           value: "false"
         - name: NODE_ALERT_ENABLED
           value: "false"
-        - name: SERVICES_CACHE_ENABLED
+        - name: GRAVITEE_NODE_CACHE_ENABLED
           value: "false"
-        - name: SERVICES_HEARTBEAT_ENABLED
+        - name: GRAVITEE_NODE_HEARTBEAT_ENABLED
           value: "false"
-        - name: SERVICES_ALERT_ENABLED
-          value: "false"
-        - name: GRAVITEE_SERVICES_CACHE_ENABLED
-          value: "false"
-        - name: GRAVITEE_SERVICES_HEARTBEAT_ENABLED
-          value: "false"
-        - name: GRAVITEE_SERVICES_ALERT_ENABLED
+        - name: GRAVITEE_NODE_ALERT_ENABLED
           value: "false"
         # Password comes from Vault -> exported below
 
