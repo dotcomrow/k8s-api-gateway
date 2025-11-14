@@ -324,6 +324,10 @@ spec:
           value: "gravitee_app"
         - name: MANAGEMENT_JDBC_LIQUIBASE_ENABLED
           value: "false"
+        - name: ANALYTICS_JDBC_LIQUIBASE_ENABLED
+          value: "false"
+        - name: ANALYTICS_TYPE
+          value: "none"
         # Password comes from Vault -> exported below
 
         - name: K8S_NAMESPACE
