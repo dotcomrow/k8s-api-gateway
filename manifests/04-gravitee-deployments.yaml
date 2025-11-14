@@ -1,4 +1,21 @@
 ---
+# Gravitee Management API Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: gravitee-management-api
+  namespace: k8s-api-gateway
+  labels:
+    app: gravitee-management-api
+spec:
+  selector:
+    app: gravitee-management-api
+  ports:
+  - name: http
+    port: 8083
+    targetPort: 8083
+  type: ClusterIP
+---
 # Gravitee Management API Deployment
 apiVersion: apps/v1
 kind: Deployment
