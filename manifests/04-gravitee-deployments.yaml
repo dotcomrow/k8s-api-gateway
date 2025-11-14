@@ -367,6 +367,12 @@ spec:
           value: "false"
         - name: GRAVITEE_SERVICES_ALERT_ENABLED
           value: "false"
+        - name: NODE_CACHE_ENABLED
+          value: "false"
+        - name: NODE_HEARTBEAT_ENABLED
+          value: "false"
+        - name: NODE_ALERT_ENABLED
+          value: "false"
         - name: SERVICES_CACHE_ENABLED
           value: "false"
         - name: SERVICES_HEARTBEAT_ENABLED
