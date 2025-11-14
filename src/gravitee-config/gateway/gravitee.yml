@@ -49,6 +49,15 @@ services:
     unit: MILLISECONDS
     distributed: false
 
+  cache:
+    enabled: false
+
+  heartbeat:
+    enabled: false
+
+  alert:
+    enabled: false
+
   # APISIX route sync service
   apisix-sync:
     enabled: ${APISIX_SYNC_ENABLED:true}

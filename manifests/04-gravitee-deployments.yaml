@@ -361,6 +361,12 @@ spec:
           value: "false"
         - name: SERVICES_ALERT_ENABLED
           value: "false"
+        - name: GRAVITEE_SERVICES_CACHE_ENABLED
+          value: "false"
+        - name: GRAVITEE_SERVICES_HEARTBEAT_ENABLED
+          value: "false"
+        - name: GRAVITEE_SERVICES_ALERT_ENABLED
+          value: "false"
         # Password comes from Vault -> exported below
 
         - name: K8S_NAMESPACE
