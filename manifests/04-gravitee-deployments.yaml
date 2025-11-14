@@ -425,21 +425,37 @@ spec:
             cpu: "1000m"
             memory: "1Gi"
         livenessProbe:
-          httpGet:
-            path: /_node/health
-            port: 8082
-          initialDelaySeconds: 480
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - |
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/health || echo "000")
+              if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
+                exit 0
+              fi
+              echo "Liveness probe failed, management health returned $STATUS" >&2
+              exit 1
+          initialDelaySeconds: 180
           periodSeconds: 30
           timeoutSeconds: 5
-          failureThreshold: 6
+          failureThreshold: 4
         readinessProbe:
-          httpGet:
-            path: /_node/health
-            port: 8082
-          initialDelaySeconds: 240
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - |
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/health || echo "000")
+              if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
+                exit 0
+              fi
+              echo "Readiness probe failed, management health returned $STATUS" >&2
+              exit 1
+          initialDelaySeconds: 90
           periodSeconds: 20
           timeoutSeconds: 5
-          failureThreshold: 6
+          failureThreshold: 3
         volumeMounts:
         - name: gateway-config
           mountPath: /opt/graviteeio-gateway/config/gravitee.yml
