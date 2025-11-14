@@ -522,24 +522,6 @@ spec:
           value: "https://gravitee-management-api.teleport.app.suncoast.systems/management"
         - name: MANAGEMENT_JDBC_LIQUIBASE_ENABLED
           value: "false"
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          set -e
-          : "${PORTAL_API_URL:?PORTAL_API_URL must be set}"
-          cat <<EOF >/usr/share/nginx/html/assets/config.json
-          {
-            "baseURL": "${PORTAL_API_URL}",
-            "loaderURL": "assets/images/gravitee-loader.gif",
-            "pagination": {
-              "size": {
-                "default": 10,
-                "values": [5, 10, 25, 50, 100]
-              }
-            }
-          }
-          EOF
-          exec nginx -g 'daemon off;'
         resources:
           requests:
             cpu: "50m"

@@ -7,6 +7,15 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    teleport.dev/name: "gravitee-management-api"
+    teleport.dev/protocol: "http"
+    teleport.dev/public_addr: "gravitee-management-api.teleport.app.suncoast.systems"
+    teleport.dev/labels: "environment=production,service=gravitee-management-api"
+  labels:
+    teleport.dev/enroll: "true"
+    app.kubernetes.io/name: gravitee-management-api
+    app.kubernetes.io/component: gravitee
+    teleport.dev/app: "gravitee-management-api"
 spec:
   ports:
   - port: 8083
@@ -41,7 +50,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "4"
     teleport.dev/name: "gravitee-portal"
     teleport.dev/protocol: "http"
-    teleport.dev/public_addr: "gravitee-portal.app.suncoast.systems"
+    teleport.dev/public_addr: "gravitee-portal.teleport.app.suncoast.systems"
     teleport.dev/labels: "environment=production,service=gravitee-portal"
   labels:
     teleport.dev/enroll: "true"
