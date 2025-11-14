@@ -183,6 +183,8 @@ spec:
           value: "false"
         - name: REPORTERS_ELASTIC_ENABLED
           value: "false"
+        - name: SERVICES_CACHE_ENABLED
+          value: "false"
 
         - name: K8S_NAMESPACE
           value: "k8s-api-gateway"
@@ -479,7 +481,7 @@ spec:
             memory: "128Mi"
         livenessProbe:
           httpGet:
-            path: /
+            path: /index.html
             port: 8080
           initialDelaySeconds: 240
           periodSeconds: 30
@@ -487,7 +489,7 @@ spec:
           failureThreshold: 6
         readinessProbe:
           httpGet:
-            path: /
+            path: /index.html
             port: 8080
           initialDelaySeconds: 120
           periodSeconds: 20
