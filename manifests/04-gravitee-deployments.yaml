@@ -518,6 +518,8 @@ spec:
           value: "gravitee-portal"
         - name: PORTAL_OAUTH_SERVER_URL
           value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
+        - name: PORTAL_API_URL
+          value: "https://gravitee-management-api.teleport.app.suncoast.systems/management"
         - name: MANAGEMENT_JDBC_LIQUIBASE_ENABLED
           value: "false"
         resources:
