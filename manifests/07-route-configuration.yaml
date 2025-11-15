@@ -39,8 +39,41 @@ data:
           }
         },
         "plugins": {
+          "request-id": {
+            "header_name": "x-request-id",
+            "include_in_response": true
+          },
+          "real-ip": {
+            "source": "X-Forwarded-For",
+            "recursive": true
+          },
+          "cors": {
+            "allow_origins": "*",
+            "allow_methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+            "allow_headers": "*",
+            "expose_headers": "*",
+            "allow_credential": true,
+            "max_age": 3600
+          },
+          "opentelemetry": {
+            "sampler": {
+              "name": "always_on"
+            },
+            "collector": {
+              "address": "http://otel-collector.observability.svc.cluster.local:4318",
+              "request_type": "http"
+            },
+            "resource": {
+              "service.name": "gravitee-gateway",
+              "service.namespace": "k8s-api-gateway"
+            }
+          },
           "proxy-rewrite": {
-            "regex_uri": ["^/gateway(.*)", "$1"]
+            "regex_uri": ["^/gateway(.*)", "$1"],
+            "append_headers": {
+              "X-Forwarded-Proto": "$scheme",
+              "X-Forwarded-Host": "$host"
+            }
           }
         }
       }'

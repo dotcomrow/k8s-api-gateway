@@ -120,9 +120,7 @@ data:
           port: 9091
         refresh_interval: 15
     deployment:
-      role: data_plane
-      role_data_plane:
-        config_provider: etcd
+      role: traditional
       admin:
         admin_key_required: true
         admin_key:
@@ -132,7 +130,10 @@ data:
         enable_admin_cors: true
         enable_admin_ui: true
         allow_admin:
-          - 127.0.0.0/24
+          - 127.0.0.1
+          - 10.0.0.0/8
+          - 10.42.0.0/16
+          - 10.43.0.0/16
         admin_listen:
           ip: "0.0.0.0"
           port: 9180
