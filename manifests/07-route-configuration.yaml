@@ -124,19 +124,18 @@ spec:
       containers:
       - name: configure-routes
         image: curlimages/curl:8.11.1
-        command: ["/bin/sh", "-c"]
-        args:
+        command:
+        - /bin/sh
+        - -c
         - |
-          # Load APISIX admin key from Vault
           if [ -f /vault/secrets/admin ]; then
-            source /vault/secrets/admin
+            . /vault/secrets/admin
             echo "✅ APISIX admin key loaded from Vault"
           else
             echo "❌ Failed to load APISIX admin key from Vault"
             exit 1
           fi
-          
-          # Execute route configuration script
+          chmod +x /scripts/configure-routes.sh
           /scripts/configure-routes.sh
         volumeMounts:
         - name: routes-config
