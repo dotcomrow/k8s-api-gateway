@@ -1,5 +1,5 @@
 {
-  "baseURL": "/",
+  "baseURL": "https://gravitee.teleport.app.suncoast.systems/management/organizations/DEFAULT/environments/DEFAULT/",
   "baseHref": "/",
   "authentication": {
     "oauth2": {
