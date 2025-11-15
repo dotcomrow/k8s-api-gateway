@@ -9,7 +9,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "5"
 data:
   configure-routes.sh: |
-    #!/bin/bash
+    #!/bin/sh
     set -e
     
     echo "🔧 Configuring APISIX route for Gravitee gateway access..."
@@ -135,9 +135,7 @@ spec:
             echo "❌ Failed to load APISIX admin key from Vault"
             exit 1
           fi
-          cp /scripts/configure-routes.sh /tmp/configure-routes.sh
-          chmod +x /tmp/configure-routes.sh
-          /tmp/configure-routes.sh
+          /bin/sh /scripts/configure-routes.sh
         volumeMounts:
         - name: routes-config
           mountPath: /scripts
