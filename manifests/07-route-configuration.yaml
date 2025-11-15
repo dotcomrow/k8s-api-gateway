@@ -84,7 +84,7 @@ spec:
           RETRY_COUNT=0
           MAX_RETRIES=120
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if curl -f -s http://apisix.k8s-api-gateway.svc.cluster.local:80/ > /dev/null 2>&1; then
+            if curl -s -o /dev/null http://apisix.k8s-api-gateway.svc.cluster.local:80/; then
               echo "✅ APISIX is ready"
               exit 0
             fi
