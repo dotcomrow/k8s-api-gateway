@@ -68,7 +68,7 @@ spec:
         vault.hashicorp.com/agent-inject-secret-admin: "secret/apisix/admin"
         vault.hashicorp.com/agent-inject-template-admin: |
           {{- with secret "secret/apisix/admin" -}}
-          export APISIX_ADMIN_KEY="{{ .Data.key }}"
+          export APISIX_ADMIN_KEY="{{ .Data.Data.key }}"
           {{- end }}
     spec:
       serviceAccountName: apisix
