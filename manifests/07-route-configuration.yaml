@@ -48,7 +48,7 @@ data:
             "recursive": true
           },
           "cors": {
-            "allow_origins_by_regex": ["https://.*"],
+            "allow_origins": "http://apisix.k8s-api-gateway.svc.cluster.local",
             "allow_methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
             "allow_headers": "Authorization,Content-Type,X-Requested-With,Accept,X-Real-IP,X-Forwarded-For,X-Request-Id",
             "expose_headers": "X-Request-Id",
