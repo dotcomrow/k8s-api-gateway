@@ -4,23 +4,27 @@
 gravitee:
 
   installation:
-    api:
-      # Global base of your APIM installation (main public hostname)
-      url: https://gravitee.teleport.app.suncoast.systems
+    standalone:
+      api:
+        # Global public base URL for the Management + Portal APIs
+        url: https://gravitee.teleport.app.suncoast.systems
 
-      # Public URL of the Console (if/when you use it)
       console:
+        # Public URL for the console
         url: https://gravitee.teleport.app.suncoast.systems/management
 
-      # Public URL of the Developer Portal API
+      portal:
+        # Public URL for the developer portal
+        url: https://gravitee.teleport.app.suncoast.systems/portal
+
+    # (optional but harmless) keep the older structure too, in case your version still reads it
+    api:
+      url: https://gravitee.teleport.app.suncoast.systems
+      console:
+        url: https://gravitee.teleport.app.suncoast.systems/management
       portal:
         url: https://gravitee.teleport.app.suncoast.systems/portal
 
-      # How the Management API exposes its paths behind the proxy
-      proxyPath:
-        management: /management
-        portal: /portal
-        
   # Management configuration
   management:
     type: jdbc
