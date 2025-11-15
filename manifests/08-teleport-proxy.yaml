@@ -1,0 +1,142 @@
+---
+# Gravitee Teleport Proxy Config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gravitee-teleport-proxy
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+data:
+  nginx.conf: |-
+    worker_processes  1;
+
+    events {
+        worker_connections  1024;
+    }
+
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+
+        sendfile        on;
+        keepalive_timeout  65;
+
+        upstream gravitee_portal {
+            server gravitee-portal.k8s-api-gateway.svc.cluster.local:8080;
+        }
+
+        upstream gravitee_management {
+            server gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083;
+        }
+
+        server {
+            listen 8080;
+            listen [::]:8080;
+
+            # Portal static assets (default path)
+            location / {
+                proxy_pass http://gravitee_portal;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+
+            # Portal API endpoint (used by the Angular UI)
+            location /portal/ {
+                proxy_pass http://gravitee_management$request_uri;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+
+            # Management REST API
+            location /management/ {
+                proxy_pass http://gravitee_management$request_uri;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+    }
+---
+# Gravitee Teleport Proxy Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gravitee-teleport-proxy
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gravitee-teleport-proxy
+  template:
+    metadata:
+      labels:
+        app: gravitee-teleport-proxy
+      annotations:
+        linkerd.io/inject: "disabled"
+    spec:
+      serviceAccountName: gravitee
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: proxy-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+      volumes:
+      - name: proxy-config
+        configMap:
+          name: gravitee-teleport-proxy
+---
+# Gravitee Teleport Proxy Service (exposed via Teleport)
+apiVersion: v1
+kind: Service
+metadata:
+  name: gravitee-teleport-proxy
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    teleport.dev/name: "gravitee-suite"
+    teleport.dev/protocol: "http"
+    teleport.dev/public_addr: "gravitee.teleport.app.suncoast.systems"
+    teleport.dev/labels: "environment=production,service=gravitee"
+  labels:
+    teleport.dev/enroll: "true"
+    teleport.dev/app: "gravitee-suite"
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: gravitee-teleport-proxy

@@ -1,5 +1,5 @@
 {
-  "baseURL": "https://gravitee-management-api.teleport.app.suncoast.systems/portal/environments/DEFAULT",
+  "baseURL": "https://gravitee.teleport.app.suncoast.systems/portal/environments/DEFAULT",
   "loaderURL": "assets/images/gravitee-loader.gif",
   "pagination": {
     "size": {
