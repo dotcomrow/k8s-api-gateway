@@ -128,7 +128,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "5"
     teleport.dev/name: "gravitee-suite"
     teleport.dev/protocol: "http"
-    teleport.dev/public_addr: "gravitee.teleport.app.suncoast.systems"
+    teleport.dev/public-addr: "gravitee.teleport.app.suncoast.systems"
     teleport.dev/labels: "environment=production,service=gravitee"
   labels:
     teleport.dev/enroll: "true"
