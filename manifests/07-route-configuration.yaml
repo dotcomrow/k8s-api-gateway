@@ -57,12 +57,12 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "5"
-    linkerd.io/inject: "disabled"
+    linkerd.io/inject: "enabled"
 spec:
   template:
     metadata:
       annotations:
-        linkerd.io/inject: "disabled"
+        linkerd.io/inject: "enabled"
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "apisix"
         vault.hashicorp.com/agent-inject-secret-admin: "secret/apisix/admin"
