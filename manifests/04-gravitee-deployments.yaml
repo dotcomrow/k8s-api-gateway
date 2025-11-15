@@ -795,4 +795,3 @@ data:
       # Node information endpoint  
       node:
         enabled: true
----
