@@ -2,6 +2,25 @@
 # Gravitee.io Management API Configuration for YugabyteDB and Vault Integration
 ############################################################################################################
 gravitee:
+
+  installation:
+    api:
+      # Global base of your APIM installation (main public hostname)
+      url: https://gravitee.teleport.app.suncoast.systems
+
+      # Public URL of the Console (if/when you use it)
+      console:
+        url: https://gravitee.teleport.app.suncoast.systems/management
+
+      # Public URL of the Developer Portal API
+      portal:
+        url: https://gravitee.teleport.app.suncoast.systems/portal
+
+      # How the Management API exposes its paths behind the proxy
+      proxyPath:
+        management: /management
+        portal: /portal
+        
   # Management configuration
   management:
     type: jdbc
