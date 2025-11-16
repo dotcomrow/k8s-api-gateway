@@ -1070,7 +1070,7 @@ spec:
             '{
               id: "github",
               name: "GitHub",
-              type: "oauth2",
+              type: "GITHUB",
               color: "#24292F",
               syncMappings: true,
               scopes: ["read:user","read:org"],
