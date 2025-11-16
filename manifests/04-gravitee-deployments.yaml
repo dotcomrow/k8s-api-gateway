@@ -822,3 +822,114 @@ data:
       # Node information endpoint  
       node:
         enabled: true
+---
+# Configure GitHub identity provider and portal settings
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-gravitee-github
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+    linkerd.io/inject: "disabled"
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      annotations:
+        linkerd.io/inject: "disabled"
+    spec:
+      serviceAccountName: gravitee
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-management
+        image: curlimages/curl:8.11.1
+        env:
+        - name: MANAGEMENT_HEALTH_URL
+          value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management/platform"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          echo "🔍 Waiting for Gravitee Management API before applying configuration..."
+          while true; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
+              echo "✅ Management API responded with HTTP $STATUS, continuing."
+              break
+            fi
+            echo "⏳ Management API not ready yet (status $STATUS), retrying in 5s..."
+            sleep 5
+          done
+      containers:
+      - name: configure
+        image: curlimages/curl:8.11.1
+        env:
+        - name: MGMT_API_URL
+          value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
+        - name: GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-gateway-github-oauth
+              key: client-id
+        - name: GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-gateway-github-oauth
+              key: client-secret
+        - name: GITHUB_SERVER_URL
+          value: "https://github.com/login/oauth"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -euo pipefail
+          AUTH="-u admin:admin"
+          BASE_URL="${GITHUB_SERVER_URL%/}"
+          AUTH_ENDPOINT="${BASE_URL}/authorize"
+          TOKEN_ENDPOINT="${BASE_URL}/access_token"
+          cat <<EOF_PAYLOAD >/tmp/github-idp.json
+          {
+            "id": "github",
+            "name": "GitHub",
+            "type": "oauth2",
+            "color": "#24292F",
+            "syncMappings": true,
+            "scopes": ["read:user","read:org"],
+            "configuration": {
+              "clientId": "${GITHUB_CLIENT_ID}",
+              "clientSecret": "${GITHUB_CLIENT_SECRET}",
+              "authorizationEndpoint": "${AUTH_ENDPOINT}",
+              "tokenEndpoint": "${TOKEN_ENDPOINT}",
+              "userInfoEndpoint": "https://api.github.com/user",
+              "useSystemProxy": false
+            }
+          }
+          EOF_PAYLOAD
+
+          IDP_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/configuration/identities"
+          echo "🔧 Applying GitHub identity provider configuration..."
+          RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/idp-response $AUTH -H "Content-Type: application/json" -X PUT "$IDP_URL/github" --data-binary @/tmp/github-idp.json || true)
+          if [ "$RESPONSE" != "200" ]; then
+            echo "⚠️  PUT /identities/github returned HTTP $RESPONSE, attempting POST..."
+            curl -s -o /tmp/idp-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X POST "$IDP_URL" --data-binary @/tmp/github-idp.json || true
+          fi
+
+          cat <<'EOF_PORTAL' >/tmp/portal-settings.json
+          {
+            "userCreation": {
+              "enabled": false,
+              "automaticValidation": false
+            }
+          }
+          EOF_PORTAL
+          PORTAL_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/settings/portal"
+          echo "🔧 Disabling portal user self-signup..."
+          curl -s -o /tmp/portal-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X PUT "$PORTAL_URL" --data-binary @/tmp/portal-settings.json || true
+
+          echo "🔒 Disabling built-in admin user..."
+          ADMIN_USER_ID=$(curl -s $AUTH "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users?page=1&size=50" | jq -r '.content[] | select(.username=="admin") | .id')
+          if [ -n "$ADMIN_USER_ID" ] && [ "$ADMIN_USER_ID" != "null" ]; then
+            curl -s -o /tmp/disable-admin-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/$ADMIN_USER_ID/status?status=DEACTIVATED"
+          else
+            echo "ℹ️ Admin user not found or already removed."
+          fi
