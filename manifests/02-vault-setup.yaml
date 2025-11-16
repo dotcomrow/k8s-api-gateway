@@ -146,6 +146,10 @@ spec:
           path "secret/data/apisix/*" {
             capabilities = ["read"]
           }
+
+          path "secret/data/api-gateway-*" {
+            capabilities = ["read"]
+          }
           EOF
           
           # Configure Kubernetes authentication roles
