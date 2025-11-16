@@ -933,6 +933,8 @@ spec:
           set -e
           apk add --no-cache curl jq postgresql15-client >/dev/null
 
+          JQ_BIN="/usr/bin/jq"
+
           if [ -f "/vault/secrets/db-creds" ]; then
             . /vault/secrets/db-creds
           fi
