@@ -4,18 +4,21 @@ FROM graviteeio/apim-portal-ui:4.6.0
 # Switch to root for package installations
 USER root
 
-# Install debugging tools for troubleshooting
+# Install debugging tools and envsubst for templating
 RUN apk add --no-cache \
     curl \
-    jq
+    jq \
+    gettext
 
 RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar \
     -O /usr/local/lib/postgresql-42.7.4.jar
 # Copy custom portal configuration and any custom assets
 COPY --chown=nginx:nginx src/gravitee-config/portal/ /usr/share/nginx/html/
+COPY --chown=nginx:nginx scripts/portal-entrypoint.sh /entrypoint.sh
 
 # Ensure proper permissions on web content
 RUN chown -R nginx:nginx /usr/share/nginx/html/
+RUN chmod +x /entrypoint.sh
 
 # Switch back to nginx user
 USER nginx
@@ -27,5 +30,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
     CMD curl -f http://localhost:8080 || exit 1
 
-# Default command (nginx handles this)
-CMD ["nginx", "-g", "daemon off;"]
+# Default command (templating entrypoint renders config then runs nginx)
+ENTRYPOINT ["/entrypoint.sh"]

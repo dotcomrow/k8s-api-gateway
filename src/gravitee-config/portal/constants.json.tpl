@@ -8,7 +8,7 @@
       "serverURL": "${PORTAL_OAUTH_SERVER_URL}"
     },
     "localLogin": {
-      "enabled": true
+      "enabled": false
     }
   },
   "scheduler": {
@@ -22,7 +22,7 @@
     "apikeyHeader": "X-Gravitee-Api-Key",
     "devMode": false,
     "userCreation": {
-      "enabled": true,
+      "enabled": false,
       "automaticValidation": {
         "enabled": false
       }

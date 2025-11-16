@@ -164,6 +164,30 @@ security:
     type: ${TRUSTSTORE_TYPE:JKS}
     path: ${TRUSTSTORE_PATH:${gravitee.home}/security/truststore.jks}
     password: ${TRUSTSTORE_PASSWORD}
+  providers:
+    - type: oauth2
+      id: github
+      name: GitHub
+      clientId: ${PORTAL_OAUTH_CLIENT_ID}
+      clientSecret: ${PORTAL_OAUTH_CLIENT_SECRET}
+      color: "#24292F"
+      syncMappings: true
+      scopes:
+        - read:user
+        - read:org
+      userMapping:
+        id: id
+        lastname: name
+        firstname: name
+        email: email
+        picture: avatar_url
+      groupMapping:
+        - condition: "{#context.attributes['groups'] contains 'github-team-admins'}"
+          groups:
+            - platform-admins
+        - condition: "{#context.attributes['groups'] contains 'github-team-publishers'}"
+          groups:
+            - platform-publishers
 
 # Email configuration (for notifications)
 email:
@@ -179,7 +203,7 @@ email:
 # Portal configuration
 portal:
   url: ${PORTAL_URL:http://gravitee-portal.k8s-api-gateway.svc.cluster.local:8080}
-  
+
 # API Gateway configuration
 gateway:
   url: ${GATEWAY_URL:http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082}
