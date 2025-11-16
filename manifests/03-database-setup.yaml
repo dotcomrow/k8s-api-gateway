@@ -19,7 +19,7 @@ spec:
       auth:
         kubernetes:
           mountPath: kubernetes
-          role: external-secrets
+          role: externalsecrets
           serviceAccountRef:
             name: external-secrets-sa
             namespace: external-secrets
