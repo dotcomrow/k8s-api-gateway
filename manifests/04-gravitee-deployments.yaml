@@ -980,7 +980,13 @@ spec:
                 'DEFAULT',
                 'USER',
                 admin_id,
-                (SELECT id FROM gravitee.roles WHERE reference_type='ORGANIZATION' AND name='PRIMARY_OWNER' ORDER BY created_at LIMIT 1),
+                (SELECT id
+                   FROM gravitee.roles
+                  WHERE scope = 'ORGANIZATION'
+                    AND reference_id = 'DEFAULT'
+                    AND name = 'PRIMARY_OWNER'
+                  ORDER BY created_at
+                  LIMIT 1),
                 now(),
                 now()
               );
@@ -999,7 +1005,13 @@ spec:
                 'DEFAULT',
                 'USER',
                 admin_id,
-                (SELECT id FROM gravitee.roles WHERE reference_type='ENVIRONMENT' AND name='PRIMARY_OWNER' ORDER BY created_at LIMIT 1),
+                (SELECT id
+                   FROM gravitee.roles
+                  WHERE scope = 'ENVIRONMENT'
+                    AND reference_id = 'DEFAULT'
+                    AND name = 'PRIMARY_OWNER'
+                  ORDER BY created_at
+                  LIMIT 1),
                 now(),
                 now()
               );
