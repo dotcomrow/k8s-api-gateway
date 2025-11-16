@@ -934,33 +934,31 @@ spec:
           GITHUB_SERVER_URL="${GITHUB_SERVER_URL:-}"
 
           echo "🔧 Config context:"
-          echo "  MGMT_API_URL     = $MGMT_API_URL"
-          echo "  ADMIN_USERNAME   = $ADMIN_USERNAME"
-          echo "  GITHUB_SERVER_URL= $GITHUB_SERVER_URL"
+          echo "  MGMT_API_URL      = $MGMT_API_URL"
+          echo "  ADMIN_USERNAME    = $ADMIN_USERNAME"
+          echo "  GITHUB_SERVER_URL = $GITHUB_SERVER_URL"
 
-          AUTH="-u ${ADMIN_USERNAME}:${ADMIN_PASSWORD}"
           BASE_URL="${GITHUB_SERVER_URL%/}"
           AUTH_ENDPOINT="${BASE_URL}/authorize"
           TOKEN_ENDPOINT="${BASE_URL}/access_token"
 
           USERS_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users"
 
-          echo "🔍 Checking for existing users..."
-          # Capture body and status separately so we can log and then parse
-          curl -s $AUTH "$USERS_URL?page=1&size=1" \
+          echo "🔍 Checking for existing users (NO auth)..."
+          # NO AUTH here – first install should allow anonymous _init
+          curl -s "$USERS_URL?page=1&size=1" \
             -o /tmp/users-response-body \
             -w "%{http_code}" > /tmp/users-response-status || true
 
           USERS_HTTP_STATUS="$(cat /tmp/users-response-status 2>/dev/null || echo "")"
-          echo "ℹ️ /users HTTP status: '${USERS_HTTP_STATUS}'"
-          echo "ℹ️ /users response body:"
+          echo "ℹ️ /users HTTP status (no auth): '${USERS_HTTP_STATUS}'"
+          echo "ℹ️ /users response body (no auth):"
           cat /tmp/users-response-body || true
 
           CURRENT_USER_COUNT="0"
 
           if [ "$USERS_HTTP_STATUS" = "200" ]; then
             echo "🔎 Parsing user count from JSON..."
-            # Try to parse; if jq fails, log error and fall back to 0
             if ! CURRENT_USER_COUNT=$("$JQ_BIN" -r '.page.totalElements // 0' /tmp/users-response-body 2>/tmp/users-jq-error); then
               echo "⚠️ jq failed to parse /users response:"
               cat /tmp/users-jq-error || true
@@ -974,7 +972,7 @@ spec:
           echo "ℹ️ Parsed CURRENT_USER_COUNT='${CURRENT_USER_COUNT}'"
 
           if [ "$CURRENT_USER_COUNT" = "0" ] || [ -z "$CURRENT_USER_COUNT" ]; then
-            echo "👤 No users found (or unable to parse). Bootstrapping initial admin account..."
+            echo "👤 No users found (or unable to parse). Bootstrapping initial admin account via /users/_init (NO auth)..."
 
             "$JQ_BIN" -n \
               --arg username "$ADMIN_USERNAME" \
@@ -987,14 +985,13 @@ spec:
                 lastname: "Admin"
               }' > /tmp/init-admin.json
 
-            echo "📤 POST /users/_init payload:"
+            echo "📤 POST /users/_init payload (no auth):"
             cat /tmp/init-admin.json || true
 
             INIT_URL="$USERS_URL/_init"
             INIT_HTTP_STATUS=$(curl -s -o /tmp/init-response \
               -w "%{http_code}" \
               -H "Content-Type: application/json" \
-              $AUTH \
               -X POST "$INIT_URL" \
               --data-binary @/tmp/init-admin.json || echo "000")
 
@@ -1010,6 +1007,25 @@ spec:
             echo "✅ Admin account bootstrapped."
           else
             echo "ℹ️ Users already exist (${CURRENT_USER_COUNT}), skipping bootstrap."
+          fi
+
+          # Now that admin should exist, define AUTH for authenticated calls
+          AUTH="-u ${ADMIN_USERNAME}:${ADMIN_PASSWORD}"
+          echo "🔐 Using basic auth with user '${ADMIN_USERNAME}' for subsequent Management API calls."
+
+          echo "🧪 Verifying authenticated /users call..."
+          curl -s $AUTH "$USERS_URL?page=1&size=1" \
+            -o /tmp/users-auth-body \
+            -w "%{http_code}" > /tmp/users-auth-status || true
+          USERS_AUTH_STATUS="$(cat /tmp/users-auth-status 2>/dev/null || echo "")"
+          echo "ℹ️ /users HTTP status (with auth): '${USERS_AUTH_STATUS}'"
+          echo "ℹ️ /users response body (with auth):"
+          cat /tmp/users-auth-body || true
+
+          if [ "$USERS_AUTH_STATUS" != "200" ]; then
+            echo "❌ Authenticated /users call still failing (status=${USERS_AUTH_STATUS})."
+            echo "   Check that gravitee-admin-credentials matches the Management API admin account."
+            exit 1
           fi
 
           echo "🧩 Building GitHub identity provider JSON..."
