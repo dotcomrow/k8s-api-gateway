@@ -1128,12 +1128,21 @@ spec:
           echo "📤 Portal settings payload:"
           cat /tmp/portal-settings.json || true
 
-          PORTAL_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/settings/portal"
+          PORTAL_URL_V1="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/settings/portal"
+          PORTAL_URL_V2="$MGMT_API_URL/management/v2/organizations/DEFAULT/environments/DEFAULT/settings/portal"
           echo "🔧 Disabling portal user self-signup..."
           PORTAL_HTTP_STATUS=$(curl -s -o /tmp/portal-response -w "%{http_code}" \
             $AUTH -H "Content-Type: application/json" \
-            -X PUT "$PORTAL_URL" \
+            -X PUT "$PORTAL_URL_V1" \
             --data-binary @/tmp/portal-settings.json || echo "000")
+
+          if [ "$PORTAL_HTTP_STATUS" = "404" ]; then
+            echo "⚠️ V1 portal settings endpoint returned 404. Retrying against v2 path..."
+            PORTAL_HTTP_STATUS=$(curl -s -o /tmp/portal-response -w "%{http_code}" \
+              $AUTH -H "Content-Type: application/json" \
+              -X PUT "$PORTAL_URL_V2" \
+              --data-binary @/tmp/portal-settings.json || echo "000")
+          fi
 
           echo "ℹ️ PUT /settings/portal HTTP status: '${PORTAL_HTTP_STATUS}'"
           echo "ℹ️ PUT /settings/portal response body:"
