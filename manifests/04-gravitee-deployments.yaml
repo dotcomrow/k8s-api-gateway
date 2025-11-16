@@ -950,22 +950,22 @@ spec:
             fi
             echo "✅ Admin account bootstrapped."
           fi
-          cat <<EOF_PAYLOAD >/tmp/github-idp.json
+          cat <<'EOF_PAYLOAD' >/tmp/github-idp.json
           {
             "id": "github",
             "name": "GitHub",
             "type": "oauth2",
             "color": "#24292F",
-            "syncMappings": true,
-            "scopes": ["read:user","read:org"],
-            "configuration": {
-              "clientId": "${GITHUB_CLIENT_ID}",
-              "clientSecret": "${GITHUB_CLIENT_SECRET}",
-              "authorizationEndpoint": "${AUTH_ENDPOINT}",
-              "tokenEndpoint": "${TOKEN_ENDPOINT}",
-              "userInfoEndpoint": "https://api.github.com/user",
-              "useSystemProxy": false
-            }
+                      "syncMappings": true,
+                      "scopes": ["read:user","read:org"],
+                      "configuration": {
+                        "clientId": "${GITHUB_CLIENT_ID}",
+                        "clientSecret": "${GITHUB_CLIENT_SECRET}",
+                        "authorizationEndpoint": "${AUTH_ENDPOINT}",
+                        "tokenEndpoint": "${TOKEN_ENDPOINT}",
+                        "userInfoEndpoint": "https://api.github.com/user",
+                        "useSystemProxy": false
+                      }
           }
           EOF_PAYLOAD
 
