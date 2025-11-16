@@ -168,6 +168,11 @@ security:
     path: ${TRUSTSTORE_PATH:${gravitee.home}/security/truststore.jks}
     password: ${TRUSTSTORE_PASSWORD}
   providers:
+    - type: gravitee
+      id: internal
+      name: Gravitee Internal
+      description: Default internal user store
+      default: true
     - type: oauth2
       id: github
       name: GitHub
