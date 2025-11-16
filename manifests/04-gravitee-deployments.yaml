@@ -918,11 +918,38 @@ spec:
         args:
         - |
           set -euo pipefail
-          apk add --no-cache jq >/dev/null
+          JQ_BIN="/tmp/jq"
+          if [ ! -x "$JQ_BIN" ]; then
+            echo "⬇️  Downloading jq..."
+            curl -fsSL -o "$JQ_BIN" https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64
+            chmod +x "$JQ_BIN"
+          fi
           AUTH="-u ${ADMIN_USERNAME}:${ADMIN_PASSWORD}"
           BASE_URL="${GITHUB_SERVER_URL%/}"
           AUTH_ENDPOINT="${BASE_URL}/authorize"
           TOKEN_ENDPOINT="${BASE_URL}/access_token"
+
+          USERS_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users"
+          CURRENT_USER_COUNT=$(curl -s $AUTH "$USERS_URL?page=1&size=1" | "$JQ_BIN" '.page.totalElements // 0')
+          if [ "$CURRENT_USER_COUNT" -eq 0 ]; then
+            echo "👤 No users found. Bootstrapping initial admin account..."
+            cat <<EOF_INIT >/tmp/init-admin.json
+            {
+              "username": "${ADMIN_USERNAME}",
+              "password": "${ADMIN_PASSWORD}",
+              "email": "${ADMIN_USERNAME}@example.com",
+              "firstname": "Portal",
+              "lastname": "Admin"
+            }
+            EOF_INIT
+            RESPONSE=$(curl -s -o /tmp/init-response -w "%{http_code}" -H "Content-Type: application/json" -X POST "$USERS_URL/_init" --data-binary @/tmp/init-admin.json || true)
+            if [ "$RESPONSE" != "200" ] && [ "$RESPONSE" != "201" ]; then
+              echo "❌ Failed to bootstrap admin account (status $RESPONSE)"
+              cat /tmp/init-response || true
+              exit 1
+            fi
+            echo "✅ Admin account bootstrapped."
+          fi
           cat <<EOF_PAYLOAD >/tmp/github-idp.json
           {
             "id": "github",
@@ -973,7 +1000,7 @@ spec:
           fi
 
           echo "🔒 Disabling built-in admin user..."
-          ADMIN_USER_ID=$(curl -s $AUTH "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users?page=1&size=50" | jq -r '.content[] | select(.username=="admin") | .id')
+          ADMIN_USER_ID=$(curl -s $AUTH "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users?page=1&size=50" | "$JQ_BIN" -r '.content[] | select(.username=="admin") | .id')
           if [ -n "$ADMIN_USER_ID" ] && [ "$ADMIN_USER_ID" != "null" ]; then
             RESPONSE=$(curl -s -o /tmp/disable-admin-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/$ADMIN_USER_ID/status?status=DEACTIVATED" || true)
             if [ "$RESPONSE" != "200" ]; then
