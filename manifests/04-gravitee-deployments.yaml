@@ -22,10 +22,6 @@ spec:
       remoteRef:
         key: api-gateway-github-client-secret
         property: value
-    - secretKey: server-url
-      remoteRef:
-        key: api-gateway-github-server-url
-        property: value
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
