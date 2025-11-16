@@ -985,6 +985,25 @@ spec:
                 now()
               );
             END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM gravitee.memberships
+                        WHERE member_id = admin_id
+                          AND reference_type = 'ENVIRONMENT'
+                          AND reference_id = 'DEFAULT'
+                      ) THEN
+              INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
+              VALUES (
+                admin_id || '-env-membership',
+                'ENVIRONMENT',
+                'DEFAULT',
+                'USER',
+                admin_id,
+                (SELECT id FROM gravitee.roles WHERE reference_type='ENVIRONMENT' AND name='PRIMARY_OWNER' ORDER BY created_at LIMIT 1),
+                now(),
+                now()
+              );
+            END IF;
           END \$\$;
           EOF_SQL
 
