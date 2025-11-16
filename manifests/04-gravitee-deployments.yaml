@@ -3,6 +3,8 @@ kind: ExternalSecret
 metadata:
   name: api-gateway-github-oauth
   namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   refreshInterval: 1h
   secretStoreRef:
