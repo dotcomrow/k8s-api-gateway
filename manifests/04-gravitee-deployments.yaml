@@ -940,25 +940,23 @@ spec:
             exit 1
           fi
 
-          JQ_BIN="/usr/bin/jq"
-
           echo "🔧 Ensuring admin user exists directly in database..."
-          PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" <<'SQL_BOOTSTRAP'
+          cat <<EOF_SQL | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
           CREATE EXTENSION IF NOT EXISTS pgcrypto;
-          DO $$
+          DO \$\$
           DECLARE admin_id varchar(64);
           BEGIN
-            SELECT id INTO admin_id FROM gravitee.users WHERE username = 'admin' AND source = 'gravitee';
+            SELECT id INTO admin_id FROM gravitee.users WHERE username = '${ADMIN_USERNAME}' AND source = 'gravitee';
             IF admin_id IS NULL THEN
-              admin_id := 'gravitee-admin';
+              admin_id := '${ADMIN_USERNAME}';
               INSERT INTO gravitee.users (id, source, source_id, username, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
               VALUES (
                 admin_id,
                 'gravitee',
-                'admin',
-                'admin',
-                'admin@example.com',
-                crypt('admin', gen_salt('bf')),
+                '${ADMIN_USERNAME}',
+                '${ADMIN_USERNAME}',
+                '${ADMIN_USERNAME}@example.com',
+                crypt('${ADMIN_PASSWORD}', gen_salt('bf')),
                 'Portal',
                 'Admin',
                 now(),
@@ -977,7 +975,7 @@ spec:
             ) THEN
               INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
               VALUES (
-                'gravitee-admin-membership',
+                concat(admin_id, '-membership'),
                 'ORGANIZATION',
                 'DEFAULT',
                 'USER',
@@ -987,8 +985,10 @@ spec:
                 now()
               );
             END IF;
-          END $$;
-          SQL_BOOTSTRAP
+          END \$\$;
+          EOF_SQL
+
+          JQ_BIN="/usr/bin/jq"
 
           MGMT_API_URL="${MGMT_API_URL:-}"
           ADMIN_USERNAME="${ADMIN_USERNAME:-}"
