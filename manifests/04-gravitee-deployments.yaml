@@ -894,7 +894,7 @@ spec:
           done
       containers:
       - name: configure
-        image: curlimages/curl:8.11.1
+        image: alpine/k8s:1.31.4
         env:
         - name: MGMT_API_URL
           value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
@@ -930,6 +930,7 @@ spec:
         args:
         - |
           set -e
+          apk add --no-cache curl jq postgresql15-client >/dev/null
 
           if [ -f "/vault/secrets/db-creds" ]; then
             . /vault/secrets/db-creds
@@ -939,12 +940,7 @@ spec:
             exit 1
           fi
 
-          JQ_BIN="/tmp/jq"
-          if [ ! -x "$JQ_BIN" ]; then
-            echo "⬇️  Downloading jq..."
-            curl -fsSL -o "$JQ_BIN" https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64
-            chmod +x "$JQ_BIN"
-          fi
+          JQ_BIN="/usr/bin/jq"
 
           echo "🔧 Ensuring admin user exists directly in database..."
           PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" <<'SQL_BOOTSTRAP'
