@@ -16,11 +16,11 @@ spec:
   data:
     - secretKey: client-id
       remoteRef:
-        key: secret/api-gateway-github-client-id
+        key: api-gateway-github-client-id
         property: value
     - secretKey: client-secret
       remoteRef:
-        key: secret/api-gateway-github-client-secret
+        key: api-gateway-github-client-secret
         property: value
 ---
 # Gravitee Management API Deployment
