@@ -22,6 +22,35 @@ spec:
       remoteRef:
         key: api-gateway-github-client-secret
         property: value
+    - secretKey: server-url
+      remoteRef:
+        key: api-gateway-github-server-url
+        property: value
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gravitee-admin-credentials
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-store
+    kind: ClusterSecretStore
+  target:
+    name: gravitee-admin-credentials
+    creationPolicy: Owner
+  data:
+    - secretKey: username
+      remoteRef:
+        key: secret/gravitee/admin-credentials
+        property: username
+    - secretKey: password
+      remoteRef:
+        key: secret/gravitee/admin-credentials
+        property: password
 ---
 # Gravitee Management API Deployment
 apiVersion: apps/v1
@@ -867,6 +896,16 @@ spec:
         env:
         - name: MGMT_API_URL
           value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
+        - name: ADMIN_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-admin-credentials
+              key: username
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-admin-credentials
+              key: password
         - name: GITHUB_CLIENT_ID
           valueFrom:
             secretKeyRef:
@@ -883,7 +922,8 @@ spec:
         args:
         - |
           set -euo pipefail
-          AUTH="-u admin:admin"
+          apk add --no-cache jq >/dev/null
+          AUTH="-u ${ADMIN_USERNAME}:${ADMIN_PASSWORD}"
           BASE_URL="${GITHUB_SERVER_URL%/}"
           AUTH_ENDPOINT="${BASE_URL}/authorize"
           TOKEN_ENDPOINT="${BASE_URL}/access_token"
@@ -911,7 +951,12 @@ spec:
           RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/idp-response $AUTH -H "Content-Type: application/json" -X PUT "$IDP_URL/github" --data-binary @/tmp/github-idp.json || true)
           if [ "$RESPONSE" != "200" ]; then
             echo "⚠️  PUT /identities/github returned HTTP $RESPONSE, attempting POST..."
-            curl -s -o /tmp/idp-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X POST "$IDP_URL" --data-binary @/tmp/github-idp.json || true
+            RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/idp-response $AUTH -H "Content-Type: application/json" -X POST "$IDP_URL" --data-binary @/tmp/github-idp.json || true)
+            if [ "$RESPONSE" != "201" ] && [ "$RESPONSE" != "200" ]; then
+              echo "❌ Failed to configure GitHub identity provider (status $RESPONSE)"
+              cat /tmp/idp-response || true
+              exit 1
+            fi
           fi
 
           cat <<'EOF_PORTAL' >/tmp/portal-settings.json
@@ -924,12 +969,22 @@ spec:
           EOF_PORTAL
           PORTAL_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/settings/portal"
           echo "🔧 Disabling portal user self-signup..."
-          curl -s -o /tmp/portal-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X PUT "$PORTAL_URL" --data-binary @/tmp/portal-settings.json || true
+          RESPONSE=$(curl -s -o /tmp/portal-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X PUT "$PORTAL_URL" --data-binary @/tmp/portal-settings.json || true)
+          if [ "$RESPONSE" != "200" ]; then
+            echo "❌ Failed to update portal settings (status $RESPONSE)"
+            cat /tmp/portal-response || true
+            exit 1
+          fi
 
           echo "🔒 Disabling built-in admin user..."
           ADMIN_USER_ID=$(curl -s $AUTH "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users?page=1&size=50" | jq -r '.content[] | select(.username=="admin") | .id')
           if [ -n "$ADMIN_USER_ID" ] && [ "$ADMIN_USER_ID" != "null" ]; then
-            curl -s -o /tmp/disable-admin-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/$ADMIN_USER_ID/status?status=DEACTIVATED"
+            RESPONSE=$(curl -s -o /tmp/disable-admin-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/$ADMIN_USER_ID/status?status=DEACTIVATED" || true)
+            if [ "$RESPONSE" != "200" ]; then
+              echo "❌ Failed to deactivate admin user (status $RESPONSE)"
+              cat /tmp/disable-admin-response || true
+              exit 1
+            fi
           else
             echo "ℹ️ Admin user not found or already removed."
           fi

@@ -107,6 +107,19 @@ spec:
           # Verify the secret was stored
           vault kv get secret/apisix/admin
           echo "✅ APISIX admin key stored in Vault"
+
+          # Generate JWT secret for Gravitee
+          JWT_SECRET=$(openssl rand -base64 64)
+          vault kv put secret/gravitee/jwt secret="$JWT_SECRET"
+          echo "🔐 JWT secret stored in Vault"
+
+          # Seed Gravitee admin credentials if missing
+          if ! vault kv get secret/gravitee/admin-credentials >/dev/null 2>&1; then
+            vault kv put secret/gravitee/admin-credentials username="admin" password="admin"
+            echo "👤 Seeded Gravitee admin credentials in Vault"
+          else
+            echo "ℹ️ Gravitee admin credentials already exist in Vault."
+          fi
           
           # Configure Vault policies and Kubernetes auth roles
           echo "⚙️ Setting up Vault policies and Kubernetes authentication..."
