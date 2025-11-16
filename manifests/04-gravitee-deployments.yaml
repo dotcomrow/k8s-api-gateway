@@ -1118,13 +1118,13 @@ spec:
 
           echo "🔧 Forcing portal user self-signup flags directly in database..."
           cat <<'EOF_PORTAL' | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
-          INSERT INTO gravitee.parameters (id, reference_type, reference_id, key, value, created_at, updated_at)
-          VALUES (gen_random_uuid(), 'ENVIRONMENT', 'DEFAULT', 'portal.userCreation.enabled', 'false', now(), now())
+          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value, created_at, updated_at)
+          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.enabled', 'false', now(), now())
           ON CONFLICT (reference_type, reference_id, key)
           DO UPDATE SET value = EXCLUDED.value, updated_at = now();
 
-          INSERT INTO gravitee.parameters (id, reference_type, reference_id, key, value, created_at, updated_at)
-          VALUES (gen_random_uuid(), 'ENVIRONMENT', 'DEFAULT', 'portal.userCreation.automaticValidation', 'false', now(), now())
+          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value, created_at, updated_at)
+          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.automaticValidation', 'false', now(), now())
           ON CONFLICT (reference_type, reference_id, key)
           DO UPDATE SET value = EXCLUDED.value, updated_at = now();
           EOF_PORTAL
