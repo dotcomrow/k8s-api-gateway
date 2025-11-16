@@ -946,36 +946,35 @@ spec:
           DO \$\$
           DECLARE admin_id varchar(64);
           BEGIN
-            SELECT id INTO admin_id FROM gravitee.users WHERE username = '${ADMIN_USERNAME}' AND source = 'gravitee';
+            SELECT id INTO admin_id FROM gravitee.users WHERE source = 'gravitee' AND source_id = '${ADMIN_USERNAME}';
             IF admin_id IS NULL THEN
               admin_id := '${ADMIN_USERNAME}';
-              INSERT INTO gravitee.users (id, source, source_id, username, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
+              INSERT INTO gravitee.users (id, source, source_id, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
               VALUES (
                 admin_id,
                 'gravitee',
-                '${ADMIN_USERNAME}',
                 '${ADMIN_USERNAME}',
                 '${ADMIN_USERNAME}@example.com',
                 crypt('${ADMIN_PASSWORD}', gen_salt('bf')),
                 'Portal',
                 'Admin',
                 now(),
-                now(),
-                'DEFAULT',
-                'ACTIVE',
-                0
+                          now(),
+                          'DEFAULT',
+                          'ACTIVE',
+                          0
               );
             END IF;
 
             IF NOT EXISTS (
               SELECT 1 FROM gravitee.memberships
-              WHERE member_id = admin_id
-                AND reference_type = 'ORGANIZATION'
-                AND reference_id = 'DEFAULT'
-            ) THEN
+                        WHERE member_id = admin_id
+                          AND reference_type = 'ORGANIZATION'
+                          AND reference_id = 'DEFAULT'
+                      ) THEN
               INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
               VALUES (
-                concat(admin_id, '-membership'),
+                admin_id || '-membership',
                 'ORGANIZATION',
                 'DEFAULT',
                 'USER',
