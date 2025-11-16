@@ -931,7 +931,7 @@ spec:
         args:
         - |
           set -e
-          apk add --no-cache curl postgresql15-client >/dev/null
+          apk add --no-cache curl jq postgresql15-client >/dev/null
 
           if [ -f "/vault/secrets/db-creds" ]; then
             . /vault/secrets/db-creds
@@ -995,6 +995,8 @@ spec:
           GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}"
           GITHUB_SERVER_URL="${GITHUB_SERVER_URL:-}"
 
+          USERS_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users"
+
           echo "🔧 Config context:"
           echo "  MGMT_API_URL      = $MGMT_API_URL"
           echo "  ADMIN_USERNAME    = $ADMIN_USERNAME"
@@ -1048,8 +1050,6 @@ spec:
                 useSystemProxy: false
               }
             }' > /tmp/github-idp.json
-
-          USERS_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users"
 
           echo "📤 IDP payload (/tmp/github-idp.json):"
           cat /tmp/github-idp.json || true
