@@ -1,3 +1,15 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-secrets-sa
+  namespace: external-secrets
+---
+# External Secrets operator ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-secrets-sa
+  namespace: external-secrets
 ---
 # external secret store
 apiVersion: external-secrets.io/v1
@@ -14,6 +26,9 @@ spec:
         kubernetes:
           mountPath: kubernetes
           role: api-gateway
+          serviceAccountRef:
+            name: external-secrets-sa
+            namespace: external-secrets
 ---
 # YugabyteDB Gravitee Database Setup Job
 apiVersion: batch/v1
