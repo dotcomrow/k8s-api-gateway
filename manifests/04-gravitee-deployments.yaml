@@ -1116,49 +1116,19 @@ spec:
             fi
           fi
 
-          echo "🧩 Building portal settings JSON..."
-          "$JQ_BIN" -n \
-            '{
-              userCreation: {
-                enabled: false,
-                automaticValidation: false
-              }
-            }' > /tmp/portal-settings.json
+          echo "🔧 Forcing portal user self-signup flags directly in database..."
+          cat <<'EOF_PORTAL' | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+          INSERT INTO gravitee.parameters (id, reference_type, reference_id, key, value, created_at, updated_at)
+          VALUES (gen_random_uuid(), 'ENVIRONMENT', 'DEFAULT', 'portal.userCreation.enabled', 'false', now(), now())
+          ON CONFLICT (reference_type, reference_id, key)
+          DO UPDATE SET value = EXCLUDED.value, updated_at = now();
 
-          echo "📤 Portal settings payload:"
-          cat /tmp/portal-settings.json || true
-
-          echo "🔧 Disabling portal user self-signup..."
-          PORTAL_ENDPOINTS="
-            $MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/settings/portal
-            $MGMT_API_URL/management/v2/organizations/DEFAULT/environments/DEFAULT/settings/portal
-            $MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/configuration/portal
-            $MGMT_API_URL/management/v2/organizations/DEFAULT/environments/DEFAULT/configuration/portal
-          "
-
-          PORTAL_HTTP_STATUS="000"
-          for endpoint in $PORTAL_ENDPOINTS; do
-            echo "➡️  Trying portal settings endpoint: $endpoint"
-            PORTAL_HTTP_STATUS=$(curl -s -o /tmp/portal-response -w "%{http_code}" \
-              $AUTH -H "Content-Type: application/json" \
-              -X PUT "$endpoint" \
-              --data-binary @/tmp/portal-settings.json || echo "000")
-            echo "   ↳ HTTP status: ${PORTAL_HTTP_STATUS}"
-            if [ "$PORTAL_HTTP_STATUS" = "200" ]; then
-              PORTAL_URL_USED="$endpoint"
-              break
-            fi
-          done
-
-          echo "ℹ️ PUT portal settings response body (last attempt):"
-          cat /tmp/portal-response || true
-
-          if [ "$PORTAL_HTTP_STATUS" != "200" ]; then
-            echo "❌ Failed to update portal settings (status ${PORTAL_HTTP_STATUS})"
-            exit 1
-          fi
-
-          echo "✅ Portal settings updated via $PORTAL_URL_USED"
+          INSERT INTO gravitee.parameters (id, reference_type, reference_id, key, value, created_at, updated_at)
+          VALUES (gen_random_uuid(), 'ENVIRONMENT', 'DEFAULT', 'portal.userCreation.automaticValidation', 'false', now(), now())
+          ON CONFLICT (reference_type, reference_id, key)
+          DO UPDATE SET value = EXCLUDED.value, updated_at = now();
+          EOF_PORTAL
+          echo "✅ Portal user creation disabled via database parameters."
 
           echo "🔧 Config context:"
           echo "  MGMT_API_URL      = ${MGMT_API_URL:-}"
