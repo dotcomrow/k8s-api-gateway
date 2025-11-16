@@ -43,7 +43,10 @@ gravitee:
         maxSize: 20
         maxWait: 30000
         minSize: 5
-        maxIdleTime: 300000
+        maxIdleTime: 30000
+        maxLifetime: 600000
+        idleTimeout: 30000
+        validationTimeout: 5000
         validationQuery: "SELECT 1"
         testOnBorrow: true
         testOnReturn: false

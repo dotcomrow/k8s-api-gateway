@@ -216,8 +216,6 @@ spec:
           value: "org.postgresql.Driver"
         - name: MANAGEMENT_JDBC_URL
           value: "jdbc:postgresql://yb-tserver-service.yugabyte.svc.cluster.local:5433/gravitee?currentSchema=gravitee"
-        - name: MANAGEMENT_JDBC_USERNAME
-          value: "gravitee_app"
         # NOTE: Password comes from Vault and is exported in the wrapper script
         # - name: MANAGEMENT_JDBC_PASSWORD  <-- intentionally not set here
 
@@ -279,7 +277,7 @@ spec:
 
           # Wire JDBC creds for Gravitee from Vault-provided env
           export MANAGEMENT_JDBC_PASSWORD="$YUGABYTE_PASSWORD"
-          export MANAGEMENT_JDBC_USERNAME="${MANAGEMENT_JDBC_USERNAME:-gravitee_app}"
+          export MANAGEMENT_JDBC_USERNAME="${YUGABYTE_USER:-gravitee_app}"
 
           echo "🚀 Starting Gravitee Management API..."
           set +e
