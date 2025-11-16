@@ -917,64 +917,92 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          set -euo pipefail
+          set -eu
+
           JQ_BIN="/tmp/jq"
           if [ ! -x "$JQ_BIN" ]; then
             echo "⬇️  Downloading jq..."
             curl -fsSL -o "$JQ_BIN" https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64
             chmod +x "$JQ_BIN"
           fi
+
           AUTH="-u ${ADMIN_USERNAME}:${ADMIN_PASSWORD}"
           BASE_URL="${GITHUB_SERVER_URL%/}"
           AUTH_ENDPOINT="${BASE_URL}/authorize"
           TOKEN_ENDPOINT="${BASE_URL}/access_token"
 
           USERS_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users"
+
+          echo "🔍 Checking for existing users..."
           CURRENT_USER_COUNT=$(curl -s $AUTH "$USERS_URL?page=1&size=1" | "$JQ_BIN" '.page.totalElements // 0')
+
           if [ "$CURRENT_USER_COUNT" -eq 0 ]; then
             echo "👤 No users found. Bootstrapping initial admin account..."
-            cat <<EOF_INIT >/tmp/init-admin.json
-            {
-              "username": "${ADMIN_USERNAME}",
-              "password": "${ADMIN_PASSWORD}",
-              "email": "${ADMIN_USERNAME}@example.com",
-              "firstname": "Portal",
-              "lastname": "Admin"
-            }
-            EOF_INIT
-            RESPONSE=$(curl -s -o /tmp/init-response -w "%{http_code}" -H "Content-Type: application/json" -X POST "$USERS_URL/_init" --data-binary @/tmp/init-admin.json || true)
+
+            "$JQ_BIN" -n \
+              --arg username "$ADMIN_USERNAME" \
+              --arg password "$ADMIN_PASSWORD" \
+              '{
+                username: $username,
+                password: $password,
+                email: ($username + "@example.com"),
+                firstname: "Portal",
+                lastname: "Admin"
+              }' > /tmp/init-admin.json
+
+            RESPONSE=$(curl -s -o /tmp/init-response -w "%{http_code}" \
+              -H "Content-Type: application/json" \
+              -X POST "$USERS_URL/_init" \
+              --data-binary @/tmp/init-admin.json || true)
+
             if [ "$RESPONSE" != "200" ] && [ "$RESPONSE" != "201" ]; then
               echo "❌ Failed to bootstrap admin account (status $RESPONSE)"
               cat /tmp/init-response || true
               exit 1
             fi
+
             echo "✅ Admin account bootstrapped."
+          else
+            echo "ℹ️ Users already exist ($CURRENT_USER_COUNT), skipping bootstrap."
           fi
-          cat <<'EOF_PAYLOAD' >/tmp/github-idp.json
-          {
-            "id": "github",
-            "name": "GitHub",
-            "type": "oauth2",
-            "color": "#24292F",
-                      "syncMappings": true,
-                      "scopes": ["read:user","read:org"],
-                      "configuration": {
-                        "clientId": "${GITHUB_CLIENT_ID}",
-                        "clientSecret": "${GITHUB_CLIENT_SECRET}",
-                        "authorizationEndpoint": "${AUTH_ENDPOINT}",
-                        "tokenEndpoint": "${TOKEN_ENDPOINT}",
-                        "userInfoEndpoint": "https://api.github.com/user",
-                        "useSystemProxy": false
-                      }
-          }
-          EOF_PAYLOAD
+
+          echo "🧩 Building GitHub identity provider JSON..."
+          "$JQ_BIN" -n \
+            --arg clientId "$GITHUB_CLIENT_ID" \
+            --arg clientSecret "$GITHUB_CLIENT_SECRET" \
+            --arg authEndpoint "$AUTH_ENDPOINT" \
+            --arg tokenEndpoint "$TOKEN_ENDPOINT" \
+            '{
+              id: "github",
+              name: "GitHub",
+              type: "oauth2",
+              color: "#24292F",
+              syncMappings: true,
+              scopes: ["read:user","read:org"],
+              configuration: {
+                clientId: $clientId,
+                clientSecret: $clientSecret,
+                authorizationEndpoint: $authEndpoint,
+                tokenEndpoint: $tokenEndpoint,
+                userInfoEndpoint: "https://api.github.com/user",
+                useSystemProxy: false
+              }
+            }' > /tmp/github-idp.json
 
           IDP_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/configuration/identities"
+
           echo "🔧 Applying GitHub identity provider configuration..."
-          RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/idp-response $AUTH -H "Content-Type: application/json" -X PUT "$IDP_URL/github" --data-binary @/tmp/github-idp.json || true)
+          RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+            $AUTH -H "Content-Type: application/json" \
+            -X PUT "$IDP_URL/github" \
+            --data-binary @/tmp/github-idp.json || true)
+
           if [ "$RESPONSE" != "200" ]; then
             echo "⚠️  PUT /identities/github returned HTTP $RESPONSE, attempting POST..."
-            RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/idp-response $AUTH -H "Content-Type: application/json" -X POST "$IDP_URL" --data-binary @/tmp/github-idp.json || true)
+            RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+              $AUTH -H "Content-Type: application/json" \
+              -X POST "$IDP_URL" \
+              --data-binary @/tmp/github-idp.json || true)
             if [ "$RESPONSE" != "201" ] && [ "$RESPONSE" != "200" ]; then
               echo "❌ Failed to configure GitHub identity provider (status $RESPONSE)"
               cat /tmp/idp-response || true
@@ -982,17 +1010,22 @@ spec:
             fi
           fi
 
-          cat <<'EOF_PORTAL' >/tmp/portal-settings.json
-          {
-            "userCreation": {
-              "enabled": false,
-              "automaticValidation": false
-            }
-          }
-          EOF_PORTAL
+          echo "🧩 Building portal settings JSON..."
+          "$JQ_BIN" -n \
+            '{
+              userCreation: {
+                enabled: false,
+                automaticValidation: false
+              }
+            }' > /tmp/portal-settings.json
+
           PORTAL_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/settings/portal"
           echo "🔧 Disabling portal user self-signup..."
-          RESPONSE=$(curl -s -o /tmp/portal-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X PUT "$PORTAL_URL" --data-binary @/tmp/portal-settings.json || true)
+          RESPONSE=$(curl -s -o /tmp/portal-response -w "%{http_code}" \
+            $AUTH -H "Content-Type: application/json" \
+            -X PUT "$PORTAL_URL" \
+            --data-binary @/tmp/portal-settings.json || true)
+
           if [ "$RESPONSE" != "200" ]; then
             echo "❌ Failed to update portal settings (status $RESPONSE)"
             cat /tmp/portal-response || true
@@ -1000,14 +1033,24 @@ spec:
           fi
 
           echo "🔒 Disabling built-in admin user..."
-          ADMIN_USER_ID=$(curl -s $AUTH "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users?page=1&size=50" | "$JQ_BIN" -r '.content[] | select(.username=="admin") | .id')
+          ADMIN_USER_ID=$(
+            curl -s $AUTH "$USERS_URL?page=1&size=50" \
+            | "$JQ_BIN" -r '.content[] | select(.username=="admin") | .id' || true
+          )
+
           if [ -n "$ADMIN_USER_ID" ] && [ "$ADMIN_USER_ID" != "null" ]; then
-            RESPONSE=$(curl -s -o /tmp/disable-admin-response -w "%{http_code}" $AUTH -H "Content-Type: application/json" -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/$ADMIN_USER_ID/status?status=DEACTIVATED" || true)
+            RESPONSE=$(curl -s -o /tmp/disable-admin-response -w "%{http_code}" \
+              $AUTH -H "Content-Type: application/json" \
+              -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/$ADMIN_USER_ID/status?status=DEACTIVATED" || true)
+
             if [ "$RESPONSE" != "200" ]; then
               echo "❌ Failed to deactivate admin user (status $RESPONSE)"
               cat /tmp/disable-admin-response || true
               exit 1
             fi
+            echo "✅ Built-in admin user deactivated."
           else
             echo "ℹ️ Admin user not found or already removed."
           fi
+
+          echo "✅ Gravitee GitHub configuration complete."
