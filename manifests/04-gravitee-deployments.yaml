@@ -1,3 +1,26 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: api-gateway-github-oauth
+  namespace: k8s-api-gateway
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-store              # or SecretStore if namespaced
+    kind: ClusterSecretStore
+  target:
+    name: api-gateway-github-oauth # k8s Secret to create
+    creationPolicy: Owner
+  data:
+    - secretKey: client-id
+      remoteRef:
+        key: secret/api-gateway-github-client-id
+        property: value
+    - secretKey: client-secret
+      remoteRef:
+        key: secret/api-gateway-github-client-secret
+        property: value
+---
 # Gravitee Management API Deployment
 apiVersion: apps/v1
 kind: Deployment
@@ -141,13 +164,13 @@ spec:
         - name: PORTAL_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
-              name: api-gateway-github-client-id
-              key: value
+              name: api-gateway-github-oauth
+              key: client-id
         - name: PORTAL_OAUTH_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
-              name: api-gateway-github-client-secret
-              key: value
+              name: api-gateway-github-oauth
+              key: client-secret
         - name: PORTAL_OAUTH_SERVER_URL
           value: "https://github.com/login/oauth"
         - name: YUGABYTE_HOST
@@ -515,13 +538,13 @@ spec:
         - name: PORTAL_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
-              name: api-gateway-github-client-id
-              key: value
+              name: api-gateway-github-oauth
+              key: client-id
         - name: PORTAL_OAUTH_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
-              name: api-gateway-github-client-secret
-              key: value
+              name: api-gateway-github-oauth
+              key: client-secret
         - name: PORTAL_OAUTH_SERVER_URL
           value: "https://github.com/login/oauth"
         resources:
