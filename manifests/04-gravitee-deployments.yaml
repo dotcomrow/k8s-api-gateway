@@ -1021,6 +1021,16 @@ spec:
           END \$\$;
           EOF_SQL
 
+          echo "🔓 Temporarily ensuring admin user is ACTIVE for API configuration..."
+          cat <<EOF_ACTIVATE | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+          UPDATE gravitee.users
+             SET status = 'ACTIVE',
+                 updated_at = now()
+           WHERE source = 'gravitee'
+             AND source_id = '${ADMIN_USERNAME}'
+             AND status <> 'ACTIVE';
+          EOF_ACTIVATE
+
           MGMT_API_URL="${MGMT_API_URL:-}"
           ADMIN_USERNAME="${ADMIN_USERNAME:-}"
           ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
