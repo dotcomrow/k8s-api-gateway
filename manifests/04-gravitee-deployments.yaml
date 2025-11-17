@@ -1182,6 +1182,16 @@ spec:
           VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'true')
           ON CONFLICT (reference_type, reference_id, key)
           DO UPDATE SET value = EXCLUDED.value;
+
+          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id)
+          VALUES ('github', 'ENVIRONMENT', 'DEFAULT')
+          ON CONFLICT (identity_provider_id, reference_type, reference_id)
+          DO NOTHING;
+
+          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id)
+          VALUES ('github', 'ORGANIZATION', 'DEFAULT')
+          ON CONFLICT (identity_provider_id, reference_type, reference_id)
+          DO NOTHING;
           EOF_PORTAL
           echo "✅ Portal user creation disabled via database parameters."
 
