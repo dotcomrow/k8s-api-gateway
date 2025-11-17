@@ -48,6 +48,27 @@ spec:
         key: secret/gravitee/admin-credentials
         property: password
 ---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: api-gateway-github-team-token
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-store
+    kind: ClusterSecretStore
+  target:
+    name: api-gateway-github-team-token
+    creationPolicy: Owner
+  data:
+    - secretKey: token
+      remoteRef:
+        key: api-gateway-github-team-token
+        property: value
+---
 # Gravitee Management API Deployment
 apiVersion: apps/v1
 kind: Deployment
@@ -870,6 +891,110 @@ data:
       node:
         enabled: true
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: github-access-settings
+  namespace: k8s-api-gateway
+data:
+  organization: dotcomrow
+  allowedTeams: gravitee-admin-access,gravitee-user-access
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: github-access-reconciler-script
+  namespace: k8s-api-gateway
+data:
+  reconcile.sh: |-
+    #!/bin/sh
+    set -euo pipefail
+
+    REQUIRED_ENV="MGMT_API_URL ADMIN_USERNAME ADMIN_PASSWORD GITHUB_ORG GITHUB_ALLOWED_TEAMS GITHUB_TOKEN"
+    for var in $REQUIRED_ENV; do
+      if [ -z "${!var:-}" ]; then
+        echo "❌ Missing required env var: $var" >&2
+        exit 1
+      fi
+    done
+
+    PAGE_SIZE="${PAGE_SIZE:-100}"
+    ALLOWED_TEAMS="$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')"
+
+    github_has_team() {
+      username="$1"
+      for team in $ALLOWED_TEAMS; do
+        api="https://api.github.com/orgs/${GITHUB_ORG}/teams/${team}/memberships/${username}"
+        status=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          -w "%{http_code}" -o /tmp/github-membership "$api" || echo "000")
+        if [ "$status" = "200" ]; then
+          state=$(jq -r '.state' /tmp/github-membership 2>/dev/null || echo "inactive")
+          if [ "$state" = "active" ]; then
+            return 0
+          fi
+        fi
+      done
+      return 1
+    }
+
+    page=1
+    total_checked=0
+    total_deactivated=0
+
+    while true; do
+      resp=$(curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" \
+        "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users?page=${page}&size=${PAGE_SIZE}" )
+
+      count=$(printf '%s\n' "$resp" | jq '.data | length' 2>/dev/null || echo 0)
+      [ "$count" -eq 0 ] && break
+
+      users_json=$(printf '%s\n' "$resp" | jq -c '.data[]')
+      while IFS= read -r user; do
+        [ -z "$user" ] && continue
+        source=$(printf '%s' "$user" | jq -r '.source')
+        [ "$source" = "github" ] || continue
+
+        user_id=$(printf '%s' "$user" | jq -r '.id')
+        source_id=$(printf '%s' "$user" | jq -r '.sourceId // empty')
+        username=$(printf '%s' "$user" | jq -r '.username // empty')
+        status=$(printf '%s' "$user" | jq -r '.status')
+
+        gh_user="${source_id:-$username}"
+        if [ -z "$gh_user" ]; then
+          continue
+        fi
+
+        total_checked=$((total_checked + 1))
+
+        if github_has_team "$gh_user"; then
+          continue
+        fi
+
+        if [ "$status" = "INACTIVE" ]; then
+          continue
+        fi
+
+        deactivate_status=$(curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" \
+          -o /tmp/deactivate-response -w "%{http_code}" \
+          -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/${user_id}/status?status=DEACTIVATED" || echo "000")
+
+        if [ "$deactivate_status" = "200" ]; then
+          total_deactivated=$((total_deactivated + 1))
+          echo "🔒 Deactivated GitHub user ${gh_user} (${user_id})"
+        else
+          echo "⚠️ Failed to deactivate user ${gh_user} (${user_id}), status ${deactivate_status}" >&2
+          cat /tmp/deactivate-response >&2 || true
+        fi
+      done <<EOF
+      $users_json
+      EOF
+
+      page=$((page + 1))
+    done
+
+    echo "✅ Reconciliation complete. Checked ${total_checked} GitHub users, deactivated ${total_deactivated}."
+---
 # Configure GitHub identity provider and portal settings
 apiVersion: batch/v1
 kind: Job
@@ -1200,15 +1325,86 @@ spec:
           echo "  ADMIN_USERNAME    = ${ADMIN_USERNAME:-}"
           echo "  GITHUB_SERVER_URL = ${GITHUB_SERVER_URL:-}"
 
-          echo "🔒 Disabling built-in admin user directly in database..."
-          cat <<EOF_DISABLE | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
-          UPDATE gravitee.users
-             SET status = 'INACTIVE',
-                 updated_at = now()
-           WHERE source = 'gravitee'
-             AND source_id = '${ADMIN_USERNAME}'
-             AND status <> 'INACTIVE';
-          EOF_DISABLE
-          echo "✅ Built-in admin user disabled (if it existed)."
+          # echo "🔒 Disabling built-in admin user directly in database..."
+          # cat <<EOF_DISABLE | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+          # UPDATE gravitee.users
+          #    SET status = 'INACTIVE',
+          #        updated_at = now()
+          #  WHERE source = 'gravitee'
+          #    AND source_id = '${ADMIN_USERNAME}'
+          #    AND status <> 'INACTIVE';
+          # EOF_DISABLE
+          # echo "✅ Built-in admin user disabled (if it existed)."
 
           echo "✅ Gravitee GitHub configuration complete."
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: github-access-reconciler
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+    linkerd.io/inject: "disabled"
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          annotations:
+            linkerd.io/inject: "disabled"
+        spec:
+          serviceAccountName: gravitee
+          restartPolicy: Never
+          containers:
+          - name: reconcile
+            image: alpine/k8s:1.31.4
+            command: ["/bin/sh","-c"]
+            args:
+            - |
+              set -e
+              apk add --no-cache jq >/dev/null
+              /opt/scripts/reconcile.sh
+            env:
+            - name: MGMT_API_URL
+              value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
+            - name: ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: gravitee-admin-credentials
+                  key: username
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gravitee-admin-credentials
+                  key: password
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: api-gateway-github-team-token
+                  key: token
+            - name: GITHUB_ORG
+              valueFrom:
+                configMapKeyRef:
+                  name: github-access-settings
+                  key: organization
+            - name: GITHUB_ALLOWED_TEAMS
+              valueFrom:
+                configMapKeyRef:
+                  name: github-access-settings
+                  key: allowedTeams
+            volumeMounts:
+            - name: reconcile-script
+              mountPath: /opt/scripts/reconcile.sh
+              subPath: reconcile.sh
+              readOnly: true
+          volumes:
+          - name: reconcile-script
+            configMap:
+              name: github-access-reconciler-script
+              defaultMode: 0755
+---

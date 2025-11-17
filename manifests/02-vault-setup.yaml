@@ -115,8 +115,10 @@ spec:
 
           # Seed Gravitee admin credentials if missing
           if ! vault kv get secret/gravitee/admin-credentials >/dev/null 2>&1; then
-            vault kv put secret/gravitee/admin-credentials username="admin" password="admin"
-            echo "👤 Seeded Gravitee admin credentials in Vault"
+            ADMIN_USER="adm-$(openssl rand -hex 6)"
+            ADMIN_PASS="$(openssl rand -base64 48)"
+            vault kv put secret/gravitee/admin-credentials username="$ADMIN_USER" password="$ADMIN_PASS"
+            echo "👤 Seeded Gravitee admin credentials in Vault with username '$ADMIN_USER'"
           else
             echo "ℹ️ Gravitee admin credentials already exist in Vault."
           fi
