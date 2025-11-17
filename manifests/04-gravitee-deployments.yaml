@@ -989,7 +989,9 @@ data:
       # Iterate each user object
       users_json=$(printf '%s\n' "$resp" | jq -c '.data[]')
 
-      # Use a here-document to avoid subshell issues
+      USERS_FILE=$(mktemp)
+      printf '%s\n' "$users_json" > "$USERS_FILE"
+
       while IFS= read -r user; do
         [ -z "$user" ] && continue
 
@@ -1028,15 +1030,23 @@ data:
         DEACTIVATED=0
 
         if [ "$DB_READY" -eq 1 ]; then
-          if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 <<EOSQL
-          UPDATE gravitee.users
-            SET status = 'INACTIVE',
-                updated_at = now()
-          WHERE id = '${user_id}';
+          SQL_TMP=$(mktemp)
+          {
+            printf "UPDATE gravitee.users\n"
+            printf "   SET status = 'INACTIVE',\n"
+            printf "       updated_at = now()\n"
+            printf " WHERE id = '%s';\n\n" "$user_id"
+            printf "DELETE FROM gravitee.memberships\n"
+            printf " WHERE member_id = '%s';\n" "$user_id"
+          } > "$SQL_TMP"
 
-          DELETE FROM gravitee.memberships
-          WHERE member_id = '${user_id}';
-          EOSQL
+          if PGPASSWORD="$YUGABYTE_PASSWORD" \
+             psql -h "$YUGABYTE_HOST" \
+                  -p "$YUGABYTE_PORT" \
+                  -U "$YUGABYTE_USER" \
+                  -d "$YUGABYTE_DATABASE" \
+                  -v ON_ERROR_STOP=1 \
+                  -f "$SQL_TMP"
           then
             total_deactivated=$((total_deactivated + 1))
             echo "🔒 Deactivated GitHub user ${gh_user} (${user_id}) via database update"
@@ -1044,6 +1054,8 @@ data:
           else
             echo "⚠️ Database update failed for ${gh_user} (${user_id}); falling back to API." >&2
           fi
+
+          rm -f "$SQL_TMP"
         fi
 
         if [ "$DEACTIVATED" -eq 0 ]; then
@@ -1062,9 +1074,9 @@ data:
             fi
           fi
         fi
-      done <<'EOF'
-      $users_json
-      EOF
+      done < "$USERS_FILE"
+
+      rm -f "$USERS_FILE"
 
       page=$((page + 1))
     done
