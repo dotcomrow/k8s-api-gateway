@@ -184,6 +184,7 @@ security:
         - read:user
         - read:org
       userMapping:
+        condition: "{#context.attributes['groups'] contains 'github-team-admins' or #context.attributes['groups'] contains 'github-team-publishers'}"
         id: id
         lastname: name
         firstname: name
@@ -196,8 +197,6 @@ security:
         - condition: "{#context.attributes['groups'] contains 'github-team-publishers'}"
           groups:
             - gravitee_user_access
-        - condition: "true"
-          groups: []  # avoid granting anything
 
 # Email configuration (for notifications)
 email:
