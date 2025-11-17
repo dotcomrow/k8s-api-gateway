@@ -930,6 +930,18 @@ data:
     # GITHUB_ALLOWED_TEAMS is a comma-separated list, normalize to space-separated
     ALLOWED_TEAMS=$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')
 
+    # Source database credentials if Vault injected them
+    if [ -f /vault/secrets/db-creds ]; then
+      # shellcheck disable=SC1091
+      . /vault/secrets/db-creds
+    fi
+
+    if [ -n "${YUGABYTE_USER-}" ] && [ -n "${YUGABYTE_PASSWORD-}" ] && [ -n "${YUGABYTE_HOST-}" ] && [ -n "${YUGABYTE_PORT-}" ] && [ -n "${YUGABYTE_DATABASE-}" ]; then
+      DB_READY=1
+    else
+      DB_READY=0
+    fi
+
     github_has_team() {
       username="$1"
 
@@ -1013,19 +1025,41 @@ data:
           continue
         fi
 
-        deactivate_status=$(curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" \
-          -o /tmp/deactivate-response -w "%{http_code}" \
-          -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/${user_id}/status?status=DEACTIVATED" \
-          || echo "000")
+        DEACTIVATED=0
 
-        if [ "$deactivate_status" = "200" ]; then
-          total_deactivated=$((total_deactivated + 1))
-          echo "🔒 Deactivated GitHub user ${gh_user} (${user_id})"
-        else
-          echo "⚠️ Failed to deactivate user ${gh_user} (${user_id}), status ${deactivate_status}" >&2
-          # Show response body if available
-          if [ -f /tmp/deactivate-response ]; then
-            cat /tmp/deactivate-response >&2 || true
+        if [ "$DB_READY" -eq 1 ]; then
+          if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 <<EOSQL
+          UPDATE gravitee.users
+            SET status = 'INACTIVE',
+                updated_at = now()
+          WHERE id = '${user_id}';
+
+          DELETE FROM gravitee.memberships
+          WHERE member_id = '${user_id}';
+          EOSQL
+          then
+            total_deactivated=$((total_deactivated + 1))
+            echo "🔒 Deactivated GitHub user ${gh_user} (${user_id}) via database update"
+            DEACTIVATED=1
+          else
+            echo "⚠️ Database update failed for ${gh_user} (${user_id}); falling back to API." >&2
+          fi
+        fi
+
+        if [ "$DEACTIVATED" -eq 0 ]; then
+          deactivate_status=$(curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" \
+            -o /tmp/deactivate-response -w "%{http_code}" \
+            -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/${user_id}/status?status=DEACTIVATED" \
+            || echo "000")
+
+          if [ "$deactivate_status" = "200" ]; then
+            total_deactivated=$((total_deactivated + 1))
+            echo "🔒 Deactivated GitHub user ${gh_user} (${user_id}) via Management API"
+          else
+            echo "⚠️ Failed to deactivate user ${gh_user} (${user_id}), status ${deactivate_status}" >&2
+            if [ -f /tmp/deactivate-response ]; then
+              cat /tmp/deactivate-response >&2 || true
+            fi
           fi
         fi
       done <<EOF
@@ -1399,6 +1433,14 @@ spec:
         metadata:
           annotations:
             linkerd.io/inject: "disabled"
+            vault.hashicorp.com/agent-inject: "true"
+            vault.hashicorp.com/role: "gravitee"
+            vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
+            vault.hashicorp.com/agent-inject-template-db-creds: |
+              {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
+              export YUGABYTE_USER="gravitee_app"
+              export YUGABYTE_PASSWORD="{{ .Data.password }}"
+              {{- end }}
         spec:
           serviceAccountName: gravitee
           restartPolicy: Never
@@ -1409,11 +1451,17 @@ spec:
             args:
             - |
               set -e
-              apk add --no-cache jq >/dev/null
+              apk add --no-cache jq postgresql15-client >/dev/null
               /opt/scripts/reconcile.sh
             env:
             - name: MGMT_API_URL
               value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
+            - name: YUGABYTE_HOST
+              value: "yb-tserver-service.yugabyte.svc.cluster.local"
+            - name: YUGABYTE_PORT
+              value: "5433"
+            - name: YUGABYTE_DATABASE
+              value: "gravitee"
             - name: ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:
