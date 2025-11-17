@@ -1081,6 +1081,7 @@ spec:
               id: "github",
               name: "GitHub",
               type: "GITHUB",
+              enabled: true,
               color: "#24292F",
               syncMappings: true,
               scopes: ["read:user","read:org"],
@@ -1124,6 +1125,15 @@ spec:
               echo "❌ Failed to configure GitHub identity provider (status ${IDP_HTTP_STATUS})"
               exit 1
             fi
+          fi
+
+          echo "🔛 Ensuring GitHub identity provider is enabled..."
+          IDP_ENABLE_STATUS=$(curl -s -o /tmp/idp-enable-response -w "%{http_code}" \
+            $AUTH -X POST "$IDP_URL/github/_enable" || echo "000")
+          echo "ℹ️ POST /identities/github/_enable HTTP status: '${IDP_ENABLE_STATUS}'"
+          if [ "$IDP_ENABLE_STATUS" != "200" ]; then
+            echo "❌ Failed to enable GitHub identity provider (status ${IDP_ENABLE_STATUS})"
+            exit 1
           fi
 
           echo "🔧 Forcing portal user self-signup flags directly in database..."
