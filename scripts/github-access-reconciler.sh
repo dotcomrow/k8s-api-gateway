@@ -3,7 +3,8 @@ set -euo pipefail
 
 REQUIRED_ENV="MGMT_API_URL ADMIN_USERNAME ADMIN_PASSWORD GITHUB_ORG GITHUB_ALLOWED_TEAMS GITHUB_TOKEN"
 for var in $REQUIRED_ENV; do
-  if [ -z "${!var:-}" ]; then
+  value=$(eval "printf '%s' \"\${$var:-}\"")
+  if [ -z "$value" ]; then
     echo "❌ Missing required env var: $var" >&2
     exit 1
   fi
