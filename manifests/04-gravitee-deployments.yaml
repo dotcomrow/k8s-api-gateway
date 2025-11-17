@@ -1188,6 +1188,45 @@ spec:
             if [ "$IDP_ENABLE_STATUS" != "200" ]; then
               echo "⚠️ GitHub enable endpoints unavailable for ${scope_label} (status ${IDP_ENABLE_STATUS}); assuming provider stays enabled via payload."
             fi
+
+            echo "🔐 Activating GitHub provider for ${scope_label} authentication set..."
+            ACTIVATE_PAYLOAD='["github"]'
+            ACTIVATE_ENDPOINTS="
+              $base_url/auth/identities
+              $base_url/configuration/auth/identities
+            "
+
+            case "$base_url" in
+              */management/*)
+                BASE_V2="${base_url/\/management\//\/management\/v2\/}"
+                if [ "$BASE_V2" != "$base_url" ]; then
+                  ACTIVATE_ENDPOINTS="$ACTIVATE_ENDPOINTS
+                    $BASE_V2/auth/identities
+                    $BASE_V2/configuration/auth/identities
+                  "
+                fi
+                ;;
+            esac
+
+            IDP_ACTIVATE_STATUS="000"
+            for endpoint in $ACTIVATE_ENDPOINTS; do
+              for method in PUT POST; do
+                echo "➡️  Trying ${method} $endpoint"
+                IDP_ACTIVATE_STATUS=$(curl -s -o /tmp/idp-activate-response -w "%{http_code}" \
+                  $AUTH -H "Content-Type: application/json" \
+                  -X "$method" "$endpoint" \
+                  --data "$ACTIVATE_PAYLOAD" || echo "000")
+                echo "   ↳ HTTP status: ${IDP_ACTIVATE_STATUS}"
+                if [ "$IDP_ACTIVATE_STATUS" = "200" ] || [ "$IDP_ACTIVATE_STATUS" = "201" ] || [ "$IDP_ACTIVATE_STATUS" = "204" ]; then
+                  echo "✅ GitHub provider activated via ${method} $endpoint"
+                  break 2
+                fi
+              done
+            done
+
+            if [ "$IDP_ACTIVATE_STATUS" != "200" ] && [ "$IDP_ACTIVATE_STATUS" != "201" ] && [ "$IDP_ACTIVATE_STATUS" != "204" ]; then
+              echo "⚠️ Unable to activate GitHub provider for ${scope_label} (last status ${IDP_ACTIVATE_STATUS}). Portal may still list zero providers."
+            fi
           }
 
           apply_github_idp "environment" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT"
