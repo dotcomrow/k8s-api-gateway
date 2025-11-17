@@ -939,7 +939,8 @@ data:
     if [ -n "${YUGABYTE_USER-}" ] && [ -n "${YUGABYTE_PASSWORD-}" ] && [ -n "${YUGABYTE_HOST-}" ] && [ -n "${YUGABYTE_PORT-}" ] && [ -n "${YUGABYTE_DATABASE-}" ]; then
       DB_READY=1
     else
-      DB_READY=0
+      echo "❌ Database credentials missing; cannot reconcile access." >&2
+      exit 1
     fi
 
     github_has_team() {
@@ -1022,43 +1023,29 @@ data:
           continue
         fi
 
-        # Already inactive/deactivated? Skip
-        if [ "$status" = "INACTIVE" ] || [ "$status" = "DEACTIVATED" ]; then
-          continue
-        fi
+        SQL_TMP=$(mktemp)
+        {
+          printf "UPDATE gravitee.users\n"
+          printf "   SET status = 'INACTIVE',\n"
+          printf "       updated_at = now()\n"
+          printf " WHERE id = '%s';\n\n" "$user_id"
+          printf "DELETE FROM gravitee.memberships\n"
+          printf " WHERE member_id = '%s';\n" "$user_id"
+        } > "$SQL_TMP"
 
-        DEACTIVATED=0
+        if PGPASSWORD="$YUGABYTE_PASSWORD" \
+           psql -h "$YUGABYTE_HOST" \
+                -p "$YUGABYTE_PORT" \
+                -U "$YUGABYTE_USER" \
+                -d "$YUGABYTE_DATABASE" \
+                -v ON_ERROR_STOP=1 \
+                -f "$SQL_TMP"
+        then
+          total_deactivated=$((total_deactivated + 1))
+          echo "🔒 Deactivated GitHub user ${gh_user} (${user_id}) via database update"
+        else
+          echo "⚠️ Database update failed for ${gh_user} (${user_id}); falling back to API (memberships not removed)." >&2
 
-        if [ "$DB_READY" -eq 1 ]; then
-          SQL_TMP=$(mktemp)
-          {
-            printf "UPDATE gravitee.users\n"
-            printf "   SET status = 'INACTIVE',\n"
-            printf "       updated_at = now()\n"
-            printf " WHERE id = '%s';\n\n" "$user_id"
-            printf "DELETE FROM gravitee.memberships\n"
-            printf " WHERE member_id = '%s';\n" "$user_id"
-          } > "$SQL_TMP"
-
-          if PGPASSWORD="$YUGABYTE_PASSWORD" \
-             psql -h "$YUGABYTE_HOST" \
-                  -p "$YUGABYTE_PORT" \
-                  -U "$YUGABYTE_USER" \
-                  -d "$YUGABYTE_DATABASE" \
-                  -v ON_ERROR_STOP=1 \
-                  -f "$SQL_TMP"
-          then
-            total_deactivated=$((total_deactivated + 1))
-            echo "🔒 Deactivated GitHub user ${gh_user} (${user_id}) via database update"
-            DEACTIVATED=1
-          else
-            echo "⚠️ Database update failed for ${gh_user} (${user_id}); falling back to API." >&2
-          fi
-
-          rm -f "$SQL_TMP"
-        fi
-
-        if [ "$DEACTIVATED" -eq 0 ]; then
           deactivate_status=$(curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" \
             -o /tmp/deactivate-response -w "%{http_code}" \
             -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/${user_id}/status?status=DEACTIVATED" \
@@ -1074,6 +1061,8 @@ data:
             fi
           fi
         fi
+
+        rm -f "$SQL_TMP"
       done < "$USERS_FILE"
 
       rm -f "$USERS_FILE"
