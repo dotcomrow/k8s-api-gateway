@@ -572,6 +572,18 @@ spec:
           value: "https://gravitee.teleport.app.suncoast.systems/management"
         - name: MANAGEMENT_JDBC_LIQUIBASE_ENABLED
           value: "false"
+        - name: PORTAL_SSO_PROVIDER_NAME
+          value: "GitHub"
+        - name: PORTAL_SSO_PROVIDER_DESCRIPTION
+          value: "Sign in with GitHub"
+        - name: PORTAL_SSO_BUTTON_TEXT
+          value: "Continue with GitHub"
+        - name: PORTAL_SSO_AUTHORIZE_URL
+          value: "https://gravitee.teleport.app.suncoast.systems/management/auth/oauth2/github/authorize"
+        - name: PORTAL_SSO_TOKEN_URL
+          value: "https://gravitee.teleport.app.suncoast.systems/management/auth/oauth2/github/access_token"
+        - name: PORTAL_SSO_USERINFO_URL
+          value: "https://gravitee.teleport.app.suncoast.systems/management/auth/oauth2/github/userinfo"
         - name: PORTAL_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
