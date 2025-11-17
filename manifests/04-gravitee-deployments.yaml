@@ -1098,58 +1098,75 @@ spec:
           echo "📤 IDP payload (/tmp/github-idp.json):"
           cat /tmp/github-idp.json || true
 
-          IDP_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/configuration/identities"
+          apply_github_idp() {
+            scope_label="$1"
+            base_url="$2"
+            config_url="$base_url/configuration/identities"
 
-          echo "🔧 Applying GitHub identity provider configuration (PUT)..."
-          IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
-            $AUTH -H "Content-Type: application/json" \
-            -X PUT "$IDP_URL/github" \
-            --data-binary @/tmp/github-idp.json || echo "000")
-
-          echo "ℹ️ PUT /identities/github HTTP status: '${IDP_HTTP_STATUS}'"
-          echo "ℹ️ PUT /identities/github response body:"
-          cat /tmp/idp-response || true
-
-          if [ "$IDP_HTTP_STATUS" != "200" ]; then
-            echo "⚠️ PUT /identities/github returned HTTP ${IDP_HTTP_STATUS}, attempting POST..."
+            echo "🔧 Applying GitHub identity provider configuration for ${scope_label} scope..."
             IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
               $AUTH -H "Content-Type: application/json" \
-              -X POST "$IDP_URL" \
+              -X PUT "$config_url/github" \
               --data-binary @/tmp/github-idp.json || echo "000")
 
-            echo "ℹ️ POST /identities HTTP status: '${IDP_HTTP_STATUS}'"
-            echo "ℹ️ POST /identities response body:"
+            echo "ℹ️ PUT /identities/github (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
+            echo "ℹ️ PUT response body:"
             cat /tmp/idp-response || true
 
-            if [ "$IDP_HTTP_STATUS" != "201" ] && [ "$IDP_HTTP_STATUS" != "200" ]; then
-              echo "❌ Failed to configure GitHub identity provider (status ${IDP_HTTP_STATUS})"
-              exit 1
-            fi
-          fi
+            if [ "$IDP_HTTP_STATUS" != "200" ]; then
+              echo "⚠️ PUT returned HTTP ${IDP_HTTP_STATUS}, attempting POST for ${scope_label}..."
+              IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+                $AUTH -H "Content-Type: application/json" \
+                -X POST "$config_url" \
+                --data-binary @/tmp/github-idp.json || echo "000")
 
-          echo "🔛 Ensuring GitHub identity provider is enabled..."
-          IDP_ENABLE_STATUS="000"
-          for enable_endpoint in \
-            "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/configuration/identities/github/_enable" \
-            "$MGMT_API_URL/management/v2/organizations/DEFAULT/environments/DEFAULT/configuration/identities/github/_enable" \
-            "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/identities/github/_enable" \
-            "$MGMT_API_URL/management/v2/organizations/DEFAULT/environments/DEFAULT/identities/github/_enable"
-          do
-            echo "➡️  Trying enable endpoint: $enable_endpoint"
-            IDP_ENABLE_STATUS=$(curl -s -o /tmp/idp-enable-response -w "%{http_code}" \
-              $AUTH -X POST "$enable_endpoint" || echo "000")
-            echo "   ↳ HTTP status: ${IDP_ENABLE_STATUS}"
-            if [ "$IDP_ENABLE_STATUS" = "200" ]; then
-              IDP_ENABLE_URL_USED="$enable_endpoint"
-              break
-            fi
-          done
+              echo "ℹ️ POST /identities (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
+              echo "ℹ️ POST response body:"
+              cat /tmp/idp-response || true
 
-          if [ "$IDP_ENABLE_STATUS" != "200" ]; then
-            echo "⚠️ GitHub enable endpoint unavailable (status ${IDP_ENABLE_STATUS}); assuming provider is enabled via PUT payload."
-          else
-            echo "✅ GitHub identity provider enabled via $IDP_ENABLE_URL_USED"
-          fi
+              if [ "$IDP_HTTP_STATUS" != "201" ] && [ "$IDP_HTTP_STATUS" != "200" ]; then
+                echo "❌ Failed to configure GitHub identity provider for ${scope_label} (status ${IDP_HTTP_STATUS})"
+                exit 1
+              fi
+            fi
+
+            echo "🔛 Ensuring GitHub identity provider is enabled for ${scope_label}..."
+            ENABLE_ENDPOINTS="
+              $base_url/configuration/identities/github/_enable
+              $base_url/identities/github/_enable
+            "
+
+            case "$base_url" in
+              */management/*)
+                BASE_V2="${base_url/\/management\//\/management\/v2\/}"
+                if [ "$BASE_V2" != "$base_url" ]; then
+                  ENABLE_ENDPOINTS="$ENABLE_ENDPOINTS
+                    $BASE_V2/configuration/identities/github/_enable
+                    $BASE_V2/identities/github/_enable
+                  "
+                fi
+                ;;
+            esac
+
+            IDP_ENABLE_STATUS="000"
+            for enable_endpoint in $ENABLE_ENDPOINTS; do
+              echo "➡️  Trying enable endpoint (${scope_label}): $enable_endpoint"
+              IDP_ENABLE_STATUS=$(curl -s -o /tmp/idp-enable-response -w "%{http_code}" \
+                $AUTH -X POST "$enable_endpoint" || echo "000")
+              echo "   ↳ HTTP status: ${IDP_ENABLE_STATUS}"
+              if [ "$IDP_ENABLE_STATUS" = "200" ]; then
+                echo "✅ GitHub identity provider enabled via $enable_endpoint"
+                break
+              fi
+            done
+
+            if [ "$IDP_ENABLE_STATUS" != "200" ]; then
+              echo "⚠️ GitHub enable endpoints unavailable for ${scope_label} (status ${IDP_ENABLE_STATUS}); assuming provider stays enabled via payload."
+            fi
+          }
+
+          apply_github_idp "environment" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT"
+          apply_github_idp "organization" "$MGMT_API_URL/management/organizations/DEFAULT"
 
           echo "🔧 Forcing portal user self-signup flags directly in database..."
           cat <<'EOF_PORTAL' | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
