@@ -1128,13 +1128,28 @@ spec:
           fi
 
           echo "🔛 Ensuring GitHub identity provider is enabled..."
-          IDP_ENABLE_STATUS=$(curl -s -o /tmp/idp-enable-response -w "%{http_code}" \
-            $AUTH -X POST "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/configuration/identities/github/_enable" || echo "000")
-          echo "ℹ️ POST /identities/github/_enable HTTP status: '${IDP_ENABLE_STATUS}'"
+          IDP_ENABLE_STATUS="000"
+          for enable_endpoint in \
+            "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/configuration/identities/github/_enable" \
+            "$MGMT_API_URL/management/v2/organizations/DEFAULT/environments/DEFAULT/configuration/identities/github/_enable" \
+            "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/identities/github/_enable" \
+            "$MGMT_API_URL/management/v2/organizations/DEFAULT/environments/DEFAULT/identities/github/_enable"
+          do
+            echo "➡️  Trying enable endpoint: $enable_endpoint"
+            IDP_ENABLE_STATUS=$(curl -s -o /tmp/idp-enable-response -w "%{http_code}" \
+              $AUTH -X POST "$enable_endpoint" || echo "000")
+            echo "   ↳ HTTP status: ${IDP_ENABLE_STATUS}"
+            if [ "$IDP_ENABLE_STATUS" = "200" ]; then
+              IDP_ENABLE_URL_USED="$enable_endpoint"
+              break
+            fi
+          done
+
           if [ "$IDP_ENABLE_STATUS" != "200" ]; then
             echo "❌ Failed to enable GitHub identity provider (status ${IDP_ENABLE_STATUS})"
             exit 1
           fi
+          echo "✅ GitHub identity provider enabled via $IDP_ENABLE_URL_USED"
 
           echo "🔧 Forcing portal user self-signup flags directly in database..."
           cat <<'EOF_PORTAL' | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
