@@ -1062,9 +1062,9 @@ data:
             fi
           fi
         fi
-      done <<EOF
-    $users_json
-    EOF
+      done <<'EOF'
+      $users_json
+      EOF
 
       page=$((page + 1))
     done
