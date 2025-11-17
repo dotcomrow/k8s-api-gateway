@@ -49,7 +49,7 @@ jobs:
       id: set-tag
       run: |
         echo "tag=ts-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
-        echo "latest_tag=ts-latest" >> "$GITHUB_OUTPUT"
+        echo "latest_tag=latest" >> "$GITHUB_OUTPUT"
 
     - name: Generate image metadata
       id: meta
