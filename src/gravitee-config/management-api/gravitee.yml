@@ -192,10 +192,12 @@ security:
       groupMapping:
         - condition: "{#context.attributes['groups'] contains 'github-team-admins'}"
           groups:
-            - platform-admins
+            - gravitee_admin_access
         - condition: "{#context.attributes['groups'] contains 'github-team-publishers'}"
           groups:
-            - platform-publishers
+            - gravitee_user_access
+        - condition: "true"
+          groups: []  # avoid granting anything
 
 # Email configuration (for notifications)
 email:
