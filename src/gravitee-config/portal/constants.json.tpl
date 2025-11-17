@@ -3,6 +3,7 @@
   "baseHref": "/",
   "authentication": {
     "oauth2": {
+      "enabled": true,
       "clientId": "${PORTAL_OAUTH_CLIENT_ID}",
       "clientSecret": "${PORTAL_OAUTH_CLIENT_SECRET}",
       "serverURL": "${PORTAL_OAUTH_SERVER_URL}"
