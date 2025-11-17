@@ -1025,12 +1025,10 @@ data:
 
         SQL_TMP=$(mktemp)
         {
-          printf "UPDATE gravitee.users\n"
-          printf "   SET status = 'INACTIVE',\n"
-          printf "       updated_at = now()\n"
-          printf " WHERE id = '%s';\n\n" "$user_id"
           printf "DELETE FROM gravitee.memberships\n"
-          printf " WHERE member_id = '%s';\n" "$user_id"
+          printf " WHERE member_id = '%s';\n\n" "$user_id"
+          printf "DELETE FROM gravitee.users\n"
+          printf " WHERE id = '%s';\n" "$user_id"
         } > "$SQL_TMP"
 
         if PGPASSWORD="$YUGABYTE_PASSWORD" \
