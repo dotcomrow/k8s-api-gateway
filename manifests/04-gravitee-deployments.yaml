@@ -200,6 +200,18 @@ spec:
               key: client-secret
         - name: PORTAL_OAUTH_SERVER_URL
           value: "https://github.com/login/oauth"
+        - name: PORTAL_SSO_PROVIDER_NAME
+          value: "GitHub"
+        - name: PORTAL_SSO_PROVIDER_DESCRIPTION
+          value: "Sign in with GitHub"
+        - name: PORTAL_SSO_BUTTON_TEXT
+          value: "Continue with GitHub"
+        - name: PORTAL_SSO_AUTHORIZE_URL
+          value: "https://gravitee.teleport.app.suncoast.systems/management/auth/oauth2/github/authorize"
+        - name: PORTAL_SSO_TOKEN_URL
+          value: "https://gravitee.teleport.app.suncoast.systems/management/auth/oauth2/github/access_token"
+        - name: PORTAL_SSO_USERINFO_URL
+          value: "https://gravitee.teleport.app.suncoast.systems/management/auth/oauth2/github/userinfo"
         - name: YUGABYTE_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
         - name: YUGABYTE_PORT
