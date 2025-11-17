@@ -1106,6 +1106,7 @@ spec:
               name: "GitHub",
               type: "GITHUB",
               enabled: true,
+              target: ["PORTAL","CONSOLE"],
               color: "#24292F",
               syncMappings: true,
               scopes: ["read:user","read:org"],
