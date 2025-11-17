@@ -4,26 +4,30 @@ set -eu
 # Required environment variables
 REQUIRED_ENV="MGMT_API_URL ADMIN_USERNAME ADMIN_PASSWORD GITHUB_ORG GITHUB_ALLOWED_TEAMS GITHUB_TOKEN"
 
+# Validate required env vars using env + awk (POSIX-safe, no bash-isms)
 for var in $REQUIRED_ENV; do
-  # Use indirect expansion via eval in a POSIX-sh compatible way
-  eval "value=\${$var-}"
+  value=$(env | awk -F= -v key="$var" '$1==key {print substr($0, index($0,"=")+1)}')
   if [ -z "$value" ]; then
     echo "❌ Missing required env var: $var" >&2
     exit 1
   fi
 done
 
-# Default page size if not set
-: "${PAGE_SIZE:=100}"
+# Default page size if not set; avoid := to keep busy shells happy
+if [ -z "${PAGE_SIZE-}" ]; then
+  PAGE_SIZE=100
+fi
 
 # GITHUB_ALLOWED_TEAMS is a comma-separated list, normalize to space-separated
-ALLOWED_TEAMS="$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')"
+ALLOWED_TEAMS=$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')
 
 github_has_team() {
   username="$1"
 
   # If no allowed teams configured, deny everything
-  [ -z "$ALLOWED_TEAMS" ] && return 1
+  if [ -z "$ALLOWED_TEAMS" ]; then
+    return 1
+  fi
 
   for team in $ALLOWED_TEAMS; do
     api="https://api.github.com/orgs/${GITHUB_ORG}/teams/${team}/memberships/${username}"
