@@ -1183,15 +1183,15 @@ spec:
           ON CONFLICT (reference_type, reference_id, key)
           DO UPDATE SET value = EXCLUDED.value;
 
-          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id)
-          VALUES ('github', 'ENVIRONMENT', 'DEFAULT')
+          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at, updated_at)
+          VALUES ('github', 'ENVIRONMENT', 'DEFAULT', now(), now())
           ON CONFLICT (identity_provider_id, reference_type, reference_id)
-          DO NOTHING;
+          DO UPDATE SET updated_at = EXCLUDED.updated_at;
 
-          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id)
-          VALUES ('github', 'ORGANIZATION', 'DEFAULT')
+          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at, updated_at)
+          VALUES ('github', 'ORGANIZATION', 'DEFAULT', now(), now())
           ON CONFLICT (identity_provider_id, reference_type, reference_id)
-          DO NOTHING;
+          DO UPDATE SET updated_at = EXCLUDED.updated_at;
           EOF_PORTAL
           echo "✅ Portal user creation disabled via database parameters."
 
