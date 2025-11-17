@@ -1129,7 +1129,7 @@ spec:
 
           echo "🔛 Ensuring GitHub identity provider is enabled..."
           IDP_ENABLE_STATUS=$(curl -s -o /tmp/idp-enable-response -w "%{http_code}" \
-            $AUTH -X POST "$IDP_URL/github/_enable" || echo "000")
+            $AUTH -X POST "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/configuration/identities/github/_enable" || echo "000")
           echo "ℹ️ POST /identities/github/_enable HTTP status: '${IDP_ENABLE_STATUS}'"
           if [ "$IDP_ENABLE_STATUS" != "200" ]; then
             echo "❌ Failed to enable GitHub identity provider (status ${IDP_ENABLE_STATUS})"
