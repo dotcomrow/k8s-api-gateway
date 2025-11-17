@@ -6,7 +6,17 @@
       "enabled": true,
       "clientId": "${PORTAL_OAUTH_CLIENT_ID}",
       "clientSecret": "${PORTAL_OAUTH_CLIENT_SECRET}",
-      "serverURL": "${PORTAL_OAUTH_SERVER_URL}"
+      "serverURL": "${PORTAL_OAUTH_SERVER_URL}",
+      "name": "${PORTAL_SSO_PROVIDER_NAME}",
+      "description": "${PORTAL_SSO_PROVIDER_DESCRIPTION}",
+      "buttonText": "${PORTAL_SSO_BUTTON_TEXT}",
+      "authorizationEndpoint": "${PORTAL_SSO_AUTHORIZE_URL}",
+      "tokenEndpoint": "${PORTAL_SSO_TOKEN_URL}",
+      "userInfoEndpoint": "${PORTAL_SSO_USERINFO_URL}",
+      "scope": [
+        "read:user",
+        "read:org"
+      ]
     },
     "localLogin": {
       "enabled": false
