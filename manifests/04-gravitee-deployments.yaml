@@ -1446,6 +1446,7 @@ spec:
           annotations:
             linkerd.io/inject: "disabled"
             vault.hashicorp.com/agent-inject: "true"
+            vault.hashicorp.com/agent-pre-populate-only: "true"
             vault.hashicorp.com/role: "gravitee"
             vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
             vault.hashicorp.com/agent-inject-template-db-creds: |
