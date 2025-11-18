@@ -98,16 +98,17 @@ spec:
           seed_allowed_table() {
             if [ -z "$ALLOWED_TEAMS" ]; then
               echo "ℹ️ No GitHub teams configured; skipping guard table seed."
-              return
+              return 1
             fi
 
             if [ -z "${GITHUB_TOKEN-}" ]; then
               echo "⚠️ Missing GITHUB_TOKEN; cannot seed guard table." >&2
-              return
+              return 1
             fi
 
             allowed_tmp=$(mktemp)
             members_found=0
+            api_fail=0
 
             for team in $ALLOWED_TEAMS; do
               page=1
@@ -119,8 +120,10 @@ spec:
                   -w "%{http_code}" -o "$body" "$api" || echo "000")
 
                 if [ "$status" != "200" ]; then
-                  echo "⚠️ Failed to list members for team ${team} during seed (status ${status})." >&2
+                  echo "⚠️ Failed to list members for team ${team} during seed (status ${status}). Response:" >&2
+                  cat "$body" >&2 || true
                   rm -f "$body"
+                  api_fail=1
                   break
                 fi
 
@@ -137,10 +140,10 @@ spec:
               done
             done
 
-            if [ "$members_found" -eq 0 ]; then
+            if [ "$api_fail" -eq 1 ] || [ "$members_found" -eq 0 ]; then
               echo "⚠️ Unable to retrieve allowed GitHub members; guard table not updated." >&2
               rm -f "$allowed_tmp"
-              return
+              return 1
             fi
 
             allowed_sorted=$(mktemp)
@@ -163,6 +166,7 @@ spec:
 
             count=$(psql_cmd -At -c "SELECT COUNT(*) FROM gravitee.github_allowed_users;" 2>/dev/null || echo 0)
             echo "✅ Guard table seeded with ${count} GitHub accounts."
+            return 0
           }
 
           BASE_URL="${GITHUB_SERVER_URL%/}"
@@ -273,7 +277,10 @@ spec:
           rm -f "$PORTAL_SQL"
 
           echo "🔄 Synchronizing allowed GitHub members for login guard..."
-          seed_allowed_table
+          if ! seed_allowed_table; then
+            echo "❌ Failed to seed GitHub allow-list; aborting configuration." >&2
+            exit 1
+          fi
 
           echo "🧹 Removing any unauthorized GitHub users before enforcing guard..."
           CLEANUP_SQL=$(mktemp)
