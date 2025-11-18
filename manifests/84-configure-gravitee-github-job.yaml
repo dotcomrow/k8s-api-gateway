@@ -40,6 +40,21 @@ spec:
               key: client-secret
         - name: GITHUB_SERVER_URL
           value: "https://github.com/login/oauth"
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-gateway-github-team-token
+              key: token
+        - name: GITHUB_ORG
+          valueFrom:
+            configMapKeyRef:
+              name: github-access-settings
+              key: organization
+        - name: GITHUB_ALLOWED_TEAMS
+          valueFrom:
+            configMapKeyRef:
+              name: github-access-settings
+              key: allowedTeams
         - name: YUGABYTE_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
         - name: YUGABYTE_PORT
@@ -52,7 +67,7 @@ spec:
           set -e
           apk add --no-cache jq postgresql15-client >/dev/null
 
-          REQUIRED_ENV="GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET GITHUB_SERVER_URL YUGABYTE_HOST YUGABYTE_PORT YUGABYTE_DATABASE"
+          REQUIRED_ENV="GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET GITHUB_SERVER_URL GITHUB_TOKEN GITHUB_ORG GITHUB_ALLOWED_TEAMS YUGABYTE_HOST YUGABYTE_PORT YUGABYTE_DATABASE"
           for var in $REQUIRED_ENV; do
             value=$(env | awk -F= -v key="$var" '$1==key {print substr($0, index($0,"=")+1)}')
             if [ -z "$value" ]; then
@@ -69,6 +84,86 @@ spec:
             echo "❌ Database credentials not available from Vault." >&2
             exit 1
           fi
+
+          ALLOWED_TEAMS=$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')
+
+          psql_cmd() {
+            PGPASSWORD="$YUGABYTE_PASSWORD" \
+              psql -h "$YUGABYTE_HOST" \
+                   -p "$YUGABYTE_PORT" \
+                   -U "$YUGABYTE_USER" \
+                   -d "$YUGABYTE_DATABASE" "$@"
+          }
+
+          seed_allowed_table() {
+            if [ -z "$ALLOWED_TEAMS" ]; then
+              echo "ℹ️ No GitHub teams configured; skipping guard table seed."
+              return
+            fi
+
+            if [ -z "${GITHUB_TOKEN-}" ]; then
+              echo "⚠️ Missing GITHUB_TOKEN; cannot seed guard table." >&2
+              return
+            fi
+
+            allowed_tmp=$(mktemp)
+            members_found=0
+
+            for team in $ALLOWED_TEAMS; do
+              page=1
+              while :; do
+                api="https://api.github.com/orgs/${GITHUB_ORG}/teams/${team}/members?per_page=100&page=${page}"
+                body=$(mktemp)
+                status=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  -w "%{http_code}" -o "$body" "$api" || echo "000")
+
+                if [ "$status" != "200" ]; then
+                  echo "⚠️ Failed to list members for team ${team} during seed (status ${status})." >&2
+                  rm -f "$body"
+                  break
+                fi
+
+                jq -r '.[] | "\(.id),\(.login)"' "$body" >> "$allowed_tmp"
+                count=$(jq 'length' "$body" 2>/dev/null || echo 0)
+                rm -f "$body"
+
+                if [ "$count" -gt 0 ]; then
+                  members_found=1
+                fi
+
+                [ "$count" -lt 100 ] && break
+                page=$((page + 1))
+              done
+            done
+
+            if [ "$members_found" -eq 0 ]; then
+              echo "⚠️ Unable to retrieve allowed GitHub members; guard table not updated." >&2
+              rm -f "$allowed_tmp"
+              return
+            fi
+
+            allowed_sorted=$(mktemp)
+            sort -t',' -k1,1 -u "$allowed_tmp" > "$allowed_sorted"
+            rm -f "$allowed_tmp"
+
+            if ! psql_cmd -c "TRUNCATE TABLE gravitee.github_allowed_users;" >/dev/null; then
+              echo "⚠️ Failed to truncate guard table during seed." >&2
+              rm -f "$allowed_sorted"
+              return
+            fi
+
+            if ! psql_cmd -c "COPY gravitee.github_allowed_users (github_id, login) FROM STDIN WITH (FORMAT csv);" < "$allowed_sorted"; then
+              echo "⚠️ Failed to populate guard table during seed." >&2
+              rm -f "$allowed_sorted"
+              return
+            fi
+
+            rm -f "$allowed_sorted"
+
+            count=$(psql_cmd -At -c "SELECT COUNT(*) FROM gravitee.github_allowed_users;" 2>/dev/null || echo 0)
+            echo "✅ Guard table seeded with ${count} GitHub accounts."
+          }
 
           BASE_URL="${GITHUB_SERVER_URL%/}"
           AUTH_ENDPOINT="${BASE_URL}/authorize"
@@ -111,6 +206,42 @@ spec:
             printf "INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)\n"
             printf "VALUES ('github','ORGANIZATION','DEFAULT',now())\n"
             printf "ON CONFLICT (identity_provider_id, reference_type, reference_id) DO NOTHING;\n\n"
+
+            cat <<'EOSQL'
+            CREATE TABLE IF NOT EXISTS gravitee.github_allowed_users (
+              github_id varchar(64) PRIMARY KEY,
+              login varchar(255) NOT NULL,
+              synced_at timestamp without time zone NOT NULL DEFAULT now()
+            );
+
+            ALTER TABLE gravitee.users
+              ADD COLUMN IF NOT EXISTS github_id varchar(64);
+
+            UPDATE gravitee.users
+              SET github_id = source_id
+            WHERE source = 'github'
+              AND (github_id IS NULL OR github_id <> source_id);
+
+            CREATE OR REPLACE FUNCTION gravitee.set_github_id()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+              IF NEW.source = 'github' THEN
+                NEW.github_id := NEW.source_id;
+              ELSE
+                NEW.github_id := NULL;
+              END IF;
+              RETURN NEW;
+            END;
+            $$;
+
+            DROP TRIGGER IF EXISTS tr_set_github_id ON gravitee.users;
+            CREATE TRIGGER tr_set_github_id
+            BEFORE INSERT OR UPDATE ON gravitee.users
+            FOR EACH ROW
+            EXECUTE FUNCTION gravitee.set_github_id();
+            EOSQL
           } > "$SQL_TMP"
 
           PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 -f "$SQL_TMP"
@@ -138,5 +269,39 @@ spec:
           ON CONFLICT (reference_type, reference_id, key)
           DO UPDATE SET value = EXCLUDED.value;
           EOF_PORTAL
+
+          echo "🔄 Synchronizing allowed GitHub members for login guard..."
+          seed_allowed_table
+
+          echo "🧹 Removing any unauthorized GitHub users before enforcing guard..."
+          psql_cmd <<'EOSQL'
+          WITH doomed AS (
+            SELECT id
+            FROM gravitee.users u
+            WHERE u.source = 'github'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM gravitee.github_allowed_users allowed
+                WHERE allowed.github_id = u.source_id
+              )
+          )
+          DELETE FROM gravitee.memberships
+          WHERE member_id IN (SELECT id FROM doomed);
+
+          DELETE FROM gravitee.users
+          WHERE id IN (SELECT id FROM doomed);
+          EOSQL
+
+                    echo "🔐 Enforcing GitHub guard constraint..."
+                    psql_cmd <<'EOSQL'
+          ALTER TABLE gravitee.users
+            DROP CONSTRAINT IF EXISTS fk_github_allowed;
+
+          ALTER TABLE gravitee.users
+            ADD CONSTRAINT fk_github_allowed
+            FOREIGN KEY (github_id)
+            REFERENCES gravitee.github_allowed_users (github_id)
+            DEFERRABLE INITIALLY IMMEDIATE;
+          EOSQL
 
           echo "✅ Gravitee GitHub configuration complete."

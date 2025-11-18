@@ -929,41 +929,160 @@ data:
     fi
 
     ALLOWED_TEAMS=$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')
+    if [ -z "$ALLOWED_TEAMS" ]; then
+      echo "❌ No GitHub teams configured in GITHUB_ALLOWED_TEAMS." >&2
+      exit 1
+    fi
 
-    github_has_team() {
-      username="$1"
+    psql_cmd() {
+      PGPASSWORD="$YUGABYTE_PASSWORD" \
+        psql -h "$YUGABYTE_HOST" \
+             -p "$YUGABYTE_PORT" \
+             -U "$YUGABYTE_USER" \
+             -d "$YUGABYTE_DATABASE" \
+             -v ON_ERROR_STOP=1 "$@"
+    }
 
-      if [ -z "$ALLOWED_TEAMS" ]; then
+    ensure_guard_table() {
+      psql_cmd <<'SQL'
+      CREATE TABLE IF NOT EXISTS gravitee.github_allowed_users (
+        github_id varchar(64) PRIMARY KEY,
+        login varchar(255) NOT NULL,
+        synced_at timestamp without time zone NOT NULL DEFAULT now()
+      );
+
+      ALTER TABLE gravitee.users
+        ADD COLUMN IF NOT EXISTS github_id varchar(64);
+
+      UPDATE gravitee.users
+        SET github_id = source_id
+      WHERE source = 'github'
+        AND (github_id IS NULL OR github_id <> source_id);
+
+      CREATE OR REPLACE FUNCTION gravitee.set_github_id()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        IF NEW.source = 'github' THEN
+          NEW.github_id := NEW.source_id;
+        ELSE
+          NEW.github_id := NULL;
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+
+      DROP TRIGGER IF EXISTS tr_set_github_id ON gravitee.users;
+      CREATE TRIGGER tr_set_github_id
+      BEFORE INSERT OR UPDATE ON gravitee.users
+      FOR EACH ROW
+      EXECUTE FUNCTION gravitee.set_github_id();
+      SQL 
+    }
+
+    ensure_guard_constraint() {
+      psql_cmd <<'SQL'
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM information_schema.table_constraints
+          WHERE constraint_schema = 'gravitee'
+            AND table_name = 'users'
+            AND constraint_name = 'fk_github_allowed'
+        ) THEN
+          ALTER TABLE gravitee.users
+            ADD CONSTRAINT fk_github_allowed
+            FOREIGN KEY (github_id)
+            REFERENCES gravitee.github_allowed_users (github_id)
+            DEFERRABLE INITIALLY IMMEDIATE;
+        END IF;
+      END;
+      $$;
+      SQL
+    }
+
+    refresh_allowed_users_table() {
+      allowed_tmp=$(mktemp)
+      members_found=0
+
+      for team in $ALLOWED_TEAMS; do
+        page=1
+        while :; do
+          api="https://api.github.com/orgs/${GITHUB_ORG}/teams/${team}/members?per_page=100&page=${page}"
+          body=$(mktemp)
+          status=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -w "%{http_code}" -o "$body" "$api" || echo "000")
+
+          if [ "$status" != "200" ]; then
+            echo "⚠️ Failed to list members for team ${team} (status ${status})." >&2
+            rm -f "$body"
+            break
+          fi
+
+          jq -r '.[] | "\(.id),\(.login)"' "$body" >> "$allowed_tmp"
+          count=$(jq 'length' "$body" 2>/dev/null || echo 0)
+          rm -f "$body"
+
+          if [ "$count" -gt 0 ]; then
+            members_found=1
+          fi
+
+          [ "$count" -lt 100 ] && break
+          page=$((page + 1))
+        done
+      done
+
+      if [ "$members_found" -eq 0 ]; then
+        echo "⚠️ Unable to retrieve allowed GitHub members; leaving guard table untouched." >&2
+        rm -f "$allowed_tmp"
         return 1
       fi
 
-      for team in $ALLOWED_TEAMS; do
-        api="https://api.github.com/orgs/${GITHUB_ORG}/teams/${team}/memberships/${username}"
-        status=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-          -H "Accept: application/vnd.github+json" \
-          -w "%{http_code}" -o /tmp/github-membership "$api" || echo "000")
-        if [ "$status" = "200" ]; then
-          state=$(jq -r '.state' /tmp/github-membership 2>/dev/null || echo "inactive")
-          if [ "$state" = "active" ]; then
-            return 0
-          fi
-        fi
-      done
+      allowed_sorted=$(mktemp)
+      sort -t',' -k1,1 -u "$allowed_tmp" > "$allowed_sorted"
+      rm -f "$allowed_tmp"
 
-      return 1
+      if ! psql_cmd -c "TRUNCATE TABLE gravitee.github_allowed_users;" >/dev/null; then
+        echo "⚠️ Failed to truncate guard table." >&2
+        rm -f "$allowed_sorted"
+        return 1
+      fi
+
+      if ! psql_cmd -c "COPY gravitee.github_allowed_users (github_id, login) FROM STDIN WITH (FORMAT csv);" < "$allowed_sorted"; then
+        echo "⚠️ Failed to copy allowed GitHub users into guard table." >&2
+        rm -f "$allowed_sorted"
+        return 1
+      fi
+
+      rm -f "$allowed_sorted"
+
+      count=$(psql_cmd -At -c "SELECT COUNT(*) FROM gravitee.github_allowed_users;" 2>/dev/null || echo 0)
+      echo "ℹ️ Guard table now tracks ${count} allowed GitHub accounts."
+      return 0
     }
+
+    ensure_guard_table
+    if ! refresh_allowed_users_table; then
+      echo "⚠️ Continuing reconciliation using the previous guard snapshot."
+    fi
 
     total_checked=0
     total_removed=0
 
     USERS_FILE=$(mktemp)
-    PGPASSWORD="$YUGABYTE_PASSWORD" \
-      psql -h "$YUGABYTE_HOST" \
-           -p "$YUGABYTE_PORT" \
-           -U "$YUGABYTE_USER" \
-           -d "$YUGABYTE_DATABASE" \
-           -At -F',' \
-           -c "SELECT id, source_id AS gh_user FROM gravitee.users WHERE source='github' AND source_id IS NOT NULL;" > "$USERS_FILE"
+    psql_cmd -At -F',' -c "
+      SELECT id, source_id AS gh_user
+      FROM gravitee.users
+      WHERE source = 'github'
+        AND source_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM gravitee.github_allowed_users allowed
+          WHERE allowed.github_id = gravitee.users.source_id
+        );
+    " > "$USERS_FILE"
 
     while IFS=',' read -r user_id gh_user; do
       [ -z "$user_id" ] && continue
@@ -971,27 +1090,15 @@ data:
 
       total_checked=$((total_checked + 1))
 
-      if github_has_team "$gh_user"; then
-        echo "ℹ️ GitHub user ${gh_user} (${user_id}) still in allowed teams; keeping account."
-        continue
-      fi
-
       SQL_TMP=$(mktemp)
       {
         printf "DELETE FROM gravitee.memberships WHERE member_id = '%s';" "$user_id"
         printf "DELETE FROM gravitee.users WHERE id = '%s';" "$user_id"
       } > "$SQL_TMP"
 
-      if PGPASSWORD="$YUGABYTE_PASSWORD" \
-         psql -h "$YUGABYTE_HOST" \
-              -p "$YUGABYTE_PORT" \
-              -U "$YUGABYTE_USER" \
-              -d "$YUGABYTE_DATABASE" \
-              -v ON_ERROR_STOP=1 \
-              -f "$SQL_TMP"
-      then
+      if psql_cmd -v ON_ERROR_STOP=1 -f "$SQL_TMP" >/dev/null; then
         total_removed=$((total_removed + 1))
-        echo "🔒 Removed GitHub user ${gh_user} (${user_id}) via database cleanup"
+        echo "🔒 Removed unauthorized GitHub user ${gh_user} (${user_id}) via database cleanup"
       else
         echo "⚠️ Database cleanup failed for ${gh_user} (${user_id})." >&2
       fi
@@ -1001,7 +1108,9 @@ data:
 
     rm -f "$USERS_FILE"
 
-    echo "✅ Reconciliation complete. Checked ${total_checked} GitHub users, removed ${total_removed}."
+    ensure_guard_constraint
+
+    echo "✅ Reconciliation complete. Identified ${total_checked} unauthorized GitHub users, removed ${total_removed}."
 
 ---
 # Configure GitHub identity provider and portal settings
