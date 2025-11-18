@@ -910,10 +910,7 @@ data:
     #!/bin/sh
     set -eu
 
-    # Required environment variables
-    REQUIRED_ENV="MGMT_API_URL ADMIN_USERNAME ADMIN_PASSWORD GITHUB_ORG GITHUB_ALLOWED_TEAMS GITHUB_TOKEN"
-
-    # Validate required env vars using env + awk (POSIX-safe, no bash-isms)
+    REQUIRED_ENV="GITHUB_ORG GITHUB_ALLOWED_TEAMS GITHUB_TOKEN YUGABYTE_HOST YUGABYTE_PORT YUGABYTE_DATABASE"
     for var in $REQUIRED_ENV; do
       value=$(env | awk -F= -v key="$var" '$1==key {print substr($0, index($0,"=")+1)}')
       if [ -z "$value" ]; then
@@ -922,44 +919,29 @@ data:
       fi
     done
 
-    # Default page size if not set; avoid := to keep busy shells happy
-    if [ -z "${PAGE_SIZE-}" ]; then
-      PAGE_SIZE=100
-    fi
-
-    # GITHUB_ALLOWED_TEAMS is a comma-separated list, normalize to space-separated
-    ALLOWED_TEAMS=$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')
-
-    # Source database credentials if Vault injected them
     if [ -f /vault/secrets/db-creds ]; then
-      # shellcheck disable=SC1091
       . /vault/secrets/db-creds
     fi
 
-    if [ -n "${YUGABYTE_USER-}" ] && [ -n "${YUGABYTE_PASSWORD-}" ] && [ -n "${YUGABYTE_HOST-}" ] && [ -n "${YUGABYTE_PORT-}" ] && [ -n "${YUGABYTE_DATABASE-}" ]; then
-      DB_READY=1
-    else
+    if [ -z "${YUGABYTE_USER-}" ] || [ -z "${YUGABYTE_PASSWORD-}" ]; then
       echo "❌ Database credentials missing; cannot reconcile access." >&2
       exit 1
     fi
 
+    ALLOWED_TEAMS=$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')
+
     github_has_team() {
       username="$1"
 
-      # If no allowed teams configured, deny everything
       if [ -z "$ALLOWED_TEAMS" ]; then
         return 1
       fi
 
       for team in $ALLOWED_TEAMS; do
         api="https://api.github.com/orgs/${GITHUB_ORG}/teams/${team}/memberships/${username}"
-
-        # Request membership info; write body to temp file, capture HTTP status
-        status=$(curl -s \
-          -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+        status=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
           -H "Accept: application/vnd.github+json" \
           -w "%{http_code}" -o /tmp/github-membership "$api" || echo "000")
-
         if [ "$status" = "200" ]; then
           state=$(jq -r '.state' /tmp/github-membership 2>/dev/null || echo "inactive")
           if [ "$state" = "active" ]; then
@@ -971,104 +953,56 @@ data:
       return 1
     }
 
-    page=1
     total_checked=0
-    total_deactivated=0
+    total_removed=0
 
-    while :; do
-      resp=$(curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" \
-        "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users?page=${page}&size=${PAGE_SIZE}")
+    USERS_FILE=$(mktemp)
+    PGPASSWORD="$YUGABYTE_PASSWORD" \
+      psql -h "$YUGABYTE_HOST" \
+           -p "$YUGABYTE_PORT" \
+           -U "$YUGABYTE_USER" \
+           -d "$YUGABYTE_DATABASE" \
+           -At -F',' \
+           -c "SELECT id, COALESCE(source_id, username) AS gh_user FROM gravitee.users WHERE source='github';" > "$USERS_FILE"
 
-      # Number of users in this page
-      count=$(printf '%s\n' "$resp" | jq '.data | length' 2>/dev/null || echo 0)
+    while IFS=',' read -r user_id gh_user; do
+      [ -z "$user_id" ] && continue
+      [ -z "$gh_user" ] && continue
 
-      # No more users; stop paging
-      if [ "$count" -eq 0 ]; then
-        break
+      total_checked=$((total_checked + 1))
+
+      if github_has_team "$gh_user"; then
+        echo "ℹ️ GitHub user ${gh_user} (${user_id}) still in allowed teams; keeping account."
+        continue
       fi
 
-      # Iterate each user object
-      users_json=$(printf '%s\n' "$resp" | jq -c '.data[]')
+      SQL_TMP=$(mktemp)
+      {
+        printf "DELETE FROM gravitee.memberships WHERE member_id = '%s';" "$user_id"
+        printf "DELETE FROM gravitee.users WHERE id = '%s';" "$user_id"
+      } > "$SQL_TMP"
 
-      USERS_FILE=$(mktemp)
-      printf '%s\n' "$users_json" > "$USERS_FILE"
+      if PGPASSWORD="$YUGABYTE_PASSWORD" \
+         psql -h "$YUGABYTE_HOST" \
+              -p "$YUGABYTE_PORT" \
+              -U "$YUGABYTE_USER" \
+              -d "$YUGABYTE_DATABASE" \
+              -v ON_ERROR_STOP=1 \
+              -f "$SQL_TMP"
+      then
+        total_removed=$((total_removed + 1))
+        echo "🔒 Removed GitHub user ${gh_user} (${user_id}) via database cleanup"
+      else
+        echo "⚠️ Database cleanup failed for ${gh_user} (${user_id})." >&2
+      fi
 
-      while IFS= read -r user; do
-        [ -z "$user" ] && continue
+      rm -f "$SQL_TMP"
+    done < "$USERS_FILE"
 
-        source=$(printf '%s' "$user" | jq -r '.source')
-        [ "$source" = "github" ] || continue
+    rm -f "$USERS_FILE"
 
-        user_id=$(printf '%s' "$user" | jq -r '.id')
-        source_id=$(printf '%s' "$user" | jq -r '.sourceId // empty')
-        username=$(printf '%s' "$user" | jq -r '.username // empty')
-        status=$(printf '%s' "$user" | jq -r '.status')
+    echo "✅ Reconciliation complete. Checked ${total_checked} GitHub users, removed ${total_removed}."
 
-        # Prefer sourceId, fall back to username
-        if [ -n "$source_id" ]; then
-          gh_user="$source_id"
-        else
-          gh_user="$username"
-        fi
-
-        # If we still don't have a GitHub username, skip
-        if [ -z "$gh_user" ]; then
-          continue
-        fi
-
-        total_checked=$((total_checked + 1))
-
-        # User still in at least one allowed team -> keep active
-        if github_has_team "$gh_user"; then
-          continue
-        fi
-
-        SQL_TMP=$(mktemp)
-        {
-          printf "DELETE FROM gravitee.memberships\n"
-          printf " WHERE member_id = '%s';\n\n" "$user_id"
-          printf "DELETE FROM gravitee.users\n"
-          printf " WHERE id = '%s';\n" "$user_id"
-        } > "$SQL_TMP"
-
-        if PGPASSWORD="$YUGABYTE_PASSWORD" \
-           psql -h "$YUGABYTE_HOST" \
-                -p "$YUGABYTE_PORT" \
-                -U "$YUGABYTE_USER" \
-                -d "$YUGABYTE_DATABASE" \
-                -v ON_ERROR_STOP=1 \
-                -f "$SQL_TMP"
-        then
-          total_deactivated=$((total_deactivated + 1))
-          echo "🔒 Deactivated GitHub user ${gh_user} (${user_id}) via database update"
-        else
-          echo "⚠️ Database update failed for ${gh_user} (${user_id}); falling back to API (memberships not removed)." >&2
-
-          deactivate_status=$(curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" \
-            -o /tmp/deactivate-response -w "%{http_code}" \
-            -X PUT "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users/${user_id}/status?status=DEACTIVATED" \
-            || echo "000")
-
-          if [ "$deactivate_status" = "200" ]; then
-            total_deactivated=$((total_deactivated + 1))
-            echo "🔒 Deactivated GitHub user ${gh_user} (${user_id}) via Management API"
-          else
-            echo "⚠️ Failed to deactivate user ${gh_user} (${user_id}), status ${deactivate_status}" >&2
-            if [ -f /tmp/deactivate-response ]; then
-              cat /tmp/deactivate-response >&2 || true
-            fi
-          fi
-        fi
-
-        rm -f "$SQL_TMP"
-      done < "$USERS_FILE"
-
-      rm -f "$USERS_FILE"
-
-      page=$((page + 1))
-    done
-
-    echo "✅ Reconciliation complete. Checked ${total_checked} GitHub users, deactivated ${total_deactivated}."
 ---
 # Configure GitHub identity provider and portal settings
 ---
