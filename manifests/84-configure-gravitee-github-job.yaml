@@ -96,6 +96,8 @@ spec:
           fi
 
           ALLOWED_TEAMS=$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')
+          ADMIN_TEAM_SLUG="${GITHUB_ADMIN_TEAM:-}"
+          USER_TEAM_SLUG="${GITHUB_USER_TEAM:-}"
 
           psql_cmd() {
             PGPASSWORD="$YUGABYTE_PASSWORD" \
@@ -137,7 +139,7 @@ spec:
                 fi
 
                 role_label="USER"
-                if [ -n "$GITHUB_ADMIN_TEAM" ] && [ "$team" = "$GITHUB_ADMIN_TEAM" ]; then
+                if [ -n "$ADMIN_TEAM_SLUG" ] && [ "$team" = "$ADMIN_TEAM_SLUG" ]; then
                   role_label="ADMIN"
                 fi
 
@@ -329,10 +331,51 @@ spec:
           rm -f "$PORTAL_SQL"
 
           echo "🔄 Synchronizing allowed GitHub members for login guard..."
+          sync_memberships() {
+            org_admin=$(psql_cmd -At -c "SELECT id FROM gravitee.roles WHERE scope = 'ORGANIZATION' AND name = 'ADMIN' LIMIT 1;" | tr -d '[:space:]')
+            org_user=$(psql_cmd -At -c "SELECT id FROM gravitee.roles WHERE scope = 'ORGANIZATION' AND name = 'USER' LIMIT 1;" | tr -d '[:space:]')
+            env_admin=$(psql_cmd -At -c "SELECT id FROM gravitee.roles WHERE scope = 'ENVIRONMENT' AND name = 'ADMIN' LIMIT 1;" | tr -d '[:space:]')
+            env_user=$(psql_cmd -At -c "SELECT id FROM gravitee.roles WHERE scope = 'ENVIRONMENT' AND name = 'USER' LIMIT 1;" | tr -d '[:space:]')
+
+            if [ -z "$org_admin" ] || [ -z "$org_user" ] || [ -z "$env_admin" ] || [ -z "$env_user" ]; then
+              echo "⚠️ Unable to resolve Gravitee role IDs; skipping membership synchronization." >&2
+              return 1
+            fi
+
+            SQL_TMP=$(mktemp)
+            {
+              printf "CREATE TEMP TABLE tmp_allowed AS\n"
+              printf "SELECT u.id AS user_id, g.desired_role\n"
+              printf "FROM gravitee.users u\n"
+              printf "JOIN gravitee.github_allowed_users g ON g.github_id = u.source_id;\n\n"
+
+              printf "DELETE FROM gravitee.memberships\n"
+              printf "WHERE member_id IN (SELECT user_id FROM tmp_allowed);\n\n"
+
+              printf "INSERT INTO gravitee.memberships (id, member_id, member_type, reference_type, reference_id, role_id)\n"
+              printf "SELECT gen_random_uuid(), user_id, 'USER', 'ORGANIZATION', 'DEFAULT',\n"
+              printf "  CASE WHEN desired_role = 'ADMIN' THEN '%s' ELSE '%s' END\n"
+              printf "FROM tmp_allowed;\n\n" "$org_admin" "$org_user"
+
+              printf "INSERT INTO gravitee.memberships (id, member_id, member_type, reference_type, reference_id, role_id)\n"
+              printf "SELECT gen_random_uuid(), user_id, 'USER', 'ENVIRONMENT', 'DEFAULT',\n"
+              printf "  CASE WHEN desired_role = 'ADMIN' THEN '%s' ELSE '%s' END\n"
+              printf "FROM tmp_allowed;\n\n" "$env_admin" "$env_user"
+
+              printf "DROP TABLE tmp_allowed;\n"
+            } > "$SQL_TMP"
+
+            psql_cmd -f "$SQL_TMP" >/dev/null
+            rm -f "$SQL_TMP"
+            return 0
+          }
+
           if ! seed_allowed_table; then
             echo "❌ Failed to seed GitHub allow-list; aborting configuration." >&2
             exit 1
           fi
+
+          sync_memberships
 
           echo "🧹 Removing any unauthorized GitHub users before enforcing guard..."
           CLEANUP_SQL=$(mktemp)
