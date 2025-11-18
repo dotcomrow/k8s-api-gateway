@@ -944,63 +944,69 @@ data:
     }
 
     ensure_guard_table() {
-      psql_cmd <<'SQL'
-      CREATE TABLE IF NOT EXISTS gravitee.github_allowed_users (
-        github_id varchar(64) PRIMARY KEY,
-        login varchar(255) NOT NULL,
-        synced_at timestamp without time zone NOT NULL DEFAULT now()
-      );
+      SQL_TMP=$(mktemp)
+      {
+        printf "CREATE TABLE IF NOT EXISTS gravitee.github_allowed_users (\n"
+        printf "  github_id varchar(64) PRIMARY KEY,\n"
+        printf "  login varchar(255) NOT NULL,\n"
+        printf "  synced_at timestamp without time zone NOT NULL DEFAULT now()\n"
+        printf ");\n\n"
 
-      ALTER TABLE gravitee.users
-        ADD COLUMN IF NOT EXISTS github_id varchar(64);
+        printf "ALTER TABLE gravitee.users\n"
+        printf "  ADD COLUMN IF NOT EXISTS github_id varchar(64);\n\n"
 
-      UPDATE gravitee.users
-        SET github_id = source_id
-      WHERE source = 'github'
-        AND (github_id IS NULL OR github_id <> source_id);
+        printf "UPDATE gravitee.users\n"
+        printf "   SET github_id = source_id\n"
+        printf " WHERE source = 'github'\n"
+        printf "   AND (github_id IS NULL OR github_id <> source_id);\n\n"
 
-      CREATE OR REPLACE FUNCTION gravitee.set_github_id()
-      RETURNS trigger
-      LANGUAGE plpgsql
-      AS $$
-      BEGIN
-        IF NEW.source = 'github' THEN
-          NEW.github_id := NEW.source_id;
-        ELSE
-          NEW.github_id := NULL;
-        END IF;
-        RETURN NEW;
-      END;
-      $$;
+        printf "CREATE OR REPLACE FUNCTION gravitee.set_github_id()\n"
+        printf "RETURNS trigger\n"
+        printf "LANGUAGE plpgsql\n"
+        printf "AS \$\$\n"
+        printf "BEGIN\n"
+        printf "  IF NEW.source = 'github' THEN\n"
+        printf "    NEW.github_id := NEW.source_id;\n"
+        printf "  ELSE\n"
+        printf "    NEW.github_id := NULL;\n"
+        printf "  END IF;\n"
+        printf "  RETURN NEW;\n"
+        printf "END;\n"
+        printf "\$\$;\n\n"
 
-      DROP TRIGGER IF EXISTS tr_set_github_id ON gravitee.users;
-      CREATE TRIGGER tr_set_github_id
-      BEFORE INSERT OR UPDATE ON gravitee.users
-      FOR EACH ROW
-      EXECUTE FUNCTION gravitee.set_github_id();
-      SQL 
+        printf "DROP TRIGGER IF EXISTS tr_set_github_id ON gravitee.users;\n"
+        printf "CREATE TRIGGER tr_set_github_id\n"
+        printf "BEFORE INSERT OR UPDATE ON gravitee.users\n"
+        printf "FOR EACH ROW\n"
+        printf "EXECUTE FUNCTION gravitee.set_github_id();\n"
+      } > "$SQL_TMP"
+
+      psql_cmd -f "$SQL_TMP" >/dev/null
+      rm -f "$SQL_TMP"
     }
 
     ensure_guard_constraint() {
-      psql_cmd <<'SQL'
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1
-          FROM information_schema.table_constraints
-          WHERE constraint_schema = 'gravitee'
-            AND table_name = 'users'
-            AND constraint_name = 'fk_github_allowed'
-        ) THEN
-          ALTER TABLE gravitee.users
-            ADD CONSTRAINT fk_github_allowed
-            FOREIGN KEY (github_id)
-            REFERENCES gravitee.github_allowed_users (github_id)
-            DEFERRABLE INITIALLY IMMEDIATE;
-        END IF;
-      END;
-      $$;
-      SQL
+      SQL_TMP=$(mktemp)
+      {
+        printf "DO \$\$ BEGIN\n"
+        printf "  IF NOT EXISTS (\n"
+        printf "    SELECT 1\n"
+        printf "    FROM information_schema.table_constraints\n"
+        printf "    WHERE constraint_schema = 'gravitee'\n"
+        printf "      AND table_name = 'users'\n"
+        printf "      AND constraint_name = 'fk_github_allowed'\n"
+        printf "  ) THEN\n"
+        printf "    ALTER TABLE gravitee.users\n"
+        printf "      ADD CONSTRAINT fk_github_allowed\n"
+        printf "      FOREIGN KEY (github_id)\n"
+        printf "      REFERENCES gravitee.github_allowed_users (github_id)\n"
+        printf "      DEFERRABLE INITIALLY IMMEDIATE;\n"
+        printf "  END IF;\n"
+        printf "END; \$\$;\n"
+      } > "$SQL_TMP"
+
+      psql_cmd -f "$SQL_TMP" >/dev/null
+      rm -f "$SQL_TMP"
     }
 
     refresh_allowed_users_table() {
