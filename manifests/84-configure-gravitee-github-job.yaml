@@ -147,8 +147,8 @@ spec:
             sort -t',' -k1,1 -u "$allowed_tmp" > "$allowed_sorted"
             rm -f "$allowed_tmp"
 
-            if ! psql_cmd -c "TRUNCATE TABLE gravitee.github_allowed_users;" >/dev/null; then
-              echo "⚠️ Failed to truncate guard table during seed." >&2
+            if ! psql_cmd -c "DELETE FROM gravitee.github_allowed_users;" >/dev/null; then
+              echo "⚠️ Failed to clear guard table during seed." >&2
               rm -f "$allowed_sorted"
               return
             fi
@@ -276,34 +276,44 @@ spec:
           seed_allowed_table
 
           echo "🧹 Removing any unauthorized GitHub users before enforcing guard..."
-          psql_cmd <<'EOSQL'
-          WITH doomed AS (
-            SELECT id
-            FROM gravitee.users u
-            WHERE u.source = 'github'
-              AND NOT EXISTS (
-                SELECT 1
-                FROM gravitee.github_allowed_users allowed
-                WHERE allowed.github_id = u.source_id
-              )
-          )
-          DELETE FROM gravitee.memberships
-          WHERE member_id IN (SELECT id FROM doomed);
+          CLEANUP_SQL=$(mktemp)
+          {
+            printf "DELETE FROM gravitee.memberships\n"
+            printf "WHERE member_id IN (\n"
+            printf "  SELECT id FROM gravitee.users u\n"
+            printf "  WHERE u.source = 'github'\n"
+            printf "    AND NOT EXISTS (\n"
+            printf "      SELECT 1 FROM gravitee.github_allowed_users allowed\n"
+            printf "      WHERE allowed.github_id = u.source_id\n"
+            printf "    )\n"
+            printf ");\n\n"
 
-          DELETE FROM gravitee.users
-          WHERE id IN (SELECT id FROM doomed);
-          EOSQL
+            printf "DELETE FROM gravitee.users\n"
+            printf "WHERE id IN (\n"
+            printf "  SELECT id FROM gravitee.users u\n"
+            printf "  WHERE u.source = 'github'\n"
+            printf "    AND NOT EXISTS (\n"
+            printf "      SELECT 1 FROM gravitee.github_allowed_users allowed\n"
+            printf "      WHERE allowed.github_id = u.source_id\n"
+            printf "    )\n"
+            printf ");\n"
+          } > "$CLEANUP_SQL"
+          psql_cmd -f "$CLEANUP_SQL" >/dev/null
+          rm -f "$CLEANUP_SQL"
 
-                    echo "🔐 Enforcing GitHub guard constraint..."
-                    psql_cmd <<'EOSQL'
-          ALTER TABLE gravitee.users
-            DROP CONSTRAINT IF EXISTS fk_github_allowed;
+          echo "🔐 Enforcing GitHub guard constraint..."
+          FK_SQL=$(mktemp)
+          {
+            printf "ALTER TABLE gravitee.users\n"
+            printf "  DROP CONSTRAINT IF EXISTS fk_github_allowed;\n\n"
 
-          ALTER TABLE gravitee.users
-            ADD CONSTRAINT fk_github_allowed
-            FOREIGN KEY (github_id)
-            REFERENCES gravitee.github_allowed_users (github_id)
-            DEFERRABLE INITIALLY IMMEDIATE;
-          EOSQL
+            printf "ALTER TABLE gravitee.users\n"
+            printf "  ADD CONSTRAINT fk_github_allowed\n"
+            printf "  FOREIGN KEY (github_id)\n"
+            printf "  REFERENCES gravitee.github_allowed_users (github_id)\n"
+            printf "  DEFERRABLE INITIALLY IMMEDIATE;\n"
+          } > "$FK_SQL"
+          psql_cmd -f "$FK_SQL" >/dev/null
+          rm -f "$FK_SQL"
 
           echo "✅ Gravitee GitHub configuration complete."
