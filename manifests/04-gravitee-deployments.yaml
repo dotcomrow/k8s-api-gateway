@@ -943,6 +943,49 @@ data:
              -v ON_ERROR_STOP=1 "$@"
     }
 
+    ensure_role_mappings() {
+      admin_cond="{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access')}"
+      user_cond="{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
+
+      group_json=$(jq -n \
+        --arg admin "$admin_cond" \
+        --arg user "$user_cond" \
+        '[{"condition":$admin,"groups":["gravitee_admin_access"]},{"condition":$user,"groups":["gravitee_user_access"]}]')
+
+      role_json=$(jq -n \
+        --arg admin "$admin_cond" \
+        --arg user "$user_cond" \
+        '[
+          {
+            "condition": $admin,
+            "roles": [
+              {"scope":"ORGANIZATION","name":"ADMIN"},
+              {"scope":"ENVIRONMENT","name":"ADMIN"}
+            ]
+          },
+          {
+            "condition": $user,
+            "roles": [
+              {"scope":"ORGANIZATION","name":"USER"},
+              {"scope":"ENVIRONMENT","name":"USER"}
+            ]
+          }
+        ]')
+
+      group_esc=$(printf "%s" "$group_json" | sed "s/'/''/g")
+      role_esc=$(printf "%s" "$role_json" | sed "s/'/''/g")
+
+      SQL_TMP=$(mktemp)
+      {
+        printf "UPDATE gravitee.identity_providers\n"
+        printf "SET group_mappings = '%s', role_mappings = '%s'\n" "$group_esc" "$role_esc"
+        printf "WHERE id = 'github';\n"
+      } > "$SQL_TMP"
+
+      psql_cmd -f "$SQL_TMP" >/dev/null
+      rm -f "$SQL_TMP"
+    }
+
     ensure_guard_table() {
       SQL_TMP=$(mktemp)
       {
@@ -1075,6 +1118,7 @@ data:
     }
 
     ensure_guard_table
+    ensure_role_mappings
     if ! refresh_allowed_users_table; then
       echo "⚠️ Continuing reconciliation using the previous guard snapshot."
     fi
