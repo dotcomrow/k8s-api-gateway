@@ -204,7 +204,7 @@ spec:
           done
       containers:
       - name: gravitee-management-api
-        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20251118-005528
+        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20251118-150550
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8083
