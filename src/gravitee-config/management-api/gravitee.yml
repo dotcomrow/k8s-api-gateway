@@ -179,17 +179,17 @@ security:
         - read:user
         - read:org
       userMapping:
-        condition: "{(#context.attributes['teams'] != null and (#context.attributes['teams'].contains('gravitee_admin_access') or #context.attributes['teams'].contains('gravitee_user_access'))) or (#context.attributes['groups'] != null and (#context.attributes['groups'].contains('gravitee_admin_access') or #context.attributes['groups'].contains('gravitee_user_access'))) or (#context.attributes['roles'] != null and (#context.attributes['roles'].contains('gravitee_admin_access') or #context.attributes['roles'].contains('gravitee_user_access')))}"
+        condition: "{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access') or #jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
         id: id
         lastname: name
         firstname: name
         email: email
         picture: avatar_url
       groupMapping:
-        - condition: "{(#context.attributes['teams'] != null and #context.attributes['teams'].contains('gravitee_admin_access')) or (#context.attributes['groups'] != null and #context.attributes['groups'].contains('gravitee_admin_access')) or (#context.attributes['roles'] != null and #context.attributes['roles'].contains('gravitee_admin_access'))}"
+        - condition: "{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access')}"
           groups:
             - gravitee_admin_access
-        - condition: "{(#context.attributes['teams'] != null and #context.attributes['teams'].contains('gravitee_user_access')) or (#context.attributes['groups'] != null and #context.attributes['groups'].contains('gravitee_user_access')) or (#context.attributes['roles'] != null and #context.attributes['roles'].contains('gravitee_user_access'))}"
+        - condition: "{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
           groups:
             - gravitee_user_access
 

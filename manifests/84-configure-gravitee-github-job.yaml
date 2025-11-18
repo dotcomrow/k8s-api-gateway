@@ -84,14 +84,14 @@ spec:
             '{clientId:$clientId,clientSecret:$clientSecret,authorizationEndpoint:$authEndpoint,tokenEndpoint:$tokenEndpoint,userInfoEndpoint:$userInfo,useSystemProxy:false}')
 
           CONFIG_JSON_ESC=$(printf "%s" "$CONFIG_JSON" | sed "s/'/''/g")
-          PROFILE_CONDITION="{(#context.attributes['teams'] != null and (#context.attributes['teams'].contains('gravitee_admin_access') or #context.attributes['teams'].contains('gravitee_user_access'))) or (#context.attributes['groups'] != null and (#context.attributes['groups'].contains('gravitee_admin_access') or #context.attributes['groups'].contains('gravitee_user_access'))) or (#context.attributes['roles'] != null and (#context.attributes['roles'].contains('gravitee_admin_access') or #context.attributes['roles'].contains('gravitee_user_access')))}"
+          PROFILE_CONDITION="{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access') or #jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
           USER_PROFILE_MAPPING=$(jq -n \
             --arg cond "$PROFILE_CONDITION" \
             '{condition:$cond,id:"id",firstname:"name",lastname:"name",email:"email",picture:"avatar_url"}')
           USER_PROFILE_ESC=$(printf "%s" "$USER_PROFILE_MAPPING" | sed "s/'/''/g")
 
-          ADMIN_CONDITION="{(#context.attributes['teams'] != null and #context.attributes['teams'].contains('gravitee_admin_access')) or (#context.attributes['groups'] != null and #context.attributes['groups'].contains('gravitee_admin_access')) or (#context.attributes['roles'] != null and #context.attributes['roles'].contains('gravitee_admin_access'))}"
-          USER_CONDITION="{(#context.attributes['teams'] != null and #context.attributes['teams'].contains('gravitee_user_access')) or (#context.attributes['groups'] != null and #context.attributes['groups'].contains('gravitee_user_access')) or (#context.attributes['roles'] != null and #context.attributes['roles'].contains('gravitee_user_access'))}"
+          ADMIN_CONDITION="{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access')}"
+          USER_CONDITION="{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
           GROUP_MAPPINGS=$(jq -n \
             --arg adminCond "$ADMIN_CONDITION" \
             --arg userCond "$USER_CONDITION" \
