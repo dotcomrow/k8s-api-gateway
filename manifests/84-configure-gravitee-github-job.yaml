@@ -55,6 +55,16 @@ spec:
             configMapKeyRef:
               name: github-access-settings
               key: allowedTeams
+        - name: GITHUB_ADMIN_TEAM
+          valueFrom:
+            configMapKeyRef:
+              name: github-access-settings
+              key: adminTeam
+        - name: GITHUB_USER_TEAM
+          valueFrom:
+            configMapKeyRef:
+              name: github-access-settings
+              key: userTeam
         - name: YUGABYTE_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
         - name: YUGABYTE_PORT
@@ -67,7 +77,7 @@ spec:
           set -e
           apk add --no-cache jq postgresql15-client >/dev/null
 
-          REQUIRED_ENV="GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET GITHUB_SERVER_URL GITHUB_TOKEN GITHUB_ORG GITHUB_ALLOWED_TEAMS YUGABYTE_HOST YUGABYTE_PORT YUGABYTE_DATABASE"
+          REQUIRED_ENV="GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET GITHUB_SERVER_URL GITHUB_TOKEN GITHUB_ORG GITHUB_ALLOWED_TEAMS GITHUB_ADMIN_TEAM GITHUB_USER_TEAM YUGABYTE_HOST YUGABYTE_PORT YUGABYTE_DATABASE"
           for var in $REQUIRED_ENV; do
             value=$(env | awk -F= -v key="$var" '$1==key {print substr($0, index($0,"=")+1)}')
             if [ -z "$value" ]; then
@@ -126,7 +136,12 @@ spec:
                   break
                 fi
 
-                jq -r '.[] | "\(.id),\(.login)"' "$body" >> "$allowed_tmp"
+                role_label="USER"
+                if [ -n "$GITHUB_ADMIN_TEAM" ] && [ "$team" = "$GITHUB_ADMIN_TEAM" ]; then
+                  role_label="ADMIN"
+                fi
+
+                jq -r --arg role "$role_label" '.[] | "\(.id),\(.login),\($role)"' "$body" >> "$allowed_tmp"
                 count=$(jq 'length' "$body" 2>/dev/null || echo 0)
                 rm -f "$body"
 
@@ -143,7 +158,18 @@ spec:
             fi
 
             allowed_sorted=$(mktemp)
-            sort -t',' -k1,1 -u "$allowed_tmp" > "$allowed_sorted"
+            if [ -s "$allowed_tmp" ]; then
+              awk -F',' '{
+                key=$1
+                role=$3
+                line=$0
+                if (!(key in best) || role=="ADMIN") {
+                  best[key]=line
+                }
+              } END { for (k in best) print best[k] }' "$allowed_tmp" > "$allowed_sorted"
+            else
+              : > "$allowed_sorted"
+            fi
             rm -f "$allowed_tmp"
 
             if ! psql_cmd -c "ALTER TABLE gravitee.users DROP CONSTRAINT IF EXISTS fk_github_allowed;" >/dev/null; then
@@ -158,10 +184,10 @@ spec:
               return 1
             fi
 
-            if ! psql_cmd -c "COPY gravitee.github_allowed_users (github_id, login) FROM STDIN WITH (FORMAT csv);" < "$allowed_sorted"; then
+            if ! psql_cmd -c "COPY gravitee.github_allowed_users (github_id, login, desired_role) FROM STDIN WITH (FORMAT csv);" < "$allowed_sorted"; then
               echo "⚠️ Failed to populate guard table during seed." >&2
               rm -f "$allowed_sorted"
-              return
+              return 1
             fi
 
             rm -f "$allowed_sorted"
@@ -236,8 +262,12 @@ spec:
             printf "CREATE TABLE IF NOT EXISTS gravitee.github_allowed_users (\n"
             printf "  github_id varchar(64) PRIMARY KEY,\n"
             printf "  login varchar(255) NOT NULL,\n"
+            printf "  desired_role varchar(16) NOT NULL DEFAULT 'USER',\n"
             printf "  synced_at timestamp without time zone NOT NULL DEFAULT now()\n"
             printf ");\n\n"
+
+            printf "ALTER TABLE gravitee.github_allowed_users\n"
+            printf "  ADD COLUMN IF NOT EXISTS desired_role varchar(16) NOT NULL DEFAULT 'USER';\n\n"
 
             printf "ALTER TABLE gravitee.users\n"
             printf "  ADD COLUMN IF NOT EXISTS github_id varchar(64);\n\n"

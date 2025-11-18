@@ -899,6 +899,8 @@ metadata:
 data:
   organization: dotcomrow
   allowedTeams: gravitee_admin_access,gravitee_user_access
+  adminTeam: gravitee_admin_access
+  userTeam: gravitee_user_access
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -910,7 +912,7 @@ data:
     #!/bin/sh
     set -eu
 
-    REQUIRED_ENV="GITHUB_ORG GITHUB_ALLOWED_TEAMS GITHUB_TOKEN YUGABYTE_HOST YUGABYTE_PORT YUGABYTE_DATABASE"
+    REQUIRED_ENV="GITHUB_ORG GITHUB_ALLOWED_TEAMS GITHUB_ADMIN_TEAM GITHUB_USER_TEAM GITHUB_TOKEN YUGABYTE_HOST YUGABYTE_PORT YUGABYTE_DATABASE"
     for var in $REQUIRED_ENV; do
       value=$(env | awk -F= -v key="$var" '$1==key {print substr($0, index($0,"=")+1)}')
       if [ -z "$value" ]; then
@@ -929,6 +931,8 @@ data:
     fi
 
     ALLOWED_TEAMS=$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')
+    ADMIN_TEAM_SLUG="$GITHUB_ADMIN_TEAM"
+    USER_TEAM_SLUG="$GITHUB_USER_TEAM"
     if [ -z "$ALLOWED_TEAMS" ]; then
       echo "❌ No GitHub teams configured in GITHUB_ALLOWED_TEAMS." >&2
       exit 1
@@ -992,8 +996,12 @@ data:
         printf "CREATE TABLE IF NOT EXISTS gravitee.github_allowed_users (\n"
         printf "  github_id varchar(64) PRIMARY KEY,\n"
         printf "  login varchar(255) NOT NULL,\n"
+        printf "  desired_role varchar(16) NOT NULL DEFAULT 'USER',\n"
         printf "  synced_at timestamp without time zone NOT NULL DEFAULT now()\n"
         printf ");\n\n"
+
+        printf "ALTER TABLE gravitee.github_allowed_users\n"
+        printf "  ADD COLUMN IF NOT EXISTS desired_role varchar(16) NOT NULL DEFAULT 'USER';\n\n"
 
         printf "ALTER TABLE gravitee.users\n"
         printf "  ADD COLUMN IF NOT EXISTS github_id varchar(64);\n\n"
@@ -1052,6 +1060,44 @@ data:
       rm -f "$SQL_TMP"
     }
 
+    sync_github_memberships() {
+      ORG_ADMIN_ROLE=$(psql_cmd -At -c "SELECT id FROM gravitee.roles WHERE scope = 'ORGANIZATION' AND name = 'ADMIN' LIMIT 1;" | tr -d '[:space:]')
+      ORG_USER_ROLE=$(psql_cmd -At -c "SELECT id FROM gravitee.roles WHERE scope = 'ORGANIZATION' AND name = 'USER' LIMIT 1;" | tr -d '[:space:]')
+      ENV_ADMIN_ROLE=$(psql_cmd -At -c "SELECT id FROM gravitee.roles WHERE scope = 'ENVIRONMENT' AND name = 'ADMIN' LIMIT 1;" | tr -d '[:space:]')
+      ENV_USER_ROLE=$(psql_cmd -At -c "SELECT id FROM gravitee.roles WHERE scope = 'ENVIRONMENT' AND name = 'USER' LIMIT 1;" | tr -d '[:space:]')
+
+      if [ -z "$ORG_ADMIN_ROLE" ] || [ -z "$ORG_USER_ROLE" ] || [ -z "$ENV_ADMIN_ROLE" ] || [ -z "$ENV_USER_ROLE" ]; then
+        echo "⚠️ Unable to resolve Gravitee role IDs; skipping membership sync." >&2
+        return
+      fi
+
+      SQL_TMP=$(mktemp)
+      {
+        printf "CREATE TEMP TABLE tmp_allowed AS\n"
+        printf "SELECT u.id AS user_id, g.desired_role\n"
+        printf "FROM gravitee.users u\n"
+        printf "JOIN gravitee.github_allowed_users g ON g.github_id = u.source_id;\n\n"
+
+        printf "DELETE FROM gravitee.memberships\n"
+        printf "WHERE member_id IN (SELECT user_id FROM tmp_allowed);\n\n"
+
+        printf "INSERT INTO gravitee.memberships (id, member_id, member_type, reference_type, reference_id, role_id)\n"
+        printf "SELECT gen_random_uuid(), user_id, 'USER', 'ORGANIZATION', 'DEFAULT',\n"
+        printf "  CASE WHEN desired_role = 'ADMIN' THEN '%s' ELSE '%s' END\n"
+        printf "FROM tmp_allowed;\n\n" "$ORG_ADMIN_ROLE" "$ORG_USER_ROLE"
+
+        printf "INSERT INTO gravitee.memberships (id, member_id, member_type, reference_type, reference_id, role_id)\n"
+        printf "SELECT gen_random_uuid(), user_id, 'USER', 'ENVIRONMENT', 'DEFAULT',\n"
+        printf "  CASE WHEN desired_role = 'ADMIN' THEN '%s' ELSE '%s' END\n"
+        printf "FROM tmp_allowed;\n\n" "$ENV_ADMIN_ROLE" "$ENV_USER_ROLE"
+
+        printf "DROP TABLE tmp_allowed;\n"
+      } > "$SQL_TMP"
+
+      psql_cmd -f "$SQL_TMP" >/dev/null
+      rm -f "$SQL_TMP"
+    }
+
     refresh_allowed_users_table() {
       allowed_tmp=$(mktemp)
       api_fail=0
@@ -1073,7 +1119,12 @@ data:
             break
           fi
 
-          jq -r '.[] | "\(.id),\(.login)"' "$body" >> "$allowed_tmp"
+          role_label="USER"
+          if [ -n "$ADMIN_TEAM_SLUG" ] && [ "$team" = "$ADMIN_TEAM_SLUG" ]; then
+            role_label="ADMIN"
+          fi
+
+          jq -r --arg role "$role_label" '.[] | "\(.id),\(.login),\($role)"' "$body" >> "$allowed_tmp"
           count=$(jq 'length' "$body" 2>/dev/null || echo 0)
           rm -f "$body"
 
@@ -1089,7 +1140,17 @@ data:
       fi
 
       allowed_sorted=$(mktemp)
-      sort -t',' -k1,1 -u "$allowed_tmp" > "$allowed_sorted"
+      if [ -s "$allowed_tmp" ]; then
+        awk -F',' '{
+          key=$1
+          role=$3
+          if (!(key in best) || role=="ADMIN") {
+            best[key]=$0
+          }
+        } END { for (k in best) print best[k] }' "$allowed_tmp" > "$allowed_sorted"
+      else
+        : > "$allowed_sorted"
+      fi
       rm -f "$allowed_tmp"
 
       if ! psql_cmd -c "ALTER TABLE gravitee.users DROP CONSTRAINT IF EXISTS fk_github_allowed;" >/dev/null; then
@@ -1104,7 +1165,7 @@ data:
         return 1
       fi
 
-      if ! psql_cmd -c "COPY gravitee.github_allowed_users (github_id, login) FROM STDIN WITH (FORMAT csv);" < "$allowed_sorted"; then
+      if ! psql_cmd -c "COPY gravitee.github_allowed_users (github_id, login, desired_role) FROM STDIN WITH (FORMAT csv);" < "$allowed_sorted"; then
         echo "⚠️ Failed to copy allowed GitHub users into guard table." >&2
         rm -f "$allowed_sorted"
         return 1
@@ -1119,7 +1180,9 @@ data:
 
     ensure_guard_table
     ensure_role_mappings
-    if ! refresh_allowed_users_table; then
+    if refresh_allowed_users_table; then
+      sync_github_memberships
+    else
       echo "⚠️ Continuing reconciliation using the previous guard snapshot."
     fi
 
@@ -1243,6 +1306,16 @@ spec:
                 configMapKeyRef:
                   name: github-access-settings
                   key: allowedTeams
+            - name: GITHUB_ADMIN_TEAM
+              valueFrom:
+                configMapKeyRef:
+                  name: github-access-settings
+                  key: adminTeam
+            - name: GITHUB_USER_TEAM
+              valueFrom:
+                configMapKeyRef:
+                  name: github-access-settings
+                  key: userTeam
             volumeMounts:
             - name: reconcile-script
               mountPath: /opt/scripts/reconcile.sh
