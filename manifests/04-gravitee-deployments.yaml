@@ -584,7 +584,7 @@ spec:
           done
       containers:
       - name: gravitee-portal
-        image: ghcr.io/dotcomrow/gravitee-portal:ts-20251117-142040
+        image: ghcr.io/dotcomrow/gravitee-portal:ts-20251118-005529
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
