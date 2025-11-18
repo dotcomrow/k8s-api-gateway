@@ -85,16 +85,15 @@ spec:
 
           CONFIG_JSON_ESC=$(printf "%s" "$CONFIG_JSON" | sed "s/'/''/g")
           USER_PROFILE_MAPPING=$(jq -n \
-            --arg condition "{#context.attributes['groups'] contains 'github-team-admins' or #context.attributes['groups'] contains 'github-team-publishers'}" \
-            '{condition:$condition,id:"id",firstname:"name",lastname:"name",email:"email",picture:"avatar_url"}')
+            '{id:"sub",firstname:"given_name",lastname:"family_name",email:"email",picture:"picture"}')
           USER_PROFILE_ESC=$(printf "%s" "$USER_PROFILE_MAPPING" | sed "s/'/''/g")
-          GROUP_MAPPINGS=$(jq -n '
-            {
-              mappings: [
-                {condition: "{#context.attributes['\''groups'\''] contains '\''github-team-admins'\''}", groups: ["gravitee_admin_access"]},
-                {condition: "{#context.attributes['\''groups'\''] contains '\''github-team-publishers'\''}", groups: ["gravitee_user_access"]}
-              ]
-            }')
+
+          ADMIN_CONDITION='{#jsonPath(#profile, '"'"'$.roles'"'"').contains('"'"'github-team-admins'"'"')}'
+          USER_CONDITION='{#jsonPath(#profile, '"'"'$.roles'"'"').contains('"'"'github-team-publishers'"'"')}'
+          GROUP_MAPPINGS=$(jq -n \
+            --arg adminCond "$ADMIN_CONDITION" \
+            --arg userCond "$USER_CONDITION" \
+            '[{"condition":$adminCond,"groups":["gravitee_admin_access"]},{"condition":$userCond,"groups":["gravitee_user_access"]}]')
           GROUP_MAPPINGS_ESC=$(printf "%s" "$GROUP_MAPPINGS" | sed "s/'/''/g")
 
           SQL_TMP=$(mktemp)

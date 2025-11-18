@@ -963,7 +963,7 @@ data:
            -U "$YUGABYTE_USER" \
            -d "$YUGABYTE_DATABASE" \
            -At -F',' \
-           -c "SELECT id, COALESCE(source_id, username) AS gh_user FROM gravitee.users WHERE source='github';" > "$USERS_FILE"
+           -c "SELECT id, source_id AS gh_user FROM gravitee.users WHERE source='github' AND source_id IS NOT NULL;" > "$USERS_FILE"
 
     while IFS=',' read -r user_id gh_user; do
       [ -z "$user_id" ] && continue
