@@ -1011,7 +1011,7 @@ data:
 
     refresh_allowed_users_table() {
       allowed_tmp=$(mktemp)
-      members_found=0
+      api_fail=0
 
       for team in $ALLOWED_TEAMS; do
         page=1
@@ -1024,7 +1024,9 @@ data:
 
           if [ "$status" != "200" ]; then
             echo "⚠️ Failed to list members for team ${team} (status ${status})." >&2
+            cat "$body" >&2 || true
             rm -f "$body"
+            api_fail=1
             break
           fi
 
@@ -1032,16 +1034,12 @@ data:
           count=$(jq 'length' "$body" 2>/dev/null || echo 0)
           rm -f "$body"
 
-          if [ "$count" -gt 0 ]; then
-            members_found=1
-          fi
-
           [ "$count" -lt 100 ] && break
           page=$((page + 1))
         done
       done
 
-      if [ "$members_found" -eq 0 ]; then
+      if [ "$api_fail" -eq 1 ]; then
         echo "⚠️ Unable to retrieve allowed GitHub members; leaving guard table untouched." >&2
         rm -f "$allowed_tmp"
         return 1
@@ -1051,8 +1049,14 @@ data:
       sort -t',' -k1,1 -u "$allowed_tmp" > "$allowed_sorted"
       rm -f "$allowed_tmp"
 
-      if ! psql_cmd -c "TRUNCATE TABLE gravitee.github_allowed_users;" >/dev/null; then
-        echo "⚠️ Failed to truncate guard table." >&2
+      if ! psql_cmd -c "ALTER TABLE gravitee.users DROP CONSTRAINT IF EXISTS fk_github_allowed;" >/dev/null; then
+        echo "⚠️ Failed to drop guard constraint during refresh." >&2
+        rm -f "$allowed_sorted"
+        return 1
+      fi
+
+      if ! psql_cmd -c "DELETE FROM gravitee.github_allowed_users;" >/dev/null; then
+        echo "⚠️ Failed to clear guard table." >&2
         rm -f "$allowed_sorted"
         return 1
       fi

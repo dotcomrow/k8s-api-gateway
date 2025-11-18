@@ -146,10 +146,16 @@ spec:
             sort -t',' -k1,1 -u "$allowed_tmp" > "$allowed_sorted"
             rm -f "$allowed_tmp"
 
+            if ! psql_cmd -c "ALTER TABLE gravitee.users DROP CONSTRAINT IF EXISTS fk_github_allowed;" >/dev/null; then
+              echo "⚠️ Failed to drop guard constraint prior to refresh." >&2
+              rm -f "$allowed_sorted"
+              return 1
+            fi
+
             if ! psql_cmd -c "DELETE FROM gravitee.github_allowed_users;" >/dev/null; then
               echo "⚠️ Failed to clear guard table during seed." >&2
               rm -f "$allowed_sorted"
-              return
+              return 1
             fi
 
             if ! psql_cmd -c "COPY gravitee.github_allowed_users (github_id, login) FROM STDIN WITH (FORMAT csv);" < "$allowed_sorted"; then
