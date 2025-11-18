@@ -207,68 +207,70 @@ spec:
             printf "VALUES ('github','ORGANIZATION','DEFAULT',now())\n"
             printf "ON CONFLICT (identity_provider_id, reference_type, reference_id) DO NOTHING;\n\n"
 
-            cat <<'EOSQL'
-            CREATE TABLE IF NOT EXISTS gravitee.github_allowed_users (
-              github_id varchar(64) PRIMARY KEY,
-              login varchar(255) NOT NULL,
-              synced_at timestamp without time zone NOT NULL DEFAULT now()
-            );
+            printf "CREATE TABLE IF NOT EXISTS gravitee.github_allowed_users (\n"
+            printf "  github_id varchar(64) PRIMARY KEY,\n"
+            printf "  login varchar(255) NOT NULL,\n"
+            printf "  synced_at timestamp without time zone NOT NULL DEFAULT now()\n"
+            printf ");\n\n"
 
-            ALTER TABLE gravitee.users
-              ADD COLUMN IF NOT EXISTS github_id varchar(64);
+            printf "ALTER TABLE gravitee.users\n"
+            printf "  ADD COLUMN IF NOT EXISTS github_id varchar(64);\n\n"
 
-            UPDATE gravitee.users
-              SET github_id = source_id
-            WHERE source = 'github'
-              AND (github_id IS NULL OR github_id <> source_id);
+            printf "UPDATE gravitee.users\n"
+            printf "   SET github_id = source_id\n"
+            printf " WHERE source = 'github'\n"
+            printf "   AND (github_id IS NULL OR github_id <> source_id);\n\n"
 
-            CREATE OR REPLACE FUNCTION gravitee.set_github_id()
-            RETURNS trigger
-            LANGUAGE plpgsql
-            AS $$
-            BEGIN
-              IF NEW.source = 'github' THEN
-                NEW.github_id := NEW.source_id;
-              ELSE
-                NEW.github_id := NULL;
-              END IF;
-              RETURN NEW;
-            END;
-            $$;
+            printf "CREATE OR REPLACE FUNCTION gravitee.set_github_id()\n"
+            printf "RETURNS trigger\n"
+            printf "LANGUAGE plpgsql\n"
+            printf "AS \$\$\n"
+            printf "BEGIN\n"
+            printf "  IF NEW.source = 'github' THEN\n"
+            printf "    NEW.github_id := NEW.source_id;\n"
+            printf "  ELSE\n"
+            printf "    NEW.github_id := NULL;\n"
+            printf "  END IF;\n"
+            printf "  RETURN NEW;\n"
+            printf "END;\n"
+            printf "\$\$;\n\n"
 
-            DROP TRIGGER IF EXISTS tr_set_github_id ON gravitee.users;
-            CREATE TRIGGER tr_set_github_id
-            BEFORE INSERT OR UPDATE ON gravitee.users
-            FOR EACH ROW
-            EXECUTE FUNCTION gravitee.set_github_id();
-            EOSQL
+            printf "DROP TRIGGER IF EXISTS tr_set_github_id ON gravitee.users;\n"
+            printf "CREATE TRIGGER tr_set_github_id\n"
+            printf "BEFORE INSERT OR UPDATE ON gravitee.users\n"
+            printf "FOR EACH ROW\n"
+            printf "EXECUTE FUNCTION gravitee.set_github_id();\n"
           } > "$SQL_TMP"
 
           PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 -f "$SQL_TMP"
           rm -f "$SQL_TMP"
 
           echo "🔧 Forcing portal user self-signup flags directly in database..."
-          cat <<'EOF_PORTAL' | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
-          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.enabled', 'false')
-          ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
+          PORTAL_SQL=$(mktemp)
+          {
+            printf "INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)\n"
+            printf "VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.enabled', 'false')\n"
+            printf "ON CONFLICT (reference_type, reference_id, key)\n"
+            printf "DO UPDATE SET value = EXCLUDED.value;\n\n"
 
-          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.automaticValidation', 'false')
-          ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
+            printf "INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)\n"
+            printf "VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.automaticValidation', 'false')\n"
+            printf "ON CONFLICT (reference_type, reference_id, key)\n"
+            printf "DO UPDATE SET value = EXCLUDED.value;\n\n"
 
-          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.localLogin.enabled', 'false')
-          ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
+            printf "INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)\n"
+            printf "VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.localLogin.enabled', 'false')\n"
+            printf "ON CONFLICT (reference_type, reference_id, key)\n"
+            printf "DO UPDATE SET value = EXCLUDED.value;\n\n"
 
-          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'true')
-          ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
-          EOF_PORTAL
+            printf "INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)\n"
+            printf "VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'true')\n"
+            printf "ON CONFLICT (reference_type, reference_id, key)\n"
+            printf "DO UPDATE SET value = EXCLUDED.value;\n"
+          } > "$PORTAL_SQL"
+
+          PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 -f "$PORTAL_SQL"
+          rm -f "$PORTAL_SQL"
 
           echo "🔄 Synchronizing allowed GitHub members for login guard..."
           seed_allowed_table
