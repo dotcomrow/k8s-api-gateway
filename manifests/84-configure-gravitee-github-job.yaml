@@ -198,12 +198,32 @@ spec:
             --arg userCond "$USER_CONDITION" \
             '[{"condition":$adminCond,"groups":["gravitee_admin_access"]},{"condition":$userCond,"groups":["gravitee_user_access"]}]')
           GROUP_MAPPINGS_ESC=$(printf "%s" "$GROUP_MAPPINGS" | sed "s/'/''/g")
+          ROLE_MAPPINGS=$(jq -n \
+            --arg adminCond "$ADMIN_CONDITION" \
+            --arg userCond "$USER_CONDITION" \
+            '[
+              {
+                condition: $adminCond,
+                roles: [
+                  {"scope":"ORGANIZATION","name":"ADMIN"},
+                  {"scope":"ENVIRONMENT","name":"ADMIN"}
+                ]
+              },
+              {
+                condition: $userCond,
+                roles: [
+                  {"scope":"ORGANIZATION","name":"USER"},
+                  {"scope":"ENVIRONMENT","name":"USER"}
+                ]
+              }
+            ]')
+          ROLE_MAPPINGS_ESC=$(printf "%s" "$ROLE_MAPPINGS" | sed "s/'/''/g")
 
           SQL_TMP=$(mktemp)
           {
-            printf "INSERT INTO gravitee.identity_providers (id, name, type, enabled, sync_mappings, configuration, user_profile_mapping, group_mappings, created_at, updated_at, organization_id, email_required)\n"
-            printf "VALUES ('github','GitHub','GITHUB',true,true,'%s','%s','%s',now(),now(),'DEFAULT',false)\n" "$CONFIG_JSON_ESC" "$USER_PROFILE_ESC" "$GROUP_MAPPINGS_ESC"
-            printf "ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type, enabled=EXCLUDED.enabled, sync_mappings=EXCLUDED.sync_mappings, configuration=EXCLUDED.configuration, user_profile_mapping=EXCLUDED.user_profile_mapping, group_mappings=EXCLUDED.group_mappings, updated_at=now();\n\n"
+            printf "INSERT INTO gravitee.identity_providers (id, name, type, enabled, sync_mappings, configuration, user_profile_mapping, group_mappings, role_mappings, created_at, updated_at, organization_id, email_required)\n"
+            printf "VALUES ('github','GitHub','GITHUB',true,true,'%s','%s','%s','%s',now(),now(),'DEFAULT',false)\n" "$CONFIG_JSON_ESC" "$USER_PROFILE_ESC" "$GROUP_MAPPINGS_ESC" "$ROLE_MAPPINGS_ESC"
+            printf "ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type, enabled=EXCLUDED.enabled, sync_mappings=EXCLUDED.sync_mappings, configuration=EXCLUDED.configuration, user_profile_mapping=EXCLUDED.user_profile_mapping, group_mappings=EXCLUDED.group_mappings, role_mappings=EXCLUDED.role_mappings, updated_at=now();\n\n"
 
             printf "INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)\n"
             printf "VALUES ('github','ENVIRONMENT','DEFAULT',now())\n"

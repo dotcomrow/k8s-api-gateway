@@ -1134,7 +1134,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "4"
     linkerd.io/inject: "disabled"
 spec:
-  schedule: "*/30 * * * *"
+  schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
