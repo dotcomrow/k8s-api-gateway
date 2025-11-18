@@ -107,7 +107,6 @@ spec:
             fi
 
             allowed_tmp=$(mktemp)
-            members_found=0
             api_fail=0
 
             for team in $ALLOWED_TEAMS; do
@@ -131,16 +130,13 @@ spec:
                 count=$(jq 'length' "$body" 2>/dev/null || echo 0)
                 rm -f "$body"
 
-                if [ "$count" -gt 0 ]; then
-                  members_found=1
-                fi
 
                 [ "$count" -lt 100 ] && break
                 page=$((page + 1))
               done
             done
 
-            if [ "$api_fail" -eq 1 ] || [ "$members_found" -eq 0 ]; then
+            if [ "$api_fail" -eq 1 ]; then
               echo "⚠️ Unable to retrieve allowed GitHub members; guard table not updated." >&2
               rm -f "$allowed_tmp"
               return 1
