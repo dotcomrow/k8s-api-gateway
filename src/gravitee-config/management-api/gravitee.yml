@@ -179,17 +179,16 @@ security:
         - read:user
         - read:org
       userMapping:
-        condition: "{#context.attributes['groups'] contains 'github-team-admins' or #context.attributes['groups'] contains 'github-team-publishers'}"
         id: id
         lastname: name
         firstname: name
         email: email
         picture: avatar_url
       groupMapping:
-        - condition: "{#context.attributes['groups'] contains 'github-team-admins'}"
+        - condition: "{#context.attributes['groups'] contains 'gravitee_admin_access'}"
           groups:
             - gravitee_admin_access
-        - condition: "{#context.attributes['groups'] contains 'github-team-publishers'}"
+        - condition: "{#context.attributes['groups'] contains 'gravitee_user_access'}"
           groups:
             - gravitee_user_access
 

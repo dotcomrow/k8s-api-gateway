@@ -898,7 +898,7 @@ metadata:
   namespace: k8s-api-gateway
 data:
   organization: dotcomrow
-  allowedTeams: gravitee-admin-access,gravitee-user-access
+  allowedTeams: gravitee_admin_access,gravitee_user_access
 ---
 apiVersion: v1
 kind: ConfigMap

@@ -84,12 +84,14 @@ spec:
             '{clientId:$clientId,clientSecret:$clientSecret,authorizationEndpoint:$authEndpoint,tokenEndpoint:$tokenEndpoint,userInfoEndpoint:$userInfo,useSystemProxy:false}')
 
           CONFIG_JSON_ESC=$(printf "%s" "$CONFIG_JSON" | sed "s/'/''/g")
+          PROFILE_CONDITION="{#context.attributes['groups'] contains 'gravitee_admin_access' or #context.attributes['groups'] contains 'gravitee_user_access'}"
           USER_PROFILE_MAPPING=$(jq -n \
-            '{id:"sub",firstname:"given_name",lastname:"family_name",email:"email",picture:"picture"}')
+            --arg cond "$PROFILE_CONDITION" \
+            '{condition:$cond,id:"id",firstname:"name",lastname:"name",email:"email",picture:"avatar_url"}')
           USER_PROFILE_ESC=$(printf "%s" "$USER_PROFILE_MAPPING" | sed "s/'/''/g")
 
-          ADMIN_CONDITION='{#jsonPath(#profile, '"'"'$.roles'"'"').contains('"'"'github-team-admins'"'"')}'
-          USER_CONDITION='{#jsonPath(#profile, '"'"'$.roles'"'"').contains('"'"'github-team-publishers'"'"')}'
+          ADMIN_CONDITION="{#context.attributes['groups'] contains 'gravitee_admin_access'}"
+          USER_CONDITION="{#context.attributes['groups'] contains 'gravitee_user_access'}"
           GROUP_MAPPINGS=$(jq -n \
             --arg adminCond "$ADMIN_CONDITION" \
             --arg userCond "$USER_CONDITION" \
