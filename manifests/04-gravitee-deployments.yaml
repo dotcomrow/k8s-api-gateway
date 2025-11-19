@@ -1174,8 +1174,10 @@ data:
     }
 
     refresh_allowed_users_table() {
+      previous_guard=$(psql_cmd -At -c "SELECT COUNT(*) FROM gravitee.github_allowed_users;" 2>/dev/null || echo 0)
       allowed_tmp=$(mktemp)
       api_fail=0
+      total_members=0
 
       for team in $ALLOWED_TEAMS; do
         page=1
@@ -1201,6 +1203,8 @@ data:
 
           jq -r --arg role "$role_label" '.[] | "\(.id),\(.login),\($role)"' "$body" >> "$allowed_tmp"
           count=$(jq 'length' "$body" 2>/dev/null || echo 0)
+          total_members=$((total_members + count))
+          echo "ℹ️ Retrieved ${count} GitHub accounts from team ${team} (role ${role_label})."
           rm -f "$body"
 
           [ "$count" -lt 100 ] && break
@@ -1227,6 +1231,12 @@ data:
         : > "$allowed_sorted"
       fi
       rm -f "$allowed_tmp"
+
+      if [ ! -s "$allowed_sorted" ] && [ "$previous_guard" -gt 0 ]; then
+        echo "⚠️ GitHub API returned zero team members; preserving previous guard snapshot of ${previous_guard} accounts." >&2
+        rm -f "$allowed_sorted"
+        return 1
+      fi
 
       merge_sql=$(mktemp)
       {
