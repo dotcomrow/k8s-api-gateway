@@ -1238,6 +1238,7 @@ data:
         return 1
       fi
 
+      allowed_path=$(printf "%s" "$allowed_sorted" | sed "s/'/''/g")
       merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
@@ -1247,11 +1248,7 @@ data:
         printf "  login varchar(255) NOT NULL,\n"
         printf "  desired_role varchar(16) NOT NULL\n"
         printf ");\n"
-        printf "\\copy tmp_guard_refresh (github_id, login, desired_role) FROM STDIN WITH (FORMAT csv)\n"
-      } > "$merge_sql"
-      cat "$allowed_sorted" >> "$merge_sql"
-      printf "\n\\.\\n" >> "$merge_sql"
-      {
+        printf "\\copy tmp_guard_refresh (github_id, login, desired_role) FROM '%s' WITH (FORMAT csv);\n" "$allowed_path"
         printf "DELETE FROM gravitee.github_allowed_users ga\n"
         printf "WHERE NOT EXISTS (\n"
         printf "  SELECT 1 FROM tmp_guard_refresh tmp WHERE tmp.github_id = ga.github_id\n"
@@ -1268,7 +1265,7 @@ data:
         printf "  REFERENCES gravitee.github_allowed_users (github_id)\n"
         printf "  DEFERRABLE INITIALLY IMMEDIATE;\n"
         printf "COMMIT;\n"
-      } >> "$merge_sql"
+      } > "$merge_sql"
 
       if ! psql_cmd -f "$merge_sql"; then
         echo "⚠️ Failed to merge guard table; aborting refresh." >&2
