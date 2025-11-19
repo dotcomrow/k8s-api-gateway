@@ -338,12 +338,16 @@ spec:
             env_user=$(psql_cmd -At -c "SELECT id FROM gravitee.roles WHERE scope = 'ENVIRONMENT' AND name = 'USER' LIMIT 1;" | tr -d '[:space:]')
 
             if [ -z "$org_admin" ] || [ -z "$org_user" ] || [ -z "$env_admin" ] || [ -z "$env_user" ]; then
-              echo "⚠️ Unable to resolve Gravitee role IDs; skipping membership synchronization." >&2
+              echo "❌ Unable to resolve Gravitee role IDs; aborting membership synchronization." >&2
               return 1
             fi
 
             SQL_TMP=$(mktemp)
             {
+              printf "DELETE FROM gravitee.memberships m\n"
+              printf "WHERE m.member_id IN (SELECT id FROM gravitee.users WHERE source = 'github')\n"
+              printf "  AND NOT EXISTS (SELECT 1 FROM gravitee.roles r WHERE r.id = m.role_id);\n\n"
+
               printf "CREATE TEMP TABLE tmp_allowed AS\n"
               printf "SELECT u.id AS user_id, g.desired_role\n"
               printf "FROM gravitee.users u\n"
@@ -375,7 +379,10 @@ spec:
             exit 1
           fi
 
-          sync_memberships
+          if ! sync_memberships; then
+            echo "❌ Failed to synchronize memberships; aborting configuration." >&2
+            exit 1
+          fi
 
           echo "🧹 Removing any unauthorized GitHub users before enforcing guard..."
           CLEANUP_SQL=$(mktemp)

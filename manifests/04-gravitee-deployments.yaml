@@ -1067,12 +1067,16 @@ data:
       ENV_USER_ROLE=$(psql_cmd -At -c "SELECT id FROM gravitee.roles WHERE scope = 'ENVIRONMENT' AND name = 'USER' LIMIT 1;" | tr -d '[:space:]')
 
       if [ -z "$ORG_ADMIN_ROLE" ] || [ -z "$ORG_USER_ROLE" ] || [ -z "$ENV_ADMIN_ROLE" ] || [ -z "$ENV_USER_ROLE" ]; then
-        echo "⚠️ Unable to resolve Gravitee role IDs; skipping membership sync." >&2
-        return
+        echo "❌ Unable to resolve Gravitee role IDs; cannot synchronize memberships." >&2
+        return 1
       fi
 
       SQL_TMP=$(mktemp)
       {
+        printf "DELETE FROM gravitee.memberships m\n"
+        printf "WHERE m.member_id IN (SELECT id FROM gravitee.users WHERE source='github')\n"
+        printf "  AND NOT EXISTS (SELECT 1 FROM gravitee.roles r WHERE r.id = m.role_id);\n\n"
+
         printf "CREATE TEMP TABLE tmp_allowed AS\n"
         printf "SELECT u.id AS user_id, g.desired_role\n"
         printf "FROM gravitee.users u\n"
@@ -1094,8 +1098,13 @@ data:
         printf "DROP TABLE tmp_allowed;\n"
       } > "$SQL_TMP"
 
-      psql_cmd -f "$SQL_TMP" >/dev/null
+      if ! psql_cmd -f "$SQL_TMP" >/dev/null; then
+        rm -f "$SQL_TMP"
+        return 1
+      fi
+
       rm -f "$SQL_TMP"
+      return 0
     }
 
     refresh_allowed_users_table() {
@@ -1181,7 +1190,9 @@ data:
     ensure_guard_table
     ensure_role_mappings
     if refresh_allowed_users_table; then
-      sync_github_memberships
+      if ! sync_github_memberships; then
+        echo "⚠️ Membership synchronization failed; roles may be outdated." >&2
+      fi
     else
       echo "⚠️ Continuing reconciliation using the previous guard snapshot."
     fi
