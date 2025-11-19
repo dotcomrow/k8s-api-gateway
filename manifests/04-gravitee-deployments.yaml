@@ -1238,6 +1238,25 @@ data:
         return 1
       fi
 
+      values_sql=""
+      while IFS=',' read -r gh login role; do
+        [ -z "$gh" ] && continue
+        login_esc=$(printf "%s" "$login" | sed "s/'/''/g")
+        role_esc=$(printf "%s" "$role" | sed "s/'/''/g")
+        row=$(printf "('%s','%s','%s')" "$gh" "$login_esc" "$role_esc")
+        if [ -z "$values_sql" ]; then
+          values_sql="$row"
+        else
+          values_sql="$values_sql,$row"
+        fi
+      done < "$allowed_sorted"
+
+      if [ -z "$values_sql" ]; then
+        values_clause="SELECT github_id, login, desired_role FROM (SELECT NULL::varchar(64) AS github_id, NULL::varchar(255) AS login, NULL::varchar(16) AS desired_role) WHERE 1=0"
+      else
+        values_clause="VALUES $values_sql"
+      fi
+
       merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
@@ -1247,20 +1266,8 @@ data:
         printf "  login varchar(255) NOT NULL,\n"
         printf "  desired_role varchar(16) NOT NULL\n"
         printf ");\n"
-        printf "DELETE FROM gravitee.github_allowed_users ga\n"
-        printf "WHERE NOT EXISTS (\n"
-        printf "  SELECT 1 FROM tmp_guard_refresh tmp WHERE tmp.github_id = ga.github_id\n"
-        printf ");\n"
-      } > "$merge_sql"
-
-      while IFS=',' read -r gh login role; do
-        [ -z "$gh" ] && continue
-        login_esc=$(printf "%s" "$login" | sed "s/'/''/g")
-        role_esc=$(printf "%s" "$role" | sed "s/'/''/g")
-        printf "INSERT INTO tmp_guard_refresh (github_id, login, desired_role) VALUES ('%s','%s','%s');\n" "$gh" "$login_esc" "$role_esc" >> "$merge_sql"
-      done < "$allowed_sorted"
-
-      {
+        printf "INSERT INTO tmp_guard_refresh (github_id, login, desired_role)\n"
+        printf "%s;\n" "$values_clause"
         printf "DELETE FROM gravitee.github_allowed_users ga\n"
         printf "WHERE NOT EXISTS (\n"
         printf "  SELECT 1 FROM tmp_guard_refresh tmp WHERE tmp.github_id = ga.github_id\n"
@@ -1277,7 +1284,7 @@ data:
         printf "  REFERENCES gravitee.github_allowed_users (github_id)\n"
         printf "  DEFERRABLE INITIALLY IMMEDIATE;\n"
         printf "COMMIT;\n"
-      } >> "$merge_sql"
+      } > "$merge_sql"
 
       if ! psql_cmd -f "$merge_sql"; then
         echo "⚠️ Failed to merge guard table; aborting refresh." >&2
