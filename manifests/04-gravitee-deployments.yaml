@@ -1238,7 +1238,6 @@ data:
         return 1
       fi
 
-      allowed_path="$allowed_sorted"
       merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
@@ -1248,7 +1247,20 @@ data:
         printf "  login varchar(255) NOT NULL,\n"
         printf "  desired_role varchar(16) NOT NULL\n"
         printf ");\n"
-        printf "\\copy tmp_guard_refresh (github_id, login, desired_role) FROM '%s' WITH (FORMAT csv);\n" "$allowed_path"
+        printf "DELETE FROM gravitee.github_allowed_users ga\n"
+        printf "WHERE NOT EXISTS (\n"
+        printf "  SELECT 1 FROM tmp_guard_refresh tmp WHERE tmp.github_id = ga.github_id\n"
+        printf ");\n"
+      } > "$merge_sql"
+
+      while IFS=',' read -r gh login role; do
+        [ -z "$gh" ] && continue
+        login_esc=$(printf "%s" "$login" | sed "s/'/''/g")
+        role_esc=$(printf "%s" "$role" | sed "s/'/''/g")
+        printf "INSERT INTO tmp_guard_refresh (github_id, login, desired_role) VALUES ('%s','%s','%s');\n" "$gh" "$login_esc" "$role_esc" >> "$merge_sql"
+      done < "$allowed_sorted"
+
+      {
         printf "DELETE FROM gravitee.github_allowed_users ga\n"
         printf "WHERE NOT EXISTS (\n"
         printf "  SELECT 1 FROM tmp_guard_refresh tmp WHERE tmp.github_id = ga.github_id\n"
@@ -1265,7 +1277,7 @@ data:
         printf "  REFERENCES gravitee.github_allowed_users (github_id)\n"
         printf "  DEFERRABLE INITIALLY IMMEDIATE;\n"
         printf "COMMIT;\n"
-      } > "$merge_sql"
+      } >> "$merge_sql"
 
       if ! psql_cmd -f "$merge_sql"; then
         echo "⚠️ Failed to merge guard table; aborting refresh." >&2
