@@ -1251,12 +1251,6 @@ data:
         fi
       done < "$allowed_sorted"
 
-      if [ -z "$values_sql" ]; then
-        values_clause="SELECT github_id, login, desired_role FROM (SELECT NULL::varchar(64) AS github_id, NULL::varchar(255) AS login, NULL::varchar(16) AS desired_role) WHERE 1=0"
-      else
-        values_clause="VALUES $values_sql"
-      fi
-
       merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
@@ -1266,8 +1260,13 @@ data:
         printf "  login varchar(255) NOT NULL,\n"
         printf "  desired_role varchar(16) NOT NULL\n"
         printf ");\n"
-        printf "INSERT INTO tmp_guard_refresh (github_id, login, desired_role)\n"
-        printf "%s;\n" "$values_clause"
+        if [ -z "$values_sql" ]; then
+          printf "INSERT INTO tmp_guard_refresh (github_id, login, desired_role)\n"
+          printf "SELECT github_id, login, desired_role FROM (SELECT NULL::varchar(64) AS github_id, NULL::varchar(255) AS login, NULL::varchar(16) AS desired_role) WHERE 1=0;\n"
+        else
+          printf "INSERT INTO tmp_guard_refresh (github_id, login, desired_role)\n"
+          printf "VALUES %s;\n" "$values_sql"
+        fi
         printf "DELETE FROM gravitee.github_allowed_users ga\n"
         printf "WHERE NOT EXISTS (\n"
         printf "  SELECT 1 FROM tmp_guard_refresh tmp WHERE tmp.github_id = ga.github_id\n"
