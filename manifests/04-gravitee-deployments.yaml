@@ -1228,27 +1228,35 @@ data:
       fi
       rm -f "$allowed_tmp"
 
-      copy_sql=$(mktemp)
+      merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
-        printf "ALTER TABLE gravitee.users DROP CONSTRAINT IF EXISTS fk_github_allowed;\n"
-        printf "DELETE FROM gravitee.github_allowed_users;\n"
-        printf "\\copy gravitee.github_allowed_users (github_id, login, desired_role) FROM STDIN WITH (FORMAT csv);\n"
-        printf "ALTER TABLE gravitee.users\n"
-        printf "  ADD CONSTRAINT fk_github_allowed\n"
-        printf "  FOREIGN KEY (github_id)\n"
-        printf "  REFERENCES gravitee.github_allowed_users (github_id)\n"
-        printf "  DEFERRABLE INITIALLY IMMEDIATE;\n"
+        printf "CREATE TEMP TABLE tmp_guard_refresh (\n"
+        printf "  github_id varchar(64) PRIMARY KEY,\n"
+        printf "  login varchar(255) NOT NULL,\n"
+        printf "  desired_role varchar(16) NOT NULL\n"
+        printf ");\n"
+        printf "\\copy tmp_guard_refresh (github_id, login, desired_role) FROM STDIN WITH (FORMAT csv);\n"
+        printf "DELETE FROM gravitee.github_allowed_users ga\n"
+        printf "WHERE NOT EXISTS (\n"
+        printf "  SELECT 1 FROM tmp_guard_refresh tmp WHERE tmp.github_id = ga.github_id\n"
+        printf ");\n"
+        printf "INSERT INTO gravitee.github_allowed_users AS ga (github_id, login, desired_role)\n"
+        printf "SELECT github_id, login, desired_role FROM tmp_guard_refresh\n"
+        printf "ON CONFLICT (github_id) DO UPDATE SET\n"
+        printf "  login = EXCLUDED.login,\n"
+        printf "  desired_role = EXCLUDED.desired_role,\n"
+        printf "  synced_at = now();\n"
         printf "COMMIT;\n"
-      } > "$copy_sql"
+      } > "$merge_sql"
 
-      if ! psql_cmd -f "$copy_sql" < "$allowed_sorted"; then
-        echo "⚠️ Failed to replace guard table; aborting refresh." >&2
-        rm -f "$allowed_sorted" "$copy_sql"
+      if ! psql_cmd -f "$merge_sql" < "$allowed_sorted"; then
+        echo "⚠️ Failed to merge guard table; aborting refresh." >&2
+        rm -f "$allowed_sorted" "$merge_sql"
         return 1
       fi
 
-      rm -f "$copy_sql"
+      rm -f "$merge_sql"
 
       rm -f "$allowed_sorted"
 
