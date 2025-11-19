@@ -95,9 +95,76 @@ spec:
             exit 1
           fi
 
-          ALLOWED_TEAMS=$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')
-          ADMIN_TEAM_SLUG="${GITHUB_ADMIN_TEAM:-}"
-          USER_TEAM_SLUG="${GITHUB_USER_TEAM:-}"
+          slugify_team() {
+            value=$(printf '%s' "$1" | tr -d '\r')
+            value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+            value=$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')
+            if printf '%s' "$value" | grep -Eq '^[a-z0-9][a-z0-9_-]*$'; then
+              printf '%s' "$value"
+              return
+            fi
+            value=$(printf '%s' "$value" | tr ' ' '-')
+            value=$(printf '%s' "$value" | sed -e 's/[^a-z0-9_-]/-/g' -e 's/-\{2,\}/-/g' -e 's/^-//' -e 's/-$//')
+            printf '%s' "$value"
+          }
+
+          normalize_team_list() {
+            printf '%s' "$1" | tr ',' '\n' | while IFS= read -r entry; do
+              slug=$(slugify_team "$entry")
+              [ -z "$slug" ] && continue
+              printf '%s\n' "$slug"
+            done
+          }
+
+          build_team_condition() {
+            slugs="$1"
+            fallback="$2"
+            targets="$slugs"
+            if [ -z "$targets" ]; then
+              targets="$fallback"
+            fi
+
+            expr=""
+            for slug in $targets; do
+              [ -z "$slug" ] && continue
+              cond="#jsonPath(#profile, '$.teams[*].slug').contains('${slug}')"
+              if [ -z "$expr" ]; then
+                expr="$cond"
+              else
+                expr="$expr or $cond"
+              fi
+            done
+            printf "{%s}" "$expr"
+          }
+
+          is_admin_team() {
+            slug="$1"
+            for admin in $ADMIN_TEAM_SLUGS; do
+              if [ "$slug" = "$admin" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          ALLOWED_TEAMS=$(normalize_team_list "$GITHUB_ALLOWED_TEAMS")
+          ADMIN_TEAM_SLUGS=$(normalize_team_list "$GITHUB_ADMIN_TEAM")
+          USER_TEAM_SLUGS=$(normalize_team_list "$GITHUB_USER_TEAM")
+
+          if [ -z "$ALLOWED_TEAMS" ]; then
+            echo "❌ No GitHub teams configured in GITHUB_ALLOWED_TEAMS." >&2
+            exit 1
+          fi
+
+          if [ -z "$ADMIN_TEAM_SLUGS" ]; then
+            echo "❌ Unable to parse admin team slug(s); check GITHUB_ADMIN_TEAM." >&2
+            exit 1
+          fi
+
+          if [ -z "$USER_TEAM_SLUGS" ]; then
+            echo "❌ Unable to parse user team slug(s); check GITHUB_USER_TEAM." >&2
+            exit 1
+          fi
 
           psql_cmd() {
             PGPASSWORD="$YUGABYTE_PASSWORD" \
@@ -139,7 +206,7 @@ spec:
                 fi
 
                 role_label="USER"
-                if [ -n "$ADMIN_TEAM_SLUG" ] && [ "$team" = "$ADMIN_TEAM_SLUG" ]; then
+                if is_admin_team "$team"; then
                   role_label="ADMIN"
                 fi
 
@@ -213,14 +280,14 @@ spec:
             '{clientId:$clientId,clientSecret:$clientSecret,authorizationEndpoint:$authEndpoint,tokenEndpoint:$tokenEndpoint,userInfoEndpoint:$userInfo,useSystemProxy:false}')
 
           CONFIG_JSON_ESC=$(printf "%s" "$CONFIG_JSON" | sed "s/'/''/g")
-          PROFILE_CONDITION="{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access') or #jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
+          ADMIN_CONDITION=$(build_team_condition "$ADMIN_TEAM_SLUGS" "gravitee_admin_access")
+          USER_CONDITION=$(build_team_condition "$USER_TEAM_SLUGS" "gravitee_user_access")
+          PROFILE_CONDITION=$(build_team_condition "$ALLOWED_TEAMS" "gravitee_admin_access gravitee_user_access")
           USER_PROFILE_MAPPING=$(jq -n \
             --arg cond "$PROFILE_CONDITION" \
             '{condition:$cond,id:"id",firstname:"name",lastname:"name",email:"email",picture:"avatar_url"}')
           USER_PROFILE_ESC=$(printf "%s" "$USER_PROFILE_MAPPING" | sed "s/'/''/g")
 
-          ADMIN_CONDITION="{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access')}"
-          USER_CONDITION="{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
           GROUP_MAPPINGS=$(jq -n \
             --arg adminCond "$ADMIN_CONDITION" \
             --arg userCond "$USER_CONDITION" \

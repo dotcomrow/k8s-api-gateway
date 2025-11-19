@@ -930,11 +930,74 @@ data:
       exit 1
     fi
 
-    ALLOWED_TEAMS=$(printf '%s' "$GITHUB_ALLOWED_TEAMS" | tr ',' ' ')
-    ADMIN_TEAM_SLUG="$GITHUB_ADMIN_TEAM"
-    USER_TEAM_SLUG="$GITHUB_USER_TEAM"
+    slugify_team() {
+      value=$(printf '%s' "$1" | tr -d '\r')
+      value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+      value=$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')
+      if printf '%s' "$value" | grep -Eq '^[a-z0-9][a-z0-9_-]*$'; then
+        printf '%s' "$value"
+        return
+      fi
+      value=$(printf '%s' "$value" | tr ' ' '-')
+      value=$(printf '%s' "$value" | sed -e 's/[^a-z0-9_-]/-/g' -e 's/-\{2,\}/-/g' -e 's/^-//' -e 's/-$//')
+      printf '%s' "$value"
+    }
+
+    normalize_team_list() {
+      printf '%s' "$1" | tr ',' '\n' | while IFS= read -r entry; do
+        slug=$(slugify_team "$entry")
+        [ -z "$slug" ] && continue
+        printf '%s\n' "$slug"
+      done
+    }
+
+    is_admin_team() {
+      team_slug="$1"
+      for admin in $ADMIN_TEAM_SLUGS; do
+        if [ "$team_slug" = "$admin" ]; then
+          return 0
+        fi
+      done
+      return 1
+    }
+
+    build_team_condition() {
+      slugs="$1"
+      fallback="$2"
+      targets="$slugs"
+      if [ -z "$targets" ]; then
+        targets="$fallback"
+      fi
+
+      expr=""
+      for slug in $targets; do
+        [ -z "$slug" ] && continue
+        cond="#jsonPath(#profile, '$.teams[*].slug').contains('${slug}')"
+        if [ -z "$expr" ]; then
+          expr="$cond"
+        else
+          expr="$expr or $cond"
+        fi
+      done
+      printf "{%s}" "$expr"
+    }
+
+    ALLOWED_TEAMS=$(normalize_team_list "$GITHUB_ALLOWED_TEAMS")
+    ADMIN_TEAM_SLUGS=$(normalize_team_list "$GITHUB_ADMIN_TEAM")
+    USER_TEAM_SLUGS=$(normalize_team_list "$GITHUB_USER_TEAM")
+
     if [ -z "$ALLOWED_TEAMS" ]; then
       echo "❌ No GitHub teams configured in GITHUB_ALLOWED_TEAMS." >&2
+      exit 1
+    fi
+
+    if [ -z "$ADMIN_TEAM_SLUGS" ]; then
+      echo "❌ Unable to parse admin team slug(s); check GITHUB_ADMIN_TEAM." >&2
+      exit 1
+    fi
+
+    if [ -z "$USER_TEAM_SLUGS" ]; then
+      echo "❌ Unable to parse user team slug(s); check GITHUB_USER_TEAM." >&2
       exit 1
     fi
 
@@ -948,10 +1011,8 @@ data:
     }
 
     ensure_role_mappings() {
-      admin_slug="${ADMIN_TEAM_SLUG:-gravitee_admin_access}"
-      user_slug="${USER_TEAM_SLUG:-gravitee_user_access}"
-      admin_cond="{#jsonPath(#profile, '$.teams[*].slug').contains('${admin_slug}')}"
-      user_cond="{#jsonPath(#profile, '$.teams[*].slug').contains('${user_slug}')}"
+      admin_cond=$(build_team_condition "$ADMIN_TEAM_SLUGS" "gravitee_admin_access")
+      user_cond=$(build_team_condition "$USER_TEAM_SLUGS" "gravitee_user_access")
 
       group_json=$(jq -n \
         --arg admin "$admin_cond" \
@@ -1131,7 +1192,7 @@ data:
           fi
 
           role_label="USER"
-          if [ -n "$ADMIN_TEAM_SLUG" ] && [ "$team" = "$ADMIN_TEAM_SLUG" ]; then
+          if is_admin_team "$team"; then
             role_label="ADMIN"
           fi
 
