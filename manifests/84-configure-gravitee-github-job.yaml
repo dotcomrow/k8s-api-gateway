@@ -428,12 +428,12 @@ spec:
 
               printf "INSERT INTO gravitee.memberships (id, member_id, member_type, reference_type, reference_id, role_id)\n"
               printf "SELECT gen_random_uuid(), user_id, 'USER', 'ORGANIZATION', 'DEFAULT',\n"
-              printf "  CASE WHEN desired_role = 'ADMIN' THEN '%s' ELSE '%s' END\n"
+              printf "  CASE WHEN upper(trim(desired_role)) = 'ADMIN' THEN '%s' ELSE '%s' END\n"
               printf "FROM tmp_allowed;\n\n" "$org_admin" "$org_user"
 
               printf "INSERT INTO gravitee.memberships (id, member_id, member_type, reference_type, reference_id, role_id)\n"
               printf "SELECT gen_random_uuid(), user_id, 'USER', 'ENVIRONMENT', 'DEFAULT',\n"
-              printf "  CASE WHEN desired_role = 'ADMIN' THEN '%s' ELSE '%s' END\n"
+              printf "  CASE WHEN upper(trim(desired_role)) = 'ADMIN' THEN '%s' ELSE '%s' END\n"
               printf "FROM tmp_allowed;\n\n" "$env_admin" "$env_user"
 
               printf "DROP TABLE tmp_allowed;\n"
