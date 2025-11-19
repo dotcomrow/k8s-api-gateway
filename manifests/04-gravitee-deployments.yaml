@@ -1254,6 +1254,7 @@ data:
       merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
+        printf "LOCK TABLE gravitee.github_allowed_users IN SHARE ROW EXCLUSIVE MODE;\n"
         printf "ALTER TABLE gravitee.users DROP CONSTRAINT IF EXISTS fk_github_allowed;\n"
         printf "CREATE TEMP TABLE tmp_guard_refresh (\n"
         printf "  github_id varchar(64) PRIMARY KEY,\n"
