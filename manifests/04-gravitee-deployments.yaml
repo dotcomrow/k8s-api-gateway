@@ -948,8 +948,10 @@ data:
     }
 
     ensure_role_mappings() {
-      admin_cond="{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access')}"
-      user_cond="{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
+      admin_slug="${ADMIN_TEAM_SLUG:-gravitee_admin_access}"
+      user_slug="${USER_TEAM_SLUG:-gravitee_user_access}"
+      admin_cond="{#jsonPath(#profile, '$.teams[*].slug').contains('${admin_slug}')}"
+      user_cond="{#jsonPath(#profile, '$.teams[*].slug').contains('${user_slug}')}"
 
       group_json=$(jq -n \
         --arg admin "$admin_cond" \
