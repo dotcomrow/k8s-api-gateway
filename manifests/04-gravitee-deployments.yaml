@@ -1260,12 +1260,12 @@ data:
       merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
-        printf "WITH incoming AS (%s)\n" "$values_clause"
+        printf "WITH incoming(github_id, login, desired_role) AS (%s)\n" "$values_clause"
         printf "DELETE FROM gravitee.github_allowed_users ga\n"
         printf "WHERE NOT EXISTS (\n"
         printf "  SELECT 1 FROM incoming i WHERE i.github_id = ga.github_id\n"
         printf ");\n"
-        printf "WITH incoming AS (%s)\n" "$values_clause"
+        printf "WITH incoming(github_id, login, desired_role) AS (%s)\n" "$values_clause"
         printf "INSERT INTO gravitee.github_allowed_users AS ga (github_id, login, desired_role)\n"
         printf "SELECT github_id, login, desired_role FROM incoming\n"
         printf "ON CONFLICT (github_id) DO UPDATE SET\n"
