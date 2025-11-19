@@ -263,7 +263,7 @@ spec:
               printf "  login varchar(255) NOT NULL,\n"
               printf "  desired_role varchar(16) NOT NULL\n"
               printf ");\n"
-              printf "\\copy tmp_guard_refresh (github_id, login, desired_role) FROM STDIN WITH (FORMAT csv);\n"
+              printf "\\copy tmp_guard_refresh (github_id, login, desired_role) FROM STDIN WITH (FORMAT csv)\n"
             } > "$merge_sql"
             cat "$allowed_sorted" >> "$merge_sql"
             printf "\\.\\n" >> "$merge_sql"
