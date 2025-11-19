@@ -254,7 +254,7 @@ spec:
               return 1
             fi
 
-            allowed_path=$(printf "%s" "$allowed_sorted" | sed "s/'/''/g")
+            allowed_path="$allowed_sorted"
             merge_sql=$(mktemp)
             {
               printf "BEGIN;\n"
