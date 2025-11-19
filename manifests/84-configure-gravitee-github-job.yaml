@@ -367,10 +367,13 @@ spec:
               printf "FROM tmp_allowed;\n\n" "$env_admin" "$env_user"
 
               printf "DROP TABLE tmp_allowed;\n"
+              printf "SELECT COUNT(*) AS synced_user_count FROM gravitee.users u\n"
+              printf "WHERE u.id IN (SELECT id FROM gravitee.users WHERE source='github');\n"
             } > "$SQL_TMP"
 
             psql_cmd -f "$SQL_TMP" >/dev/null
             rm -f "$SQL_TMP"
+            echo "✅ Membership synchronization completed for GitHub users."
             return 0
           }
 
@@ -379,6 +382,7 @@ spec:
             exit 1
           fi
 
+          echo "🔄 Synchronizing Gravitee memberships based on GitHub teams..."
           if ! sync_memberships; then
             echo "❌ Failed to synchronize memberships; aborting configuration." >&2
             exit 1

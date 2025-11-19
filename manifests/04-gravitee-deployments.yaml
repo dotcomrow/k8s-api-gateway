@@ -1098,6 +1098,8 @@ data:
         printf "FROM tmp_allowed;\n\n" "$ENV_ADMIN_ROLE" "$ENV_USER_ROLE"
 
         printf "DROP TABLE tmp_allowed;\n"
+        printf "SELECT COUNT(*) AS synced_user_count FROM gravitee.users u\n"
+        printf "WHERE u.id IN (SELECT id FROM gravitee.users WHERE source='github');\n"
       } > "$SQL_TMP"
 
       if ! psql_cmd -f "$SQL_TMP" >/dev/null; then
@@ -1106,6 +1108,7 @@ data:
       fi
 
       rm -f "$SQL_TMP"
+      echo "✅ Membership synchronization completed for GitHub users."
       return 0
     }
 
@@ -1192,6 +1195,7 @@ data:
     ensure_guard_table
     ensure_role_mappings
     if refresh_allowed_users_table; then
+      echo "🔄 Synchronizing Gravitee memberships based on GitHub teams..."
       if ! sync_github_memberships; then
         echo "⚠️ Membership synchronization failed; roles may be outdated." >&2
       fi
