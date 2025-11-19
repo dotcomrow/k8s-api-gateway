@@ -263,7 +263,11 @@ spec:
               printf "  login varchar(255) NOT NULL,\n"
               printf "  desired_role varchar(16) NOT NULL\n"
               printf ");\n"
-              printf "\\copy tmp_guard_refresh (github_id, login, desired_role) FROM :CSV_FILE WITH (FORMAT csv);\n"
+              printf "\\copy tmp_guard_refresh (github_id, login, desired_role) FROM STDIN WITH (FORMAT csv);\n"
+            } > "$merge_sql"
+            cat "$allowed_sorted" >> "$merge_sql"
+            printf "\\.\\n" >> "$merge_sql"
+            {
               printf "DELETE FROM gravitee.github_allowed_users ga\n"
               printf "WHERE NOT EXISTS (\n"
               printf "  SELECT 1 FROM tmp_guard_refresh tmp WHERE tmp.github_id = ga.github_id\n"
@@ -280,9 +284,9 @@ spec:
               printf "  REFERENCES gravitee.github_allowed_users (github_id)\n"
               printf "  DEFERRABLE INITIALLY IMMEDIATE;\n"
               printf "COMMIT;\n"
-            } > "$merge_sql"
+            } >> "$merge_sql"
 
-            if ! psql_cmd -v ON_ERROR_STOP=1 -v CSV_FILE="$allowed_sorted" -f "$merge_sql"; then
+            if ! psql_cmd -v ON_ERROR_STOP=1 -f "$merge_sql"; then
               echo "⚠️ Failed to populate guard table during seed." >&2
               rm -f "$allowed_sorted" "$merge_sql"
               return 1
