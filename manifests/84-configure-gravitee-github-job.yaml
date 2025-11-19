@@ -247,6 +247,7 @@ spec:
             merge_sql=$(mktemp)
             {
               printf "BEGIN;\n"
+              printf "ALTER TABLE gravitee.users DROP CONSTRAINT IF EXISTS fk_github_allowed;\n"
               printf "CREATE TEMP TABLE tmp_guard_refresh (\n"
               printf "  github_id varchar(64) PRIMARY KEY,\n"
               printf "  login varchar(255) NOT NULL,\n"
@@ -263,6 +264,11 @@ spec:
               printf "  login = EXCLUDED.login,\n"
               printf "  desired_role = EXCLUDED.desired_role,\n"
               printf "  synced_at = now();\n"
+              printf "ALTER TABLE gravitee.users\n"
+              printf "  ADD CONSTRAINT fk_github_allowed\n"
+              printf "  FOREIGN KEY (github_id)\n"
+              printf "  REFERENCES gravitee.github_allowed_users (github_id)\n"
+              printf "  DEFERRABLE INITIALLY IMMEDIATE;\n"
               printf "COMMIT;\n"
             } > "$merge_sql"
 
@@ -278,6 +284,59 @@ spec:
 
             count=$(psql_cmd -At -c "SELECT COUNT(*) FROM gravitee.github_allowed_users;" 2>/dev/null || echo 0)
             echo "✅ Guard table seeded with ${count} GitHub accounts."
+            return 0
+          }
+
+          reconcile_github_users() {
+            SQL_TMP=$(mktemp)
+            {
+              printf "BEGIN;\n"
+              printf "CREATE TEMP TABLE tmp_allowed_snapshot AS\n"
+              printf "SELECT github_id, login FROM gravitee.github_allowed_users;\n\n"
+
+              printf "UPDATE gravitee.users u\n"
+              printf "SET github_id = snap.github_id,\n"
+              printf "    updated_at = now()\n"
+              printf "FROM tmp_allowed_snapshot snap\n"
+              printf "WHERE u.source = 'github'\n"
+              printf "  AND u.source_id = snap.github_id\n"
+              printf "  AND (u.github_id IS DISTINCT FROM snap.github_id);\n\n"
+
+              printf "INSERT INTO gravitee.users (\n"
+              printf "  id, created_at, updated_at, firstname, lastname, organization_id,\n"
+              printf "  source, source_id, github_id, status, login_count, newsletter_subscribed,\n"
+              printf "  picture, password, email, first_connection_at, last_connection_at\n"
+              printf ")\n"
+              printf "SELECT gen_random_uuid(), now(), now(), snap.login, snap.login, 'DEFAULT',\n"
+              printf "  'github', snap.github_id, snap.github_id, 'ACTIVE', 0, false,\n"
+              printf "  'https://avatars.githubusercontent.com/u/' || snap.github_id || '?v=4',\n"
+              printf "  NULL, NULL, NULL, NULL\n"
+              printf "FROM tmp_allowed_snapshot snap\n"
+              printf "WHERE NOT EXISTS (\n"
+              printf "  SELECT 1 FROM gravitee.users u\n"
+              printf "  WHERE u.source = 'github'\n"
+              printf "    AND u.source_id = snap.github_id);\n\n"
+
+              printf "WITH orphans AS (\n"
+              printf "  SELECT id FROM gravitee.users u\n"
+              printf "  WHERE u.source = 'github'\n"
+              printf "    AND NOT EXISTS (\n"
+              printf "      SELECT 1 FROM tmp_allowed_snapshot snap WHERE snap.github_id = u.source_id)\n"
+              printf ")\n"
+              printf "DELETE FROM gravitee.memberships WHERE member_id IN (SELECT id FROM orphans);\n"
+              printf "DELETE FROM gravitee.users WHERE id IN (SELECT id FROM orphans);\n\n"
+
+              printf "DROP TABLE IF EXISTS tmp_allowed_snapshot;\n"
+              printf "COMMIT;\n"
+            } > "$SQL_TMP"
+
+            if ! psql_cmd -f "$SQL_TMP" >/dev/null; then
+              echo "⚠️ Failed to reconcile GitHub user records." >&2
+              rm -f "$SQL_TMP"
+              return 1
+            fi
+
+            rm -f "$SQL_TMP"
             return 0
           }
 
@@ -464,37 +523,17 @@ spec:
             exit 1
           fi
 
+          echo "👥 Reconciling GitHub user accounts directly in Gravitee..."
+          if ! reconcile_github_users; then
+            echo "❌ Failed to reconcile GitHub users; aborting configuration." >&2
+            exit 1
+          fi
+
           echo "🔄 Synchronizing Gravitee memberships based on GitHub teams..."
           if ! sync_memberships; then
             echo "❌ Failed to synchronize memberships; aborting configuration." >&2
             exit 1
           fi
-
-          echo "🧹 Removing any unauthorized GitHub users before enforcing guard..."
-          CLEANUP_SQL=$(mktemp)
-          {
-            printf "DELETE FROM gravitee.memberships\n"
-            printf "WHERE member_id IN (\n"
-            printf "  SELECT id FROM gravitee.users u\n"
-            printf "  WHERE u.source = 'github'\n"
-            printf "    AND NOT EXISTS (\n"
-            printf "      SELECT 1 FROM gravitee.github_allowed_users allowed\n"
-            printf "      WHERE allowed.github_id = u.source_id\n"
-            printf "    )\n"
-            printf ");\n\n"
-
-            printf "DELETE FROM gravitee.users\n"
-            printf "WHERE id IN (\n"
-            printf "  SELECT id FROM gravitee.users u\n"
-            printf "  WHERE u.source = 'github'\n"
-            printf "    AND NOT EXISTS (\n"
-            printf "      SELECT 1 FROM gravitee.github_allowed_users allowed\n"
-            printf "      WHERE allowed.github_id = u.source_id\n"
-            printf "    )\n"
-            printf ");\n"
-          } > "$CLEANUP_SQL"
-          psql_cmd -f "$CLEANUP_SQL" >/dev/null
-          rm -f "$CLEANUP_SQL"
 
           echo "🔐 Enforcing GitHub guard constraint..."
           FK_SQL=$(mktemp)
