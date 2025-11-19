@@ -1251,27 +1251,23 @@ data:
         fi
       done < "$allowed_sorted"
 
+      if [ -z "$values_sql" ]; then
+        values_clause="SELECT NULL::varchar(64) AS github_id, NULL::varchar(255) AS login, NULL::varchar(16) AS desired_role WHERE 1=0"
+      else
+        values_clause="VALUES $values_sql"
+      fi
+
       merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
-        printf "CREATE TEMP TABLE tmp_guard_refresh (\n"
-        printf "  github_id varchar(64) PRIMARY KEY,\n"
-        printf "  login varchar(255) NOT NULL,\n"
-        printf "  desired_role varchar(16) NOT NULL\n"
-        printf ");\n"
-        if [ -z "$values_sql" ]; then
-          printf "INSERT INTO tmp_guard_refresh (github_id, login, desired_role)\n"
-          printf "SELECT github_id, login, desired_role FROM (SELECT NULL::varchar(64) AS github_id, NULL::varchar(255) AS login, NULL::varchar(16) AS desired_role) WHERE 1=0;\n"
-        else
-          printf "INSERT INTO tmp_guard_refresh (github_id, login, desired_role)\n"
-          printf "VALUES %s;\n" "$values_sql"
-        fi
+        printf "WITH incoming AS (%s)\n" "$values_clause"
         printf "DELETE FROM gravitee.github_allowed_users ga\n"
         printf "WHERE NOT EXISTS (\n"
-        printf "  SELECT 1 FROM tmp_guard_refresh tmp WHERE tmp.github_id = ga.github_id\n"
+        printf "  SELECT 1 FROM incoming i WHERE i.github_id = ga.github_id\n"
         printf ");\n"
+        printf "WITH incoming AS (%s)\n" "$values_clause"
         printf "INSERT INTO gravitee.github_allowed_users AS ga (github_id, login, desired_role)\n"
-        printf "SELECT github_id, login, desired_role FROM tmp_guard_refresh\n"
+        printf "SELECT github_id, login, desired_role FROM incoming\n"
         printf "ON CONFLICT (github_id) DO UPDATE SET\n"
         printf "  login = EXCLUDED.login,\n"
         printf "  desired_role = EXCLUDED.desired_role,\n"
