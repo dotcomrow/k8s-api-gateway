@@ -930,6 +930,9 @@ data:
       exit 1
     fi
 
+    DEFAULT_ADMIN_TEAM="gravitee_admin_access"
+    DEFAULT_USER_TEAM="gravitee_user_access"
+
     slugify_team() {
       value=$(printf '%s' "$1" | tr -d '\r')
       value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
@@ -992,13 +995,13 @@ data:
     fi
 
     if [ -z "$ADMIN_TEAM_SLUGS" ]; then
-      echo "❌ Unable to parse admin team slug(s); check GITHUB_ADMIN_TEAM." >&2
-      exit 1
+      ADMIN_TEAM_SLUGS="$DEFAULT_ADMIN_TEAM"
+      echo "⚠️ GITHUB_ADMIN_TEAM produced no valid slugs; defaulting to ${DEFAULT_ADMIN_TEAM}." >&2
     fi
 
     if [ -z "$USER_TEAM_SLUGS" ]; then
-      echo "❌ Unable to parse user team slug(s); check GITHUB_USER_TEAM." >&2
-      exit 1
+      USER_TEAM_SLUGS="$DEFAULT_USER_TEAM"
+      echo "⚠️ GITHUB_USER_TEAM produced no valid slugs; defaulting to ${DEFAULT_USER_TEAM}." >&2
     fi
 
     psql_cmd() {
@@ -1011,8 +1014,8 @@ data:
     }
 
     ensure_role_mappings() {
-      admin_cond=$(build_team_condition "$ADMIN_TEAM_SLUGS" "gravitee_admin_access")
-      user_cond=$(build_team_condition "$USER_TEAM_SLUGS" "gravitee_user_access")
+      admin_cond=$(build_team_condition "$ADMIN_TEAM_SLUGS" "$DEFAULT_ADMIN_TEAM")
+      user_cond=$(build_team_condition "$USER_TEAM_SLUGS" "$DEFAULT_USER_TEAM")
 
       group_json=$(jq -n \
         --arg admin "$admin_cond" \

@@ -95,6 +95,9 @@ spec:
             exit 1
           fi
 
+          DEFAULT_ADMIN_TEAM="gravitee_admin_access"
+          DEFAULT_USER_TEAM="gravitee_user_access"
+
           slugify_team() {
             value=$(printf '%s' "$1" | tr -d '\r')
             value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
@@ -157,13 +160,13 @@ spec:
           fi
 
           if [ -z "$ADMIN_TEAM_SLUGS" ]; then
-            echo "❌ Unable to parse admin team slug(s); check GITHUB_ADMIN_TEAM." >&2
-            exit 1
+            ADMIN_TEAM_SLUGS="$DEFAULT_ADMIN_TEAM"
+            echo "⚠️ GITHUB_ADMIN_TEAM produced no valid slugs; defaulting to ${DEFAULT_ADMIN_TEAM}." >&2
           fi
 
           if [ -z "$USER_TEAM_SLUGS" ]; then
-            echo "❌ Unable to parse user team slug(s); check GITHUB_USER_TEAM." >&2
-            exit 1
+            USER_TEAM_SLUGS="$DEFAULT_USER_TEAM"
+            echo "⚠️ GITHUB_USER_TEAM produced no valid slugs; defaulting to ${DEFAULT_USER_TEAM}." >&2
           fi
 
           psql_cmd() {
@@ -280,9 +283,9 @@ spec:
             '{clientId:$clientId,clientSecret:$clientSecret,authorizationEndpoint:$authEndpoint,tokenEndpoint:$tokenEndpoint,userInfoEndpoint:$userInfo,useSystemProxy:false}')
 
           CONFIG_JSON_ESC=$(printf "%s" "$CONFIG_JSON" | sed "s/'/''/g")
-          ADMIN_CONDITION=$(build_team_condition "$ADMIN_TEAM_SLUGS" "gravitee_admin_access")
-          USER_CONDITION=$(build_team_condition "$USER_TEAM_SLUGS" "gravitee_user_access")
-          PROFILE_CONDITION=$(build_team_condition "$ALLOWED_TEAMS" "gravitee_admin_access gravitee_user_access")
+          ADMIN_CONDITION=$(build_team_condition "$ADMIN_TEAM_SLUGS" "$DEFAULT_ADMIN_TEAM")
+          USER_CONDITION=$(build_team_condition "$USER_TEAM_SLUGS" "$DEFAULT_USER_TEAM")
+          PROFILE_CONDITION=$(build_team_condition "$ALLOWED_TEAMS" "${DEFAULT_ADMIN_TEAM} ${DEFAULT_USER_TEAM}")
           USER_PROFILE_MAPPING=$(jq -n \
             --arg cond "$PROFILE_CONDITION" \
             '{condition:$cond,id:"id",firstname:"name",lastname:"name",email:"email",picture:"avatar_url"}')
