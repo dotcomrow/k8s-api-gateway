@@ -1232,10 +1232,8 @@ data:
       fi
       rm -f "$allowed_tmp"
 
-      if [ ! -s "$allowed_sorted" ] && [ "$previous_guard" -gt 0 ]; then
-        echo "⚠️ GitHub API returned zero team members; preserving previous guard snapshot of ${previous_guard} accounts." >&2
-        rm -f "$allowed_sorted"
-        return 1
+      if [ ! -s "$allowed_sorted" ]; then
+        echo "⚠️ GitHub API returned zero members across all teams; treating as authoritative empty set." >&2
       fi
 
       values_sql=""
