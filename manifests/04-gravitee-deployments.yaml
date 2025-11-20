@@ -1258,7 +1258,7 @@ data:
       merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
-        printf "SELECT pg_advisory_xact_lock(42857421);\n"
+        printf "SELECT pg_advisory_lock(42857421);\n"
         printf "ALTER TABLE gravitee.users DROP CONSTRAINT IF EXISTS fk_github_allowed;\n"
         printf "WITH incoming(github_id, login, desired_role) AS (%s)\n" "$values_clause"
         printf "DELETE FROM gravitee.github_allowed_users ga\n"
@@ -1280,25 +1280,7 @@ data:
         printf "COMMIT;\n"
       } > "$merge_sql"
 
-      max_attempts=10
-      attempt=1
-      success=0
-      while [ $attempt -le $max_attempts ]; do
-        if output=$(psql_cmd -f "$merge_sql" 2>&1); then
-          success=1
-          break
-        fi
-        if printf '%s' "$output" | grep -qi "could not serialize access due to concurrent update"; then
-          echo "⚠️ Guard merge serialization failure (attempt ${attempt}/${max_attempts}); retrying..." >&2
-          attempt=$((attempt + 1))
-          sleep $((attempt * 2))
-          continue
-        fi
-        printf '%s\n' "$output" >&2
-        break
-      done
-
-      if [ $success -ne 1 ]; then
+      if ! psql_cmd -f "$merge_sql"; then
         echo "⚠️ Failed to merge guard table; aborting refresh." >&2
         rm -f "$allowed_sorted" "$merge_sql"
         return 1
