@@ -1258,6 +1258,7 @@ data:
       merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
+        printf "ALTER TABLE gravitee.users DROP CONSTRAINT IF EXISTS fk_github_allowed;\n"
         printf "WITH incoming(github_id, login, desired_role) AS (%s)\n" "$values_clause"
         printf "DELETE FROM gravitee.github_allowed_users ga\n"
         printf "WHERE NOT EXISTS (\n"
@@ -1270,6 +1271,11 @@ data:
         printf "  login = EXCLUDED.login,\n"
         printf "  desired_role = EXCLUDED.desired_role,\n"
         printf "  synced_at = now();\n"
+        printf "ALTER TABLE gravitee.users\n"
+        printf "  ADD CONSTRAINT fk_github_allowed\n"
+        printf "  FOREIGN KEY (github_id)\n"
+        printf "  REFERENCES gravitee.github_allowed_users (github_id)\n"
+        printf "  DEFERRABLE INITIALLY IMMEDIATE;\n"
         printf "COMMIT;\n"
       } > "$merge_sql"
 
