@@ -1173,20 +1173,6 @@ data:
       return 0
     }
 
-    acquire_guard_lock() {
-      attempts=0
-      max_attempts=20
-      while [ $attempts -lt $max_attempts ]; do
-        if psql_cmd -tAc "SELECT pg_try_advisory_lock(42857421);" | grep -q 1; then
-          return 0
-        fi
-        attempts=$((attempts + 1))
-        sleep $((attempts))
-      done
-      echo "⚠️ Unable to acquire guard advisory lock after ${max_attempts} attempts." >&2
-      return 1
-    }
-
     refresh_allowed_users_table() {
       previous_guard=$(psql_cmd -At -c "SELECT COUNT(*) FROM gravitee.github_allowed_users;" 2>/dev/null || echo 0)
       allowed_tmp=$(mktemp)
@@ -1375,10 +1361,6 @@ data:
     }
 
     ensure_guard_table
-    if ! acquire_guard_lock; then
-      echo "⚠️ Guard refresh skipped; could not acquire advisory lock."
-      exit 0
-    fi
     ensure_role_mappings
     if refresh_allowed_users_table; then
       if reconcile_github_users; then

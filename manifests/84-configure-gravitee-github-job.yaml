@@ -178,20 +178,6 @@ spec:
           }
 
           seed_allowed_table() {
-            attempts=0
-            max_attempts=20
-            while [ $attempts -lt $max_attempts ]; do
-              if psql_cmd -tAc "SELECT pg_try_advisory_lock(42857421);" | grep -q 1; then
-                break
-              fi
-              attempts=$((attempts + 1))
-              sleep $((attempts))
-            done
-
-            if [ $attempts -ge $max_attempts ]; then
-              echo "⚠️ Unable to acquire guard advisory lock; skipping seed this run." >&2
-              return 1
-            fi
             previous_guard=$(psql_cmd -At -c "SELECT COUNT(*) FROM gravitee.github_allowed_users;" 2>/dev/null || echo 0)
             if [ -z "$ALLOWED_TEAMS" ]; then
               echo "ℹ️ No GitHub teams configured; skipping guard table seed."
