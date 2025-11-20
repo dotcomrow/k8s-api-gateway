@@ -1258,6 +1258,7 @@ data:
       merge_sql=$(mktemp)
       {
         printf "BEGIN;\n"
+        printf "SELECT pg_advisory_xact_lock(42857421);\n"
         printf "ALTER TABLE gravitee.users DROP CONSTRAINT IF EXISTS fk_github_allowed;\n"
         printf "WITH incoming(github_id, login, desired_role) AS (%s)\n" "$values_clause"
         printf "DELETE FROM gravitee.github_allowed_users ga\n"
