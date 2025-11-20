@@ -1250,7 +1250,7 @@ data:
       done < "$allowed_sorted"
 
       if [ -z "$values_sql" ]; then
-        values_clause="SELECT NULL::varchar(64) AS github_id, NULL::varchar(255) AS login, NULL::varchar(16) AS desired_role WHERE 1=0"
+        values_clause="SELECT NULL::varchar(64) AS github_id, NULL::varchar(255) AS login, NULL::varchar(16) AS desired_role LIMIT 0"
       else
         values_clause="VALUES $values_sql"
       fi
@@ -1279,7 +1279,24 @@ data:
         printf "COMMIT;\n"
       } > "$merge_sql"
 
-      if ! psql_cmd -f "$merge_sql"; then
+      attempt=1
+      success=0
+      while [ $attempt -le 5 ]; do
+        if output=$(psql_cmd -f "$merge_sql" 2>&1); then
+          success=1
+          break
+        fi
+        if printf '%s' "$output" | grep -qi "could not serialize access due to concurrent update"; then
+          echo "⚠️ Guard merge serialization failure (attempt ${attempt}/5); retrying..." >&2
+          attempt=$((attempt + 1))
+          sleep 2
+          continue
+        fi
+        printf '%s\n' "$output" >&2
+        break
+      done
+
+      if [ $success -ne 1 ]; then
         echo "⚠️ Failed to merge guard table; aborting refresh." >&2
         rm -f "$allowed_sorted" "$merge_sql"
         return 1
