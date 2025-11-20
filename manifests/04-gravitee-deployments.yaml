@@ -1363,19 +1363,21 @@ data:
     ensure_guard_table
     ensure_role_mappings
     if refresh_allowed_users_table; then
-      if reconcile_github_users; then
-        managed_users=$(psql_cmd -At -c "SELECT COUNT(*) FROM gravitee.users WHERE source = 'github';" 2>/dev/null || echo 0)
-        echo "👥 Managed ${managed_users} GitHub user accounts in Gravitee."
-      else
-        echo "⚠️ GitHub user reconciliation failed; accounts may be inconsistent." >&2
-      fi
-
-      echo "🔄 Synchronizing Gravitee memberships based on GitHub teams..."
-      if ! sync_github_memberships; then
-        echo "⚠️ Membership synchronization failed; roles may be outdated." >&2
-      fi
+      echo "ℹ️ Guard snapshot refreshed from GitHub."
     else
       echo "⚠️ Continuing reconciliation using the previous guard snapshot."
+    fi
+
+    if reconcile_github_users; then
+      managed_users=$(psql_cmd -At -c "SELECT COUNT(*) FROM gravitee.users WHERE source = 'github';" 2>/dev/null || echo 0)
+      echo "👥 Managed ${managed_users} GitHub user accounts in Gravitee."
+    else
+      echo "⚠️ GitHub user reconciliation failed; accounts may be inconsistent." >&2
+    fi
+
+    echo "🔄 Synchronizing Gravitee memberships based on GitHub teams..."
+    if ! sync_github_memberships; then
+      echo "⚠️ Membership synchronization failed; roles may be outdated." >&2
     fi
 
     ensure_guard_constraint

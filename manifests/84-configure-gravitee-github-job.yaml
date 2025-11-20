@@ -556,20 +556,17 @@ spec:
           }
 
           if ! seed_allowed_table; then
-            echo "❌ Failed to seed GitHub allow-list; aborting configuration." >&2
-            exit 1
+            echo "⚠️ Using existing guard snapshot; GitHub seed failed this run." >&2
           fi
 
           echo "👥 Reconciling GitHub user accounts directly in Gravitee..."
           if ! reconcile_github_users; then
-            echo "❌ Failed to reconcile GitHub users; aborting configuration." >&2
-            exit 1
+            echo "⚠️ Failed to reconcile GitHub users; continuing, but accounts may be inconsistent." >&2
           fi
 
           echo "🔄 Synchronizing Gravitee memberships based on GitHub teams..."
           if ! sync_memberships; then
-            echo "❌ Failed to synchronize memberships; aborting configuration." >&2
-            exit 1
+            echo "⚠️ Failed to synchronize memberships; continuing, but roles may be outdated." >&2
           fi
 
           echo "🔐 Enforcing GitHub guard constraint..."
