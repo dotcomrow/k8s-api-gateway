@@ -901,3 +901,335 @@ data:
   allowedTeams: gravitee_admin_access,gravitee_user_access
   adminTeam: gravitee_admin_access
   userTeam: gravitee_user_access
+---
+# Configure GitHub identity provider and portal settings
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-gravitee-github
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    linkerd.io/inject: "disabled"
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      annotations:
+        linkerd.io/inject: "disabled"
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-pre-populate-only: "true"
+        vault.hashicorp.com/role: "gravitee"
+        vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
+        vault.hashicorp.com/agent-inject-template-db-creds: |
+          {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
+          export YUGABYTE_USER="gravitee_app"
+          export YUGABYTE_PASSWORD="{{ .Data.password }}"
+          {{- end }}
+    spec:
+      serviceAccountName: gravitee
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-management
+        image: curlimages/curl:8.11.1
+        env:
+        - name: MANAGEMENT_HEALTH_URL
+          value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management/platform"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          echo "🔍 Waiting for Gravitee Management API before applying configuration..."
+          while true; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
+              echo "✅ Management API responded with HTTP $STATUS, continuing."
+              break
+            fi
+            echo "⏳ Management API not ready yet (status $STATUS), retrying in 5s..."
+            sleep 5
+          done
+      containers:
+      - name: configure
+        image: alpine/k8s:1.31.4
+        env:
+        - name: MGMT_API_URL
+          value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
+        - name: ADMIN_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-admin-credentials
+              key: username
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-admin-credentials
+              key: password
+        - name: GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-gateway-github-oauth
+              key: client-id
+        - name: GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-gateway-github-oauth
+              key: client-secret
+        - name: GITHUB_SERVER_URL
+          value: "https://github.com/login/oauth"
+        - name: YUGABYTE_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: YUGABYTE_PORT
+          value: "5433"
+        - name: YUGABYTE_DATABASE
+          value: "gravitee"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          apk add --no-cache curl jq postgresql15-client >/dev/null
+
+          JQ_BIN="/usr/bin/jq"
+
+          if [ -f "/vault/secrets/db-creds" ]; then
+            . /vault/secrets/db-creds
+          fi
+          if [ -z "${YUGABYTE_USER:-}" ] || [ -z "${YUGABYTE_PASSWORD:-}" ]; then
+            echo "❌ Database credentials not available from Vault."
+            exit 1
+          fi
+
+          echo "🔧 Ensuring admin user exists directly in database..."
+          cat <<EOF_SQL | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+          CREATE EXTENSION IF NOT EXISTS pgcrypto;
+          DO \$\$
+          DECLARE admin_id varchar(64);
+          BEGIN
+            SELECT id INTO admin_id FROM gravitee.users WHERE source = 'gravitee' AND source_id = '${ADMIN_USERNAME}';
+            IF admin_id IS NULL THEN
+              admin_id := '${ADMIN_USERNAME}';
+              INSERT INTO gravitee.users (id, source, source_id, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
+              VALUES (
+                admin_id,
+                'gravitee',
+                '${ADMIN_USERNAME}',
+                '${ADMIN_USERNAME}@example.com',
+                crypt('${ADMIN_PASSWORD}', gen_salt('bf')),
+                'Portal',
+                'Admin',
+                now(),
+                          now(),
+                          'DEFAULT',
+                          'ACTIVE',
+                          0
+              );
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM gravitee.memberships
+                        WHERE member_id = admin_id
+                          AND reference_type = 'ORGANIZATION'
+                          AND reference_id = 'DEFAULT'
+                      ) THEN
+              INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
+              VALUES (
+                admin_id || '-membership',
+                'ORGANIZATION',
+                'DEFAULT',
+                'USER',
+                admin_id,
+                (SELECT id
+                   FROM gravitee.roles
+                  WHERE scope = 'ORGANIZATION'
+                    AND reference_id = 'DEFAULT'
+                    AND name = 'ADMIN'
+                  ORDER BY created_at
+                  LIMIT 1),
+                now(),
+                now()
+              );
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM gravitee.memberships
+                        WHERE member_id = admin_id
+                          AND reference_type = 'ENVIRONMENT'
+                          AND reference_id = 'DEFAULT'
+                      ) THEN
+              INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
+              VALUES (
+                admin_id || '-env-membership',
+                'ENVIRONMENT',
+                'DEFAULT',
+                'USER',
+                admin_id,
+                (SELECT id
+                   FROM gravitee.roles
+                  WHERE scope = 'ENVIRONMENT'
+                    AND reference_id = 'DEFAULT'
+                    AND name = 'ADMIN'
+                  ORDER BY created_at
+                  LIMIT 1),
+                now(),
+                now()
+              );
+            END IF;
+          END \$\$;
+          EOF_SQL
+
+          echo "🔓 Temporarily ensuring admin user is ACTIVE for API configuration..."
+          cat <<EOF_ACTIVATE | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+          UPDATE gravitee.users
+             SET status = 'ACTIVE',
+                 updated_at = now()
+           WHERE source = 'gravitee'
+             AND source_id = '${ADMIN_USERNAME}'
+             AND status <> 'ACTIVE';
+          EOF_ACTIVATE
+
+          MGMT_API_URL="${MGMT_API_URL:-}"
+          ADMIN_USERNAME="${ADMIN_USERNAME:-}"
+          ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+          GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:-}"
+          GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}"
+          GITHUB_SERVER_URL="${GITHUB_SERVER_URL:-}"
+
+          USERS_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users"
+
+          echo "🔧 Config context:"
+          echo "  MGMT_API_URL      = $MGMT_API_URL"
+          echo "  ADMIN_USERNAME    = $ADMIN_USERNAME"
+          echo "  GITHUB_SERVER_URL = $GITHUB_SERVER_URL"
+
+          BASE_URL="${GITHUB_SERVER_URL%/}"
+          AUTH_ENDPOINT="${BASE_URL}/authorize"
+          TOKEN_ENDPOINT="${BASE_URL}/access_token"
+
+          # Now that admin should exist, define AUTH for authenticated calls
+          AUTH="-u ${ADMIN_USERNAME}:${ADMIN_PASSWORD}"
+          echo "🔐 Using basic auth with user '${ADMIN_USERNAME}' for subsequent Management API calls."
+
+          echo "🧪 Verifying authenticated /users call..."
+          curl -s $AUTH "$USERS_URL?page=1&size=1" \
+            -o /tmp/users-auth-body \
+            -w "%{http_code}" > /tmp/users-auth-status || true
+          USERS_AUTH_STATUS="$(cat /tmp/users-auth-status 2>/dev/null || echo "")"
+          echo "ℹ️ /users HTTP status (with auth): '${USERS_AUTH_STATUS}'"
+          echo "ℹ️ /users response body (with auth):"
+          cat /tmp/users-auth-body || true
+
+          if [ "$USERS_AUTH_STATUS" != "200" ]; then
+            echo "❌ Authenticated /users call still failing (status=${USERS_AUTH_STATUS})."
+            echo "   Check that gravitee-admin-credentials matches the Management API admin account."
+            exit 1
+          fi
+
+          echo "🧩 Building GitHub identity provider JSON..."
+          echo "  Using AUTH_ENDPOINT  = ${AUTH_ENDPOINT}"
+          echo "  Using TOKEN_ENDPOINT = ${TOKEN_ENDPOINT}"
+
+          "$JQ_BIN" -n \
+            --arg clientId "$GITHUB_CLIENT_ID" \
+            --arg clientSecret "$GITHUB_CLIENT_SECRET" \
+            --arg authEndpoint "$AUTH_ENDPOINT" \
+            --arg tokenEndpoint "$TOKEN_ENDPOINT" \
+            '{
+              id: "github",
+              name: "GitHub",
+              type: "GITHUB",
+              enabled: true,
+              target: ["PORTAL","CONSOLE"],
+              color: "#24292F",
+              syncMappings: true,
+              scopes: ["read:user","read:org"],
+              configuration: {
+                clientId: $clientId,
+                clientSecret: $clientSecret,
+                authorizationEndpoint: $authEndpoint,
+                tokenEndpoint: $tokenEndpoint,
+                userInfoEndpoint: "https://api.github.com/user",
+                useSystemProxy: false
+              }
+            }' > /tmp/github-idp.json
+
+          echo "📤 IDP payload (/tmp/github-idp.json):"
+          cat /tmp/github-idp.json || true
+
+          apply_github_idp() {
+            scope_label="$1"
+            base_url="$2"
+            config_url="$base_url/configuration/identities"
+
+            echo "🔧 Applying GitHub identity provider configuration for ${scope_label} scope..."
+            IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+              $AUTH -H "Content-Type: application/json" \
+              -X PUT "$config_url/github" \
+              --data-binary @/tmp/github-idp.json || echo "000")
+
+            echo "ℹ️ PUT /identities/github (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
+            echo "ℹ️ PUT response body:"
+            cat /tmp/idp-response || true
+
+            if [ "$IDP_HTTP_STATUS" != "200" ]; then
+              echo "⚠️ PUT returned HTTP ${IDP_HTTP_STATUS}, attempting POST for ${scope_label}..."
+              IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+                $AUTH -H "Content-Type: application/json" \
+                -X POST "$config_url" \
+                --data-binary @/tmp/github-idp.json || echo "000")
+
+              echo "ℹ️ POST /identities (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
+              echo "ℹ️ POST response body:"
+              cat /tmp/idp-response || true
+
+              if [ "$IDP_HTTP_STATUS" != "201" ] && [ "$IDP_HTTP_STATUS" != "200" ]; then
+                echo "❌ Failed to configure GitHub identity provider for ${scope_label} (status ${IDP_HTTP_STATUS})"
+                exit 1
+              fi
+            fi
+
+            echo "ℹ️ Skipping identity enable/activation calls for ${scope_label}; not supported on this version."
+          }
+
+          apply_github_idp "environment" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT"
+          apply_github_idp "organization" "$MGMT_API_URL/management/organizations/DEFAULT"
+
+          echo "🔧 Forcing portal user self-signup flags directly in database..."
+          cat <<'EOF_PORTAL' | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
+          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.enabled', 'false')
+          ON CONFLICT (reference_type, reference_id, key)
+          DO UPDATE SET value = EXCLUDED.value;
+
+          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
+          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.automaticValidation', 'false')
+          ON CONFLICT (reference_type, reference_id, key)
+          DO UPDATE SET value = EXCLUDED.value;
+
+          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
+          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.localLogin.enabled', 'false')
+          ON CONFLICT (reference_type, reference_id, key)
+          DO UPDATE SET value = EXCLUDED.value;
+
+          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
+          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'true')
+          ON CONFLICT (reference_type, reference_id, key)
+          DO UPDATE SET value = EXCLUDED.value;
+
+          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
+          VALUES ('github', 'ENVIRONMENT', 'DEFAULT', now())
+          ON CONFLICT (identity_provider_id, reference_type, reference_id)
+          DO NOTHING;
+
+          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
+          VALUES ('github', 'ORGANIZATION', 'DEFAULT', now())
+          ON CONFLICT (identity_provider_id, reference_type, reference_id)
+          DO NOTHING;
+          EOF_PORTAL
+          echo "✅ Portal user creation disabled via database parameters."
+
+          echo "🔧 Config context:"
+          echo "  MGMT_API_URL      = ${MGMT_API_URL:-}"
+          echo "  ADMIN_USERNAME    = ${ADMIN_USERNAME:-}"
+          echo "  GITHUB_SERVER_URL = ${GITHUB_SERVER_URL:-}"
+
+          echo "✅ Gravitee GitHub configuration complete."
