@@ -39,10 +39,10 @@ gravitee:
       # Connection pool settings optimized for YugabyteDB
       pool:
         acquireRetry: 3
-        initialSize: 5
-        maxSize: 20
+        initialSize: 2
+        maxSize: 10
         maxWait: 30000
-        minSize: 5
+        minSize: 2
         maxIdleTime: 30000
         maxLifetime: 600000
         idleTimeout: 30000
@@ -69,10 +69,10 @@ gravitee:
       schema: ${YUGABYTE_SCHEMA:gravitee}
       pool:
         acquireRetry: 3
-        initialSize: 5
-        maxSize: 20
+        initialSize: 1
+        maxSize: 6
         maxWait: 30000
-        minSize: 5
+        minSize: 1
         maxIdleTime: 300000
         validationQuery: "SELECT 1"
         testOnBorrow: true
@@ -96,10 +96,10 @@ gravitee:
       schema: ${YUGABYTE_SCHEMA:gravitee}
       pool:
         acquireRetry: 3
-        initialSize: 5
-        maxSize: 20
+        initialSize: 1
+        maxSize: 6
         maxWait: 30000
-        minSize: 5
+        minSize: 1
         maxIdleTime: 300000
         validationQuery: "SELECT 1"
         testOnBorrow: true

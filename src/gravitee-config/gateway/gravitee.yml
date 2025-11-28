@@ -87,6 +87,24 @@ ratelimit:
     username: ${YUGABYTE_USER:gravitee_app} 
     password: ${YUGABYTE_PASSWORD}
     schema: ${YUGABYTE_SCHEMA:gravitee}
+    pool:
+      acquireRetry: 3
+      initialSize: 1
+      maxSize: 8
+      maxWait: 30000
+      minSize: 1
+      maxIdleTime: 300000
+      maxLifetime: 600000
+      idleTimeout: 30000
+      validationTimeout: 5000
+      validationQuery: "SELECT 1"
+      testOnBorrow: true
+      testOnReturn: false
+      testWhileIdle: true
+      timeBetweenEvictionRunsMillis: 30000
+      minEvictableIdleTimeMillis: 60000
+      poolName: "${HOSTNAME}-gravitee-ratelimit-jdbc"
+      registerMbeans: false
 
 # Analytics configuration
 analytics:
@@ -99,6 +117,24 @@ analytics:
     username: ${YUGABYTE_USER:gravitee_app}
     password: ${YUGABYTE_PASSWORD}
     schema: ${YUGABYTE_SCHEMA:gravitee}
+    pool:
+      acquireRetry: 3
+      initialSize: 1
+      maxSize: 4
+      maxWait: 30000
+      minSize: 1
+      maxIdleTime: 300000
+      maxLifetime: 600000
+      idleTimeout: 30000
+      validationTimeout: 5000
+      validationQuery: "SELECT 1"
+      testOnBorrow: true
+      testOnReturn: false
+      testWhileIdle: true
+      timeBetweenEvictionRunsMillis: 30000
+      minEvictableIdleTimeMillis: 60000
+      poolName: "${HOSTNAME}-gravitee-analytics-jdbc"
+      registerMbeans: false
 
 # Distributed cache for API keys and subscriptions (already configured above)
 
