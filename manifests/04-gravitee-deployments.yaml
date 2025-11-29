@@ -1077,30 +1077,69 @@ spec:
           CREATE EXTENSION IF NOT EXISTS pgcrypto;
           DO \$\$
           DECLARE admin_id varchar(64);
+          DECLARE has_username_column boolean;
+          DECLARE bcrypt_hash text;
           BEGIN
+            SELECT EXISTS (
+              SELECT 1
+                FROM information_schema.columns
+               WHERE table_schema = 'gravitee'
+                 AND table_name   = 'users'
+                 AND column_name  = 'username'
+            ) INTO has_username_column;
+
+            bcrypt_hash := '{bcrypt}' || crypt('${ADMIN_PASSWORD}', gen_salt('bf'));
+
             SELECT id INTO admin_id FROM gravitee.users WHERE source = 'gravitee' AND source_id = '${ADMIN_USERNAME}';
             IF admin_id IS NULL THEN
               admin_id := '${ADMIN_USERNAME}';
-              INSERT INTO gravitee.users (id, source, source_id, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
-              VALUES (
-                admin_id,
-                'gravitee',
-                '${ADMIN_USERNAME}',
-                '${ADMIN_USERNAME}@example.com',
-                crypt('${ADMIN_PASSWORD}', gen_salt('bf')),
-                'Portal',
-                'Admin',
-                now(),
-                          now(),
-                          'DEFAULT',
-                          'ACTIVE',
-                          0
-              );
+              IF has_username_column THEN
+                INSERT INTO gravitee.users (id, source, source_id, username, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
+                VALUES (
+                  admin_id,
+                  'gravitee',
+                  '${ADMIN_USERNAME}',
+                  '${ADMIN_USERNAME}',
+                  '${ADMIN_USERNAME}@example.com',
+                  bcrypt_hash,
+                  'Portal',
+                  'Admin',
+                  now(),
+                  now(),
+                  'DEFAULT',
+                  'ACTIVE',
+                  0
+                );
+              ELSE
+                INSERT INTO gravitee.users (id, source, source_id, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
+                VALUES (
+                  admin_id,
+                  'gravitee',
+                  '${ADMIN_USERNAME}',
+                  '${ADMIN_USERNAME}@example.com',
+                  bcrypt_hash,
+                  'Portal',
+                  'Admin',
+                  now(),
+                            now(),
+                            'DEFAULT',
+                            'ACTIVE',
+                            0
+                );
+              END IF;
             ELSE
               UPDATE gravitee.users
-                 SET password = crypt('${ADMIN_PASSWORD}', gen_salt('bf')),
+                 SET password = bcrypt_hash,
+                     status = 'ACTIVE',
                      updated_at = now()
                WHERE id = admin_id;
+
+              IF has_username_column THEN
+                UPDATE gravitee.users
+                   SET username = '${ADMIN_USERNAME}',
+                       email    = '${ADMIN_USERNAME}@example.com'
+                 WHERE id = admin_id;
+              END IF;
             END IF;
 
             IF NOT EXISTS (
