@@ -1096,6 +1096,11 @@ spec:
                           'ACTIVE',
                           0
               );
+            ELSE
+              UPDATE gravitee.users
+                 SET password = crypt('${ADMIN_PASSWORD}', gen_salt('bf')),
+                     updated_at = now()
+               WHERE id = admin_id;
             END IF;
 
             IF NOT EXISTS (
