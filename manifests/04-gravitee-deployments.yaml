@@ -1197,7 +1197,7 @@ spec:
           echo "🔍 Inspecting admin credentials as stored in database..."
           cat <<EOF_VERIFY | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
           WITH u AS (
-            SELECT username, source_id, status, password,
+            SELECT source_id AS username, source_id, status, password,
                    CASE WHEN password LIKE '{bcrypt}%' THEN substr(password, 9) ELSE password END AS stored_hash
               FROM gravitee.users
              WHERE source = 'gravitee'
@@ -1249,10 +1249,10 @@ spec:
             cat /tmp/login-body || true
 
             if [ "$LOGIN_STATUS" = "200" ]; then
-              TOKEN=$(jq -r '.token // .id_token // .access_token // empty' /tmp/login-body)
-              if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
+              TOKEN_VALUE=$(jq -r '.token // .id_token // .access_token // empty' /tmp/login-body)
+              if [ -n "$TOKEN_VALUE" ] && [ "$TOKEN_VALUE" != "null" ]; then
                 echo "✅ Got bearer token from ${endpoint}"
-                AUTH_ARGS=(-H "Authorization: Bearer ${TOKEN}")
+                TOKEN="$TOKEN_VALUE"
                 AUTH_MODE="bearer"
                 return 0
               fi
@@ -1260,8 +1260,8 @@ spec:
             return 1
           }
 
-          AUTH_ARGS=()
           AUTH_MODE=""
+          TOKEN=""
           attempt_login "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/auth/login" || true
           if [ -z "$AUTH_MODE" ]; then
             attempt_login "$MGMT_API_URL/management/auth/login" || true
@@ -1271,7 +1271,6 @@ spec:
           fi
 
           if [ -z "$AUTH_MODE" ]; then
-            AUTH_ARGS=(-u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}")
             AUTH_MODE="basic"
             echo "⚠️ Falling back to basic auth with user '${ADMIN_USERNAME}'."
           else
@@ -1279,9 +1278,15 @@ spec:
           fi
 
           echo "🧪 Verifying authenticated /users call..."
-          curl -s "${AUTH_ARGS[@]}" "$USERS_URL?page=1&size=1" \
-            -o /tmp/users-auth-body \
-            -w "%{http_code}" > /tmp/users-auth-status || true
+          if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
+            curl -s -H "Authorization: Bearer ${TOKEN}" "$USERS_URL?page=1&size=1" \
+              -o /tmp/users-auth-body \
+              -w "%{http_code}" > /tmp/users-auth-status || true
+          else
+            curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" "$USERS_URL?page=1&size=1" \
+              -o /tmp/users-auth-body \
+              -w "%{http_code}" > /tmp/users-auth-status || true
+          fi
           USERS_AUTH_STATUS="$(cat /tmp/users-auth-status 2>/dev/null || echo "")"
           echo "ℹ️ /users HTTP status (with auth): '${USERS_AUTH_STATUS}'"
           echo "ℹ️ /users response body (with auth):"
@@ -1330,10 +1335,17 @@ spec:
             config_url="$base_url/configuration/identities"
 
             echo "🔧 Applying GitHub identity provider configuration for ${scope_label} scope..."
-            IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
-              "${AUTH_ARGS[@]}" -H "Content-Type: application/json" \
-              -X PUT "$config_url/github" \
-              --data-binary @/tmp/github-idp.json || echo "000")
+            if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
+              IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+                -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+                -X PUT "$config_url/github" \
+                --data-binary @/tmp/github-idp.json || echo "000")
+            else
+              IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+                -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
+                -X PUT "$config_url/github" \
+                --data-binary @/tmp/github-idp.json || echo "000")
+            fi
 
             echo "ℹ️ PUT /identities/github (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
             echo "ℹ️ PUT response body:"
@@ -1341,10 +1353,17 @@ spec:
 
             if [ "$IDP_HTTP_STATUS" != "200" ]; then
               echo "⚠️ PUT returned HTTP ${IDP_HTTP_STATUS}, attempting POST for ${scope_label}..."
-              IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
-                "${AUTH_ARGS[@]}" -H "Content-Type: application/json" \
-                -X POST "$config_url" \
-                --data-binary @/tmp/github-idp.json || echo "000")
+              if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
+                IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+                  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+                  -X POST "$config_url" \
+                  --data-binary @/tmp/github-idp.json || echo "000")
+              else
+                IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+                  -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
+                  -X POST "$config_url" \
+                  --data-binary @/tmp/github-idp.json || echo "000")
+              fi
 
               echo "ℹ️ POST /identities (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
               echo "ℹ️ POST response body:"
