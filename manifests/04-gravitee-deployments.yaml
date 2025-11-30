@@ -69,6 +69,206 @@ spec:
         key: api-gateway-github-team-token
         property: value
 ---
+# Gravitee Management API configuration (mounted into the management pod)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gravitee-management-config
+  namespace: k8s-api-gateway
+data:
+  gravitee.yml: |-
+    ############################################################################################################
+    # Gravitee.io Management API Configuration for YugabyteDB and Vault Integration
+    ############################################################################################################
+    gravitee:
+
+      installation:
+        standalone:
+          api:
+            # Global public base URL for the Management + Portal APIs
+            url: https://gravitee.teleport.app.suncoast.systems
+
+          console:
+            # Public URL for the console
+            url: https://gravitee.teleport.app.suncoast.systems/management
+
+          portal:
+            # Public URL for the developer portal
+            url: https://gravitee.teleport.app.suncoast.systems/portal
+
+        # (optional but harmless) keep the older structure too, in case your version still reads it
+        api:
+          url: https://gravitee.teleport.app.suncoast.systems
+          console:
+            url: https://gravitee.teleport.app.suncoast.systems/management
+          portal:
+            url: https://gravitee.teleport.app.suncoast.systems/portal
+
+      # Management configuration
+      management:
+        type: jdbc
+        jdbc:
+          driver: org.postgresql.Driver
+          url: ${MANAGEMENT_JDBC_URL:jdbc:postgresql://${YUGABYTE_HOST:yugabytedb-service.k8s-api-gateway.svc.cluster.local}:${YUGABYTE_PORT:5433}/${YUGABYTE_DATABASE:gravitee}?currentSchema=${YUGABYTE_SCHEMA:gravitee}}
+          username: ${YUGABYTE_USER:gravitee_app}
+          password: ${YUGABYTE_PASSWORD}
+          schema: ${YUGABYTE_SCHEMA:gravitee}
+          # Connection pool settings (Hikari)
+          pool:
+            maxPoolSize: ${MANAGEMENT_JDBC_POOL_MAX_POOL_SIZE:6}
+            minIdle: ${MANAGEMENT_JDBC_POOL_MIN_IDLE:0}
+            connectionTimeout: ${MANAGEMENT_JDBC_POOL_CONNECTION_TIMEOUT:10000}
+            idleTimeout: ${MANAGEMENT_JDBC_POOL_IDLE_TIMEOUT:30000}
+            maxLifetime: ${MANAGEMENT_JDBC_POOL_MAX_LIFETIME:600000}
+            autoCommit: true
+            registerMbeans: false
+
+      # Analytics repository configuration  
+      analytics:
+        type: jdbc
+        jdbc:
+          url: ${ANALYTICS_JDBC_URL:jdbc:postgresql://${YUGABYTE_HOST:yugabytedb-service.k8s-api-gateway.svc.cluster.local}:${YUGABYTE_PORT:5433}/${YUGABYTE_DATABASE:gravitee}?currentSchema=${YUGABYTE_SCHEMA:gravitee}}
+          username: ${YUGABYTE_USER:gravitee_app}
+          password: ${YUGABYTE_PASSWORD}
+          schema: ${YUGABYTE_SCHEMA:gravitee}
+          pool:
+            maxPoolSize: ${ANALYTICS_JDBC_POOL_MAX_POOL_SIZE:2}
+            minIdle: ${ANALYTICS_JDBC_POOL_MIN_IDLE:0}
+            connectionTimeout: ${ANALYTICS_JDBC_POOL_CONNECTION_TIMEOUT:10000}
+            idleTimeout: ${ANALYTICS_JDBC_POOL_IDLE_TIMEOUT:30000}
+            maxLifetime: ${ANALYTICS_JDBC_POOL_MAX_LIFETIME:600000}
+            autoCommit: true
+            registerMbeans: false
+
+      # Rate limiting repository
+      ratelimit:
+        type: jdbc
+        jdbc:
+          url: ${RATELIMIT_JDBC_URL:jdbc:postgresql://${YUGABYTE_HOST:yugabytedb-service.k8s-api-gateway.svc.cluster.local}:${YUGABYTE_PORT:5433}/${YUGABYTE_DATABASE:gravitee}?currentSchema=${YUGABYTE_SCHEMA:gravitee}}
+          username: ${YUGABYTE_USER:gravitee_app}
+          password: ${YUGABYTE_PASSWORD}
+          schema: ${YUGABYTE_SCHEMA:gravitee}
+          pool:
+            maxPoolSize: ${RATELIMIT_JDBC_POOL_MAX_POOL_SIZE:2}
+            minIdle: ${RATELIMIT_JDBC_POOL_MIN_IDLE:0}
+            connectionTimeout: ${RATELIMIT_JDBC_POOL_CONNECTION_TIMEOUT:10000}
+            idleTimeout: ${RATELIMIT_JDBC_POOL_IDLE_TIMEOUT:30000}
+            maxLifetime: ${RATELIMIT_JDBC_POOL_MAX_LIFETIME:600000}
+            autoCommit: true
+            registerMbeans: false
+
+    # HTTP server configuration
+    jetty:
+      port: 8083
+      host: 0.0.0.0
+      
+    # JWT configuration for API security
+    jwt:
+      secret: ${JWT_SECRET}
+      expire-after: ${JWT_EXPIRE_AFTER:604800}
+      issuer: ${JWT_ISSUER:k8s-api-gateway}
+
+    # CORS configuration
+    http:
+      cors:
+        allow-origin: 'https://gravitee.teleport.app.suncoast.systems'
+        allow-headers: 'Cache-Control, Pragma, Origin, Authorization, Content-Type, X-Requested-With, If-Match, If-None-Match, X-Gravitee-*'
+        allow-methods: 'OPTIONS, GET, POST, PUT, DELETE, PATCH'
+        exposed-headers: 'ETag, X-Gravitee-*'
+        max-age: 1728000
+        allow-credentials: true
+
+    # Kubernetes service discovery integration
+    services:
+      discovery:
+        kubernetes:
+          enabled: true
+          service:
+            namespace: ${K8S_NAMESPACE:k8s-api-gateway}
+          # Auto-discovery via annotations
+          annotations:
+            gravitee.io/expose: "true"
+            gravitee.io/context-path: ""
+            gravitee.io/auth-required: ""
+            gravitee.io/approval-required: ""
+
+    # APISIX integration for route synchronization  
+    plugins:
+      path: ${gravitee.home}/plugins
+      
+    # External services integration
+    external:
+      apisix:
+        enabled: ${APISIX_SYNC_ENABLED:true}
+        admin-url: ${APISIX_ADMIN_URL:http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180}
+        admin-key: ${APISIX_ADMIN_KEY}
+        sync-interval: ${APISIX_SYNC_INTERVAL:30000}
+
+    # Security configuration
+    security:
+      keystore:
+        type: ${KEYSTORE_TYPE:JKS}
+        path: ${KEYSTORE_PATH:${gravitee.home}/security/keystore.jks}
+        password: ${KEYSTORE_PASSWORD}
+      truststore:
+        type: ${TRUSTSTORE_TYPE:JKS}
+        path: ${TRUSTSTORE_PATH:${gravitee.home}/security/truststore.jks}
+        password: ${TRUSTSTORE_PASSWORD}
+      providers:
+        # Keep local Gravitee (JDBC-backed) auth enabled for console/API basic auth
+        - type: gravitee
+          password-encoding: bcrypt
+        - type: oauth2
+          id: github
+          name: GitHub
+          clientId: ${PORTAL_OAUTH_CLIENT_ID}
+          clientSecret: ${PORTAL_OAUTH_CLIENT_SECRET}
+          color: "#24292F"
+          syncMappings: true
+          scopes:
+            - read:user
+            - read:org
+          userMapping:
+            condition: "{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access') or #jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
+            id: id
+            lastname: name
+            firstname: name
+            email: email
+            picture: avatar_url
+          groupMapping:
+            - condition: "{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access')}"
+              groups:
+                - gravitee_admin_access
+            - condition: "{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
+              groups:
+                - gravitee_user_access
+
+    # Email configuration (for notifications)
+    email:
+      enabled: ${EMAIL_ENABLED:true}
+      host: ${EMAIL_HOST}
+      port: ${EMAIL_PORT:587}
+      username: ${EMAIL_USERNAME}
+      password: ${EMAIL_PASSWORD}
+      protocol: smtp
+      subject: ${EMAIL_SUBJECT:[Gravitee.io] %s}
+      from: ${EMAIL_FROM:noreply@k8s-api-gateway.local}
+
+    # Portal configuration
+    portal:
+      url: ${PORTAL_URL:http://gravitee-portal.k8s-api-gateway.svc.cluster.local:8080}
+
+    # API Gateway configuration
+    gateway:
+      url: ${GATEWAY_URL:http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082}
+
+    # Logging
+    logging:
+      level:
+        io.gravitee: ${GRAVITEE_LOG_LEVEL:INFO}
+        org.springframework: ${SPRING_LOG_LEVEL:WARN}
+        org.eclipse.jetty: ${JETTY_LOG_LEVEL:WARN}
+---
 # Gravitee Management API Deployment
 apiVersion: apps/v1
 kind: Deployment
@@ -353,6 +553,14 @@ spec:
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 6
+        volumeMounts:
+        - name: gravitee-management-config
+          mountPath: /opt/graviteeio-management-api/config/gravitee.yml
+          subPath: gravitee.yml
+      volumes:
+      - name: gravitee-management-config
+        configMap:
+          name: gravitee-management-config
 ---
 # Gravitee Gateway Deployment
 apiVersion: apps/v1
@@ -1088,7 +1296,7 @@ spec:
                  AND column_name  = 'username'
             ) INTO has_username_column;
 
-            bcrypt_hash := '{bcrypt}' || crypt('${ADMIN_PASSWORD}', gen_salt('bf'));
+            bcrypt_hash := crypt('${ADMIN_PASSWORD}', gen_salt('bf'));
 
             SELECT id INTO admin_id FROM gravitee.users WHERE source = 'gravitee' AND source_id = '${ADMIN_USERNAME}';
             IF admin_id IS NULL THEN
@@ -1198,7 +1406,7 @@ spec:
           cat <<EOF_VERIFY | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
           WITH u AS (
             SELECT source_id AS username, source_id, status, password,
-                   CASE WHEN password LIKE '{bcrypt}%' THEN substr(password, 9) ELSE password END AS stored_hash
+                   password AS stored_hash
               FROM gravitee.users
              WHERE source = 'gravitee'
                AND source_id = '${ADMIN_USERNAME}'
