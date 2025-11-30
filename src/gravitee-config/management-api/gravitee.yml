@@ -136,6 +136,9 @@ security:
     path: ${TRUSTSTORE_PATH:${gravitee.home}/security/truststore.jks}
     password: ${TRUSTSTORE_PASSWORD}
   providers:
+    # Keep local Gravitee (JDBC-backed) auth enabled for console/API basic auth
+    - type: gravitee
+      password-encoding: bcrypt
     - type: oauth2
       id: github
       name: GitHub
