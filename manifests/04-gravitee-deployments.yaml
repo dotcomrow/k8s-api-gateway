@@ -1194,6 +1194,21 @@ spec:
           END \$\$;
           EOF_SQL
 
+          echo "🔍 Inspecting admin credentials as stored in database..."
+          cat <<EOF_VERIFY | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+          WITH u AS (
+            SELECT username, source_id, status, password,
+                   CASE WHEN password LIKE '{bcrypt}%' THEN substr(password, 9) ELSE password END AS stored_hash
+              FROM gravitee.users
+             WHERE source = 'gravitee'
+               AND source_id = '${ADMIN_USERNAME}'
+          )
+          SELECT username, source_id, status,
+                 left(password, 12) || '...' AS password_prefix,
+                 crypt('${ADMIN_PASSWORD}', stored_hash) = stored_hash AS password_matches
+            FROM u;
+          EOF_VERIFY
+
           echo "🔓 Temporarily ensuring admin user is ACTIVE for API configuration..."
           cat <<EOF_ACTIVATE | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
           UPDATE gravitee.users
@@ -1222,12 +1237,49 @@ spec:
           AUTH_ENDPOINT="${BASE_URL}/authorize"
           TOKEN_ENDPOINT="${BASE_URL}/access_token"
 
-          # Now that admin should exist, define AUTH for authenticated calls
-          AUTH="-u ${ADMIN_USERNAME}:${ADMIN_PASSWORD}"
-          echo "🔐 Using basic auth with user '${ADMIN_USERNAME}' for subsequent Management API calls."
+          attempt_login() {
+            endpoint="$1"
+            echo "🔐 Trying login endpoint: ${endpoint}"
+            LOGIN_STATUS=$(curl -s -w "%{http_code}" -o /tmp/login-body \
+              -H "Content-Type: application/json" \
+              -X POST "$endpoint" \
+              --data "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}" || echo "000")
+            echo "ℹ️ Login status @ ${endpoint}: '${LOGIN_STATUS}'"
+            echo "ℹ️ Login response body:"
+            cat /tmp/login-body || true
+
+            if [ "$LOGIN_STATUS" = "200" ]; then
+              TOKEN=$(jq -r '.token // .id_token // .access_token // empty' /tmp/login-body)
+              if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
+                echo "✅ Got bearer token from ${endpoint}"
+                AUTH_ARGS=(-H "Authorization: Bearer ${TOKEN}")
+                AUTH_MODE="bearer"
+                return 0
+              fi
+            fi
+            return 1
+          }
+
+          AUTH_ARGS=()
+          AUTH_MODE=""
+          attempt_login "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/auth/login" || true
+          if [ -z "$AUTH_MODE" ]; then
+            attempt_login "$MGMT_API_URL/management/auth/login" || true
+          fi
+          if [ -z "$AUTH_MODE" ]; then
+            attempt_login "$MGMT_API_URL/management/organizations/DEFAULT/auth/login" || true
+          fi
+
+          if [ -z "$AUTH_MODE" ]; then
+            AUTH_ARGS=(-u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}")
+            AUTH_MODE="basic"
+            echo "⚠️ Falling back to basic auth with user '${ADMIN_USERNAME}'."
+          else
+            echo "🔐 Using bearer auth for subsequent Management API calls."
+          fi
 
           echo "🧪 Verifying authenticated /users call..."
-          curl -s $AUTH "$USERS_URL?page=1&size=1" \
+          curl -s "${AUTH_ARGS[@]}" "$USERS_URL?page=1&size=1" \
             -o /tmp/users-auth-body \
             -w "%{http_code}" > /tmp/users-auth-status || true
           USERS_AUTH_STATUS="$(cat /tmp/users-auth-status 2>/dev/null || echo "")"
@@ -1279,7 +1331,7 @@ spec:
 
             echo "🔧 Applying GitHub identity provider configuration for ${scope_label} scope..."
             IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
-              $AUTH -H "Content-Type: application/json" \
+              "${AUTH_ARGS[@]}" -H "Content-Type: application/json" \
               -X PUT "$config_url/github" \
               --data-binary @/tmp/github-idp.json || echo "000")
 
@@ -1290,7 +1342,7 @@ spec:
             if [ "$IDP_HTTP_STATUS" != "200" ]; then
               echo "⚠️ PUT returned HTTP ${IDP_HTTP_STATUS}, attempting POST for ${scope_label}..."
               IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
-                $AUTH -H "Content-Type: application/json" \
+                "${AUTH_ARGS[@]}" -H "Content-Type: application/json" \
                 -X POST "$config_url" \
                 --data-binary @/tmp/github-idp.json || echo "000")
 
