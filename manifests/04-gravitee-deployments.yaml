@@ -1286,6 +1286,11 @@ spec:
             return 1
           }
 
+          sql_escape_literal() {
+            # Escape single quotes for SQL string literals.
+            printf "%s" "$1" | sed "s/'/''/g"
+          }
+
           JQ_BIN="/usr/bin/jq"
 
           if [ -f "/vault/secrets/db-creds" ]; then
@@ -1303,7 +1308,8 @@ spec:
             echo "🔧 Checking for pgcrypto and preparing bcrypt hash..."
             if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" --set ON_ERROR_STOP=on -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" >/tmp/pgcrypto.log 2>&1; then
               PGCRYPTO_AVAILABLE=1
-              if ! ADMIN_BCRYPT_HASH=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -v ADMIN_PASSWORD="$ADMIN_PASSWORD" -Atqc "SELECT crypt(:'ADMIN_PASSWORD', gen_salt('bf'));"); then
+              ADMIN_PASSWORD_SQL="$(sql_escape_literal "$ADMIN_PASSWORD")"
+              if ! ADMIN_BCRYPT_HASH=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc "SELECT crypt('${ADMIN_PASSWORD_SQL}', gen_salt('bf'));"); then
                 echo "❌ Failed to compute bcrypt hash via pgcrypto."
                 return 1
               fi
@@ -1335,6 +1341,7 @@ spec:
               HASH_MODE_LABEL="local-bcrypt"
             fi
 
+            ADMIN_BCRYPT_HASH_SQL="$(sql_escape_literal "$ADMIN_BCRYPT_HASH")"
             sql="DO \$\$
               DECLARE admin_id varchar(64);
               DECLARE has_username_column boolean;
@@ -1348,11 +1355,7 @@ spec:
                     AND column_name  = 'username'
                 ) INTO has_username_column;
 
-                IF :'USE_PGCRYPTO' = '1' THEN
-                  bcrypt_hash := crypt(:'ADMIN_PASSWORD', gen_salt('bf'));
-                ELSE
-                  bcrypt_hash := :'ADMIN_BCRYPT_HASH';
-                END IF;
+                bcrypt_hash := '${ADMIN_BCRYPT_HASH_SQL}';
 
                 SELECT id INTO admin_id FROM gravitee.users WHERE source = 'gravitee' AND source_id = '${ADMIN_USERNAME}';
                 IF admin_id IS NULL THEN
@@ -1457,7 +1460,7 @@ spec:
                 END IF;
               END \$\$;"
 
-            if ! printf "%s\n" "$sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" --set ON_ERROR_STOP=on -v ADMIN_PASSWORD="$ADMIN_PASSWORD" -v ADMIN_BCRYPT_HASH="$ADMIN_BCRYPT_HASH" -v USE_PGCRYPTO="$PGCRYPTO_AVAILABLE" >/tmp/ensure-admin.log 2>&1; then
+            if ! printf "%s\n" "$sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" --set ON_ERROR_STOP=on >/tmp/ensure-admin.log 2>&1; then
               echo "❌ Failed to ensure admin user (${HASH_MODE_LABEL} mode). See /tmp/ensure-admin.log"
               return 1
             fi
@@ -1470,6 +1473,7 @@ spec:
           retry 5 5 ensure_admin_user
 
           echo "🔍 Inspecting admin credentials as stored in database..."
+          ADMIN_BCRYPT_HASH_SQL="$(sql_escape_literal "$ADMIN_BCRYPT_HASH")"
           verify_sql="WITH u AS (
             SELECT source_id AS username, source_id, status, password,
                   password AS stored_hash
@@ -1479,12 +1483,9 @@ spec:
           )
           SELECT username, source_id, status,
                 left(password, 12) || '...' AS password_prefix,
-                CASE
-                  WHEN :'USE_PGCRYPTO' = '1' THEN crypt(:'ADMIN_PASSWORD', stored_hash) = stored_hash
-                  ELSE stored_hash = :'ADMIN_BCRYPT_HASH'
-                END AS password_matches
+                stored_hash = '${ADMIN_BCRYPT_HASH_SQL}' AS password_matches
             FROM u;"
-          printf "%s\n" "$verify_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -v ADMIN_PASSWORD="$ADMIN_PASSWORD" -v ADMIN_BCRYPT_HASH="$ADMIN_BCRYPT_HASH" -v USE_PGCRYPTO="$PGCRYPTO_AVAILABLE"
+          printf "%s\n" "$verify_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
 
           echo "🔓 Temporarily ensuring admin user is ACTIVE for API configuration..."
           activate_sql="UPDATE gravitee.users
