@@ -41,7 +41,7 @@ GKO must be installed for these annotations to take effect.
 - `gravitee.io/definition-properties`
 - `gravitee.io/definition-services`
 - `gravitee.io/definition-resources`
-- `gravitee.io/definition-plans` (JSON array; ignored if not a list)
+- `gravitee.io/definition-plans` (JSON object map; arrays are converted to maps)
 - `gravitee.io/definition-flows`
 - `gravitee.io/definition-response-templates`
 - `gravitee.io/definition-pages`
@@ -69,3 +69,7 @@ OpenAPI content is not consumed by the current sync controller.
 Tag handling: the sync controller defaults to `TAGS_MODE=ignore` to avoid
 license-gated sharding tags in OSS. Set `TAGS_MODE=labels` to map tags to labels
 or `TAGS_MODE=allow` if you have a license.
+
+Plan handling: `definition-plans` should be a JSON object map. If you use an
+array, the sync controller will convert it to a map keyed by a slug of the plan
+name. If `security` is a string, it will be converted to `{ "type": "<value>" }`.

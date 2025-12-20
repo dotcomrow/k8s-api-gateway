@@ -58,6 +58,7 @@ data:
     #!/usr/bin/env python3
     import json
     import os
+    import re
     import ssl
     import time
     import urllib.error
@@ -144,12 +145,49 @@ data:
             return {"dynamicProperty": value["dynamicProperty"]}
         return None
 
+    def slugify(value):
+        text = str(value or "").strip().lower()
+        text = re.sub(r"[^a-z0-9]+", "-", text)
+        text = text.strip("-")
+        return text or "plan"
+
+    def normalize_plan(plan, svc_key):
+        if not isinstance(plan, dict):
+            log(f"Ignoring plan for {svc_key}: expected object")
+            return None
+        security = plan.get("security")
+        if isinstance(security, str):
+            plan = dict(plan)
+            plan["security"] = {"type": security}
+        return plan
+
     def normalize_plans(value, svc_key):
         if not value:
             return None
+        if isinstance(value, dict):
+            plans = {}
+            for key, plan in value.items():
+                normalized = normalize_plan(plan, svc_key)
+                if normalized is None:
+                    continue
+                plans[str(key)] = normalized
+            return plans or None
         if isinstance(value, list):
-            return value
-        log(f"Ignoring definition-plans for {svc_key}: expected JSON array")
+            plans = {}
+            for index, plan in enumerate(value, start=1):
+                normalized = normalize_plan(plan, svc_key)
+                if normalized is None:
+                    continue
+                name = normalized.get("name") or f"plan-{index}"
+                plan_id = slugify(name)
+                base = plan_id
+                suffix = 1
+                while plan_id in plans:
+                    suffix += 1
+                    plan_id = f"{base}-{suffix}"
+                plans[plan_id] = normalized
+            return plans or None
+        log(f"Ignoring definition-plans for {svc_key}: expected JSON object or array")
         return None
 
     def normalize_list(value):
