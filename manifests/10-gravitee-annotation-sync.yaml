@@ -123,7 +123,12 @@ spec:
             - |
               set -e
               kubectl -n k8s-api-gateway scale deployment gravitee-annotation-sync --replicas=0 || true
-              kubectl delete apiv4definitions.gravitee.io -A -l gravitee.io/managed-by=annotation-sync --ignore-not-found
+              kubectl get apiv4definitions.gravitee.io -A \
+                -o jsonpath='{range .items[?(@.spec.contextRef.name=="gravitee-default")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+                | while read -r ns name; do
+                    [ -n "$ns" ] && [ -n "$name" ] || continue
+                    kubectl delete apiv4definitions.gravitee.io -n "$ns" "$name" --ignore-not-found
+                  done
 ---
 apiVersion: v1
 kind: ConfigMap
