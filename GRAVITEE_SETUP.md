@@ -76,6 +76,9 @@ Note: Gravitee tags require the `apim-sharding-tags` license feature. Provide a
 to enable tag imports.
 For OSS-only deployments, the annotation sync controller defaults to
 `TAGS_MODE=ignore` so tags never block API imports.
+The sync controller can also auto-create groups and categories from annotations
+using the management API. Ensure `gravitee-admin-credentials` exists and
+`GRAVITEE_MANAGEMENT_API` points at the management API.
 
 ## Operator-Based Discovery
 
@@ -102,3 +105,7 @@ kubectl apply -f manifests/10-gravitee-annotation-sync.yaml
 - **Portal**: `gravitee-portal.k8s-api-gateway.svc.cluster.local:8080`
 - **Database**: YugabyteDB with `gravitee` schema
 - **Secrets**: All stored in Vault under `secret/gravitee/`
+
+Teleport apps:
+- Portal: `https://gravitee.teleport.app.suncoast.systems`
+- Management console: `https://gravitee-management.teleport.app.suncoast.systems`

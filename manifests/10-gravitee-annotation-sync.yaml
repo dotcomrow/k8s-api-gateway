@@ -135,6 +135,7 @@ metadata:
 data:
   sync.py: |
     #!/usr/bin/env python3
+    import base64
     import json
     import os
     import re
@@ -156,6 +157,13 @@ data:
     DEFAULT_STATE = os.environ.get("DEFAULT_STATE", "STARTED")
     DEFAULT_LIFECYCLE = os.environ.get("DEFAULT_LIFECYCLE_STATE", "PUBLISHED")
     TAGS_MODE = os.environ.get("TAGS_MODE", "ignore").strip().lower()
+    GRAVITEE_MANAGEMENT_API = os.environ.get("GRAVITEE_MANAGEMENT_API", "").rstrip("/")
+    GRAVITEE_ORG = os.environ.get("GRAVITEE_ORG", "DEFAULT")
+    GRAVITEE_ENV = os.environ.get("GRAVITEE_ENV", "DEFAULT")
+    GRAVITEE_ADMIN_USERNAME = os.environ.get("GRAVITEE_ADMIN_USERNAME")
+    GRAVITEE_ADMIN_PASSWORD = os.environ.get("GRAVITEE_ADMIN_PASSWORD")
+    AUTO_CREATE_GROUPS = os.environ.get("AUTO_CREATE_GROUPS", "true").strip().lower() == "true"
+    AUTO_CREATE_CATEGORIES = os.environ.get("AUTO_CREATE_CATEGORIES", "true").strip().lower() == "true"
 
     def log(msg):
         print(msg, flush=True)
@@ -163,6 +171,9 @@ data:
     if TAGS_MODE not in ("ignore", "labels", "allow"):
         log(f"Unknown TAGS_MODE '{TAGS_MODE}', defaulting to 'ignore'")
         TAGS_MODE = "ignore"
+
+    def gravitee_enabled():
+        return all([GRAVITEE_MANAGEMENT_API, GRAVITEE_ADMIN_USERNAME, GRAVITEE_ADMIN_PASSWORD])
 
     def read_file(path):
         with open(path, "r", encoding="utf-8") as handle:
@@ -178,6 +189,18 @@ data:
         req = urllib.request.Request(BASE_URL + path, data=data, headers=headers, method=method)
         ctx = ssl.create_default_context(cafile=CA_PATH)
         return urllib.request.urlopen(req, context=ctx, timeout=10)
+
+    def gravitee_request(method, path, payload=None):
+        if not GRAVITEE_MANAGEMENT_API:
+            raise RuntimeError("GRAVITEE_MANAGEMENT_API is not set")
+        auth_token = base64.b64encode(f"{GRAVITEE_ADMIN_USERNAME}:{GRAVITEE_ADMIN_PASSWORD}".encode("utf-8")).decode("utf-8")
+        headers = {"Authorization": f"Basic {auth_token}", "Accept": "application/json"}
+        data = None
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+            data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(f"{GRAVITEE_MANAGEMENT_API}{path}", data=data, headers=headers, method=method)
+        return urllib.request.urlopen(req, timeout=10)
 
     def parse_csv(value):
         if not value:
@@ -268,6 +291,47 @@ data:
             return plans or None
         log(f"Ignoring definition-plans for {svc_key}: expected JSON object or array")
         return None
+
+    def management_config_path():
+        return f"/organizations/{GRAVITEE_ORG}/environments/{GRAVITEE_ENV}/configuration"
+
+    def list_gravitee_items(resource_path):
+        with gravitee_request("GET", resource_path) as resp:
+            body = resp.read().decode("utf-8").strip() or "[]"
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return []
+
+    def create_gravitee_item(resource_path, payload, item_label):
+        try:
+            with gravitee_request("POST", resource_path, payload=payload) as resp:
+                resp.read()
+            log(f"Created {item_label}: {payload.get('name')}")
+        except urllib.error.HTTPError as exc:
+            log(f"Failed to create {item_label} {payload.get('name')}: {exc}")
+
+    def ensure_groups_and_categories(groups, categories):
+        if not (groups or categories):
+            return
+        if not gravitee_enabled():
+            log("Gravitee admin credentials not configured; skipping group/category creation")
+            return
+        base = management_config_path()
+        if AUTO_CREATE_GROUPS and groups:
+            existing = list_gravitee_items(f"{base}/groups")
+            existing_names = {str(item.get("name", "")).lower() for item in existing}
+            for name in sorted(groups):
+                if name.lower() in existing_names:
+                    continue
+                create_gravitee_item(f"{base}/groups", {"name": name}, "group")
+        if AUTO_CREATE_CATEGORIES and categories:
+            existing = list_gravitee_items(f"{base}/categories")
+            existing_names = {str(item.get("name", "")).lower() for item in existing}
+            for name in sorted(categories):
+                if name.lower() in existing_names:
+                    continue
+                create_gravitee_item(f"{base}/categories", {"name": name}, "category")
 
     def normalize_list(value):
         if isinstance(value, list):
@@ -584,6 +648,17 @@ data:
 
     def run_once():
         services = list_services()
+        desired_groups = set()
+        desired_categories = set()
+        for svc in services:
+            metadata = svc.get("metadata", {})
+            annotations = metadata.get("annotations", {}) or {}
+            if not is_true(annotations.get("gravitee.io/expose")):
+                continue
+            desired_groups.update(parse_csv(annotations.get("gravitee.io/definition-groups")))
+            desired_categories.update(parse_csv(annotations.get("gravitee.io/definition-categories")))
+
+        ensure_groups_and_categories(desired_groups, desired_categories)
         desired = {}
         for service in services:
             annotations = service.get("metadata", {}).get("annotations", {}) or {}
@@ -658,6 +733,26 @@ spec:
               value: "PUBLISHED"
             - name: TAGS_MODE
               value: "ignore"
+            - name: GRAVITEE_MANAGEMENT_API
+              value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management"
+            - name: GRAVITEE_ORG
+              value: "DEFAULT"
+            - name: GRAVITEE_ENV
+              value: "DEFAULT"
+            - name: GRAVITEE_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: gravitee-admin-credentials
+                  key: username
+            - name: GRAVITEE_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gravitee-admin-credentials
+                  key: password
+            - name: AUTO_CREATE_GROUPS
+              value: "true"
+            - name: AUTO_CREATE_CATEGORIES
+              value: "true"
           volumeMounts:
             - name: sync-script
               mountPath: /app

@@ -73,3 +73,9 @@ or `TAGS_MODE=allow` if you have a license.
 Plan handling: `definition-plans` should be a JSON object map. If you use an
 array, the sync controller will convert it to a map keyed by a slug of the plan
 name. If `security` is a string, it will be converted to `{ "type": "<value>" }`.
+
+Group/category handling: the sync controller can auto-create groups and
+categories in Gravitee when it sees `definition-groups` or
+`definition-categories`. This requires `GRAVITEE_MANAGEMENT_API`,
+`GRAVITEE_ADMIN_USERNAME`, and `GRAVITEE_ADMIN_PASSWORD`. Toggle with
+`AUTO_CREATE_GROUPS` and `AUTO_CREATE_CATEGORIES`.

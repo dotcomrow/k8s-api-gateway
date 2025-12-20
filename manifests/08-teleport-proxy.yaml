@@ -34,6 +34,27 @@ data:
             listen 8080;
             listen [::]:8080;
 
+            server_name gravitee-management.teleport.app.suncoast.systems;
+
+            location = / {
+                return 302 /management/;
+            }
+
+            # Management REST API (and UI if deployed behind /management)
+            location /management/ {
+                proxy_pass http://gravitee_management$request_uri;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_set_header X-Forwarded-Port 443;
+            }
+        }
+
+        server {
+            listen 8080;
+            listen [::]:8080;
+
             # Portal static assets (default path)
             location / {
                 proxy_pass http://gravitee_portal;
@@ -120,6 +141,30 @@ spec:
       - name: proxy-config
         configMap:
           name: gravitee-teleport-proxy
+---
+# Gravitee Teleport Proxy Service (management console app)
+apiVersion: v1
+kind: Service
+metadata:
+  name: gravitee-teleport-management
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    teleport.dev/name: "gravitee-management"
+    teleport.dev/protocol: "http"
+    teleport.dev/public-addr: "gravitee-management.teleport.app.suncoast.systems"
+    teleport.dev/description: "Gravitee Management Console"
+    teleport.dev/labels: "environment=production,service=gravitee,component=management"
+  labels:
+    teleport.dev/enroll: "true"
+    teleport.dev/app: "gravitee-management"
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: gravitee-teleport-proxy
 ---
 # Gravitee Teleport Proxy Service (exposed via Teleport)
 apiVersion: v1
