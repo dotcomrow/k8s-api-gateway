@@ -59,12 +59,16 @@ metadata:
     gravitee.io/context-path: "/api/users"
     gravitee.io/auth-required: "jwt"
     gravitee.io/approval-required: "admin"
-    gravitee.io/description: "User management API"
-    gravitee.io/version: "v1"
-    gravitee.io/tags: "users,auth"
+    gravitee.io/definition-summary: "User management API"
+    gravitee.io/definition-description: "User management API"
+    gravitee.io/definition-version: "v1"
+    gravitee.io/definition-tags: "users,auth"
+    gravitee.io/definition-openapi-url: "https://example.com/openapi.yaml"
 spec:
   # your service configuration
 ```
+
+See `GRAVITEE_ANNOTATIONS.md` for the full supported annotation list and formats.
 
 ## Deployment
 

@@ -116,12 +116,17 @@ Add annotations to your Kubernetes services for automatic API catalog population
 ```yaml
 metadata:
   annotations:
+    gravitee.io/expose: "true"
     gravitee.io/definition-context-path: "/api/v1/my-service"
     gravitee.io/definition-summary: "My Service API" 
     gravitee.io/definition-description: "Detailed service description"
     gravitee.io/definition-version: "1.0.0"
     gravitee.io/definition-groups: "internal,public"
+    gravitee.io/definition-tags: "internal,public"
+    gravitee.io/definition-openapi-url: "https://example.com/openapi.yaml"
 ```
+
+Full annotation list and formats: `GRAVITEE_ANNOTATIONS.md`.
 
 ## 📊 Key Benefits
 

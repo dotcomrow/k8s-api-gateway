@@ -119,12 +119,17 @@ Gravitee automatically discovers APIs from Kubernetes services using annotations
 # Add to your service manifests for automatic discovery:
 metadata:
   annotations:
+    gravitee.io/expose: "true"
     gravitee.io/definition-context-path: "/api/v1/myservice"
     gravitee.io/definition-summary: "My Service API"
     gravitee.io/definition-description: "Detailed description of the service"
     gravitee.io/definition-version: "1.0.0"
     gravitee.io/definition-groups: "internal,public"
+    gravitee.io/definition-tags: "internal,public"
+    gravitee.io/definition-openapi-url: "https://example.com/openapi.yaml"
 ```
+
+Full annotation list and formats: `GRAVITEE_ANNOTATIONS.md`.
 
 ## 🛠️ Troubleshooting
 
