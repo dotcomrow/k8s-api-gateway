@@ -6,6 +6,14 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "4"
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gravitee-annotation-cleanup
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -19,6 +27,15 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gravitee-annotation-cleanup
+rules:
+  - apiGroups: ["gravitee.io"]
+    resources: ["apiv4definitions"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: gravitee-annotation-sync
@@ -29,6 +46,44 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: gravitee-annotation-sync
+    namespace: k8s-api-gateway
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gravitee-annotation-cleanup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gravitee-annotation-cleanup
+subjects:
+  - kind: ServiceAccount
+    name: gravitee-annotation-cleanup
+    namespace: k8s-api-gateway
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gravitee-annotation-cleanup
+  namespace: k8s-api-gateway
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["gravitee-annotation-sync"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gravitee-annotation-cleanup
+  namespace: k8s-api-gateway
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gravitee-annotation-cleanup
+subjects:
+  - kind: ServiceAccount
+    name: gravitee-annotation-cleanup
     namespace: k8s-api-gateway
 ---
 apiVersion: gravitee.io/v1alpha1
@@ -45,6 +100,30 @@ spec:
   auth:
     secretRef:
       name: gravitee-admin-credentials
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gravitee-annotation-cleanup
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed
+spec:
+  ttlSecondsAfterFinished: 120
+  template:
+    spec:
+      serviceAccountName: gravitee-annotation-cleanup
+      restartPolicy: Never
+      containers:
+        - name: cleanup
+          image: alpine/k8s:1.31.4
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              kubectl -n k8s-api-gateway scale deployment gravitee-annotation-sync --replicas=0 || true
+              kubectl delete apiv4definitions.gravitee.io -A -l gravitee.io/managed-by=annotation-sync --ignore-not-found
 ---
 apiVersion: v1
 kind: ConfigMap
