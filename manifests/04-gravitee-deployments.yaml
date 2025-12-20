@@ -184,7 +184,8 @@ data:
         kubernetes:
           enabled: true
           service:
-            namespace: ${K8S_NAMESPACE:k8s-api-gateway}
+            # Empty means watch all namespaces.
+            namespace: ${K8S_NAMESPACE:}
           # Auto-discovery via annotations
           annotations:
             gravitee.io/expose: "true"
@@ -504,8 +505,9 @@ spec:
         - name: SERVICES_CACHE_ENABLED
           value: "false"
 
+        # Empty means watch all namespaces.
         - name: K8S_NAMESPACE
-          value: "k8s-api-gateway"
+          value: ""
         - name: APISIX_SYNC_ENABLED
           value: "true"
         - name: APISIX_ADMIN_URL
@@ -741,8 +743,9 @@ spec:
           value: "false"
         # Password comes from Vault -> exported below
 
+        # Empty means watch all namespaces.
         - name: K8S_NAMESPACE
-          value: "k8s-api-gateway"
+          value: ""
         - name: APISIX_SYNC_ENABLED
           value: "true"
         - name: APISIX_ADMIN_URL
@@ -1083,7 +1086,8 @@ data:
         kubernetes:
           enabled: true
           service:
-            namespace: ${K8S_NAMESPACE:k8s-api-gateway}
+            # Empty means watch all namespaces.
+            namespace: ${K8S_NAMESPACE:}
     
       # Sync service for management repository
       sync:

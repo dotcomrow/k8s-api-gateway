@@ -105,7 +105,8 @@ services:
     kubernetes:
       enabled: true
       service:
-        namespace: ${K8S_NAMESPACE:k8s-api-gateway}
+        # Empty means watch all namespaces.
+        namespace: ${K8S_NAMESPACE:}
       # Auto-discovery via annotations
       annotations:
         gravitee.io/expose: "true"

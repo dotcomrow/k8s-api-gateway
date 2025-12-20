@@ -68,6 +68,8 @@ spec:
   # your service configuration
 ```
 
+Discovery watches all namespaces by default; set `K8S_NAMESPACE` to restrict scope.
+
 See `GRAVITEE_ANNOTATIONS.md` for the full supported annotation list and formats.
 
 ## Deployment

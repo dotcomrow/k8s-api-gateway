@@ -131,6 +131,8 @@ metadata:
 
 Full annotation list and formats: `GRAVITEE_ANNOTATIONS.md`.
 
+Discovery watches all namespaces by default; set `K8S_NAMESPACE` to restrict scope.
+
 ## 🛠️ Troubleshooting
 
 ### Common Issues
