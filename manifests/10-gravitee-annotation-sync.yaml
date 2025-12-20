@@ -1,0 +1,478 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gravitee-annotation-sync
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gravitee-annotation-sync
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gravitee.io"]
+    resources: ["apiv4definitions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gravitee-annotation-sync
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gravitee-annotation-sync
+subjects:
+  - kind: ServiceAccount
+    name: gravitee-annotation-sync
+    namespace: k8s-api-gateway
+---
+apiVersion: gravitee.io/v1alpha1
+kind: ManagementContext
+metadata:
+  name: gravitee-default
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  baseUrl: http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083
+  environmentId: DEFAULT
+  organizationId: DEFAULT
+  auth:
+    secretRef:
+      name: gravitee-admin-credentials
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gravitee-annotation-sync
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  sync.py: |
+    #!/usr/bin/env python3
+    import json
+    import os
+    import ssl
+    import time
+    import urllib.error
+    import urllib.request
+
+    KUBE_HOST = os.environ.get("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
+    KUBE_PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
+    BASE_URL = f"https://{KUBE_HOST}:{KUBE_PORT}"
+    TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    CA_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+    SYNC_INTERVAL = int(os.environ.get("SYNC_INTERVAL", "60"))
+    CONTEXT_NAME = os.environ.get("GRAVITEE_CONTEXT_NAME", "gravitee-default")
+    CONTEXT_NAMESPACE = os.environ.get("GRAVITEE_CONTEXT_NAMESPACE", "k8s-api-gateway")
+    DEFAULT_VISIBILITY = os.environ.get("DEFAULT_VISIBILITY", "PRIVATE")
+    DEFAULT_STATE = os.environ.get("DEFAULT_STATE", "STARTED")
+    DEFAULT_LIFECYCLE = os.environ.get("DEFAULT_LIFECYCLE_STATE", "PUBLISHED")
+
+    def log(msg):
+        print(msg, flush=True)
+
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as handle:
+            return handle.read().strip()
+
+    def kube_request(method, path, payload=None, content_type="application/json"):
+        token = read_file(TOKEN_PATH)
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        data = None
+        if payload is not None:
+            headers["Content-Type"] = content_type
+            data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(BASE_URL + path, data=data, headers=headers, method=method)
+        ctx = ssl.create_default_context(cafile=CA_PATH)
+        return urllib.request.urlopen(req, context=ctx, timeout=10)
+
+    def parse_csv(value):
+        if not value:
+            return []
+        return [item.strip() for item in value.split(",") if item.strip()]
+
+    def parse_json(value, label, svc_key):
+        if not value:
+            return None
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as exc:
+            log(f"Invalid JSON for {label} on {svc_key}: {exc}")
+            return None
+
+    def is_true(value):
+        return str(value).lower() == "true"
+
+    def service_dns(name, namespace):
+        return f"{name}.{namespace}.svc.cluster.local"
+
+    def pick_port(ports, preferred_name=None):
+        if not ports:
+            return None
+        if preferred_name:
+            for port in ports:
+                if str(port.get("name", "")).lower() == preferred_name:
+                    return port
+        return ports[0]
+
+    def infer_http_scheme(port):
+        name = str(port.get("name", "")).lower()
+        if "https" in name or port.get("port") == 443:
+            return "https"
+        return "http"
+
+    def infer_api_type(annotations, ports):
+        explicit = str(annotations.get("gravitee.io/definition-type", "")).upper()
+        if explicit in {"PROXY", "MESSAGE", "NATIVE"}:
+            return explicit
+        if explicit == "KAFKA":
+            return "NATIVE"
+        endpoints = annotations.get("gravitee.io/definition-endpoints", "")
+        if "kafka" in endpoints.lower():
+            return "NATIVE"
+        for port in ports or []:
+            name = str(port.get("name", "")).lower()
+            if "kafka" in name or port.get("port") == 9092:
+                return "NATIVE"
+        return "PROXY"
+
+    def build_listeners(api_type, annotations, ports, context_path, svc_key):
+        raw_listeners = parse_json(annotations.get("gravitee.io/definition-listeners"), "definition-listeners", svc_key)
+        if raw_listeners is not None:
+            return raw_listeners
+        entrypoints = parse_json(annotations.get("gravitee.io/definition-entrypoints"), "definition-entrypoints", svc_key)
+        if api_type == "NATIVE":
+            port = pick_port(ports, "kafka") or pick_port(ports)
+            if not port:
+                return []
+            host = annotations.get("gravitee.io/definition-listener-host") or service_dns(svc_key.split("/")[1], svc_key.split("/")[0])
+            listener_port = int(annotations.get("gravitee.io/definition-listener-port", port.get("port")))
+            if not entrypoints:
+                entrypoints = [{"type": "native-kafka", "qos": "AUTO"}]
+            return [{
+                "type": "KAFKA",
+                "host": host,
+                "port": listener_port,
+                "entrypoints": entrypoints,
+            }]
+        if not entrypoints:
+            entrypoints = [{"type": "http-proxy", "qos": "AUTO"}]
+        return [{
+            "type": "HTTP",
+            "paths": [{"path": context_path}],
+            "entrypoints": entrypoints,
+        }]
+
+    def build_endpoint_groups(api_type, annotations, ports, svc_name, svc_ns, svc_key):
+        raw_groups = parse_json(annotations.get("gravitee.io/definition-endpoint-groups"), "definition-endpoint-groups", svc_key)
+        if raw_groups is not None:
+            return raw_groups
+        endpoints = parse_json(annotations.get("gravitee.io/definition-endpoints"), "definition-endpoints", svc_key)
+        port = pick_port(ports, "kafka" if api_type == "NATIVE" else "http") or pick_port(ports)
+        if not port:
+            return []
+        if api_type == "NATIVE":
+            bootstrap = f"{service_dns(svc_name, svc_ns)}:{port.get('port')}"
+            if endpoints is None:
+                endpoints = [{
+                    "name": f"{svc_name}-native",
+                    "type": "native-kafka",
+                    "inheritConfiguration": True,
+                    "weight": 1,
+                    "configuration": {"bootstrapServers": bootstrap},
+                    "secondary": False,
+                }]
+            return [{
+                "name": "default-native",
+                "type": "native-kafka",
+                "sharedConfiguration": {"security": {"protocol": "PLAINTEXT"}},
+                "endpoints": endpoints,
+            }]
+        scheme = annotations.get("gravitee.io/definition-endpoint-scheme")
+        if not scheme:
+            scheme = infer_http_scheme(port)
+        target = f"{scheme}://{service_dns(svc_name, svc_ns)}:{port.get('port')}"
+        if endpoints is None:
+            endpoints = [{
+                "name": f"{svc_name}-http",
+                "type": "http-proxy",
+                "inheritConfiguration": False,
+                "configuration": {"target": target},
+                "secondary": False,
+            }]
+        group_type = "http-proxy"
+        if isinstance(endpoints, list) and endpoints and "type" in endpoints[0]:
+            group_type = endpoints[0]["type"]
+        return [{
+            "name": "default",
+            "type": group_type,
+            "endpoints": endpoints,
+        }]
+
+    def build_pages(annotations, svc_key):
+        pages = parse_json(annotations.get("gravitee.io/definition-pages"), "definition-pages", svc_key)
+        if pages is not None:
+            return pages
+        openapi_url = annotations.get("gravitee.io/definition-openapi-url")
+        if not openapi_url:
+            return None
+        return {
+            "swagger": {
+                "name": "openapi",
+                "type": "SWAGGER",
+                "published": True,
+                "source": {
+                    "type": "http-fetcher",
+                    "configuration": {
+                        "url": openapi_url,
+                        "useSystemProxy": False,
+                        "autoFetch": True,
+                    },
+                },
+            },
+        }
+
+    def build_api_definition(service):
+        metadata = service.get("metadata", {})
+        annotations = metadata.get("annotations", {}) or {}
+        svc_name = metadata.get("name")
+        svc_ns = metadata.get("namespace")
+        svc_uid = metadata.get("uid")
+        svc_key = f"{svc_ns}/{svc_name}"
+        ports = service.get("spec", {}).get("ports", [])
+
+        definition_name = annotations.get("gravitee.io/definition-name")
+        definition_summary = annotations.get("gravitee.io/definition-summary")
+        definition_description = annotations.get("gravitee.io/definition-description")
+        fallback_description = annotations.get("gravitee.io/description")
+        definition_version = annotations.get("gravitee.io/definition-version") or annotations.get("gravitee.io/version")
+
+        spec_name = definition_name or definition_summary or svc_name
+        spec_description = definition_description or fallback_description or definition_summary or ""
+        spec_version = definition_version or "1.0.0"
+
+        context_path = annotations.get("gravitee.io/definition-context-path") or annotations.get("gravitee.io/context-path")
+        if not context_path:
+            context_path = f"/{svc_name}"
+
+        api_type = infer_api_type(annotations, ports)
+        listeners = build_listeners(api_type, annotations, ports, context_path, svc_key)
+        endpoint_groups = build_endpoint_groups(api_type, annotations, ports, svc_name, svc_ns, svc_key)
+        if not listeners or not endpoint_groups:
+            log(f"Skipping {svc_key}: missing listeners or endpoint groups")
+            return None
+
+        spec = {
+            "contextRef": {"name": CONTEXT_NAME, "namespace": CONTEXT_NAMESPACE},
+            "name": spec_name,
+            "description": spec_description,
+            "version": spec_version,
+            "type": api_type,
+            "listeners": listeners,
+            "endpointGroups": endpoint_groups,
+        }
+
+        def set_if(value, key):
+            if value is not None:
+                spec[key] = value
+
+        visibility = annotations.get("gravitee.io/definition-visibility")
+        state = annotations.get("gravitee.io/definition-state")
+        lifecycle_state = annotations.get("gravitee.io/definition-lifecycle-state")
+
+        set_if(visibility or DEFAULT_VISIBILITY, "visibility")
+        set_if(state or DEFAULT_STATE, "state")
+        set_if(lifecycle_state or DEFAULT_LIFECYCLE, "lifecycleState")
+
+        tags = parse_csv(annotations.get("gravitee.io/definition-tags") or annotations.get("gravitee.io/tags"))
+        labels = parse_csv(annotations.get("gravitee.io/definition-labels"))
+        categories = parse_csv(annotations.get("gravitee.io/definition-categories"))
+        groups = parse_csv(annotations.get("gravitee.io/definition-groups"))
+
+        set_if(tags or None, "tags")
+        set_if(labels or None, "labels")
+        set_if(categories or None, "categories")
+        set_if(groups or None, "groups")
+
+        metadata_json = parse_json(annotations.get("gravitee.io/definition-metadata"), "definition-metadata", svc_key)
+        properties_json = parse_json(annotations.get("gravitee.io/definition-properties"), "definition-properties", svc_key)
+        services_json = parse_json(annotations.get("gravitee.io/definition-services"), "definition-services", svc_key)
+        resources_json = parse_json(annotations.get("gravitee.io/definition-resources"), "definition-resources", svc_key)
+        plans_json = parse_json(annotations.get("gravitee.io/definition-plans"), "definition-plans", svc_key)
+        flows_json = parse_json(annotations.get("gravitee.io/definition-flows"), "definition-flows", svc_key)
+        responses_json = parse_json(annotations.get("gravitee.io/definition-response-templates"), "definition-response-templates", svc_key)
+        pages_json = build_pages(annotations, svc_key)
+
+        set_if(metadata_json, "metadata")
+        set_if(properties_json, "properties")
+        set_if(services_json, "services")
+        set_if(resources_json, "resources")
+        set_if(plans_json, "plans")
+        set_if(flows_json, "flows")
+        set_if(responses_json, "responseTemplates")
+        set_if(pages_json, "pages")
+
+        body = {
+            "apiVersion": "gravitee.io/v1alpha1",
+            "kind": "ApiV4Definition",
+            "metadata": {
+                "name": svc_name,
+                "namespace": svc_ns,
+                "labels": {
+                    "gravitee.io/managed-by": "annotation-sync",
+                },
+                "annotations": {
+                    "gravitee.io/source-service": svc_name,
+                    "gravitee.io/source-namespace": svc_ns,
+                },
+                "ownerReferences": [
+                    {
+                        "apiVersion": "v1",
+                        "kind": "Service",
+                        "name": svc_name,
+                        "uid": svc_uid,
+                        "controller": False,
+                        "blockOwnerDeletion": False,
+                    }
+                ],
+            },
+            "spec": spec,
+        }
+        return body
+
+    def list_services():
+        with kube_request("GET", "/api/v1/services") as resp:
+            return json.loads(resp.read().decode("utf-8")).get("items", [])
+
+    def list_managed_apis():
+        try:
+            with kube_request("GET", "/apis/gravitee.io/v1alpha1/apiv4definitions?labelSelector=gravitee.io%2Fmanaged-by%3Dannotation-sync") as resp:
+                return json.loads(resp.read().decode("utf-8")).get("items", [])
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                log("ApiV4Definition CRD not found yet; waiting for operator install.")
+                return []
+            raise
+
+    def apply_api(api):
+        ns = api["metadata"]["namespace"]
+        name = api["metadata"]["name"]
+        path = f"/apis/gravitee.io/v1alpha1/namespaces/{ns}/apiv4definitions/{name}"
+        try:
+            kube_request("GET", path).close()
+            kube_request("PATCH", path, api, content_type="application/merge-patch+json").close()
+            return "patched"
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                kube_request("POST", f"/apis/gravitee.io/v1alpha1/namespaces/{ns}/apiv4definitions", api).close()
+                return "created"
+            raise
+
+    def delete_api(ns, name):
+        path = f"/apis/gravitee.io/v1alpha1/namespaces/{ns}/apiv4definitions/{name}"
+        try:
+            kube_request("DELETE", path).close()
+            return True
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return False
+            raise
+
+    def run_once():
+        services = list_services()
+        desired = {}
+        for service in services:
+            annotations = service.get("metadata", {}).get("annotations", {}) or {}
+            if not is_true(annotations.get("gravitee.io/expose")):
+                continue
+            api = build_api_definition(service)
+            if not api:
+                continue
+            key = (api["metadata"]["namespace"], api["metadata"]["name"])
+            desired[key] = api
+
+        for key, api in desired.items():
+            status = apply_api(api)
+            log(f"{status}: {key[0]}/{key[1]}")
+
+        existing = list_managed_apis()
+        for api in existing:
+            key = (api.get("metadata", {}).get("namespace"), api.get("metadata", {}).get("name"))
+            if key not in desired:
+                if delete_api(*key):
+                    log(f"deleted: {key[0]}/{key[1]}")
+
+    def main():
+        log("Starting gravitee annotation sync")
+        while True:
+            try:
+                run_once()
+            except Exception as exc:
+                log(f"sync error: {exc}")
+            time.sleep(SYNC_INTERVAL)
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gravitee-annotation-sync
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  labels:
+    app: gravitee-annotation-sync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gravitee-annotation-sync
+  template:
+    metadata:
+      labels:
+        app: gravitee-annotation-sync
+    spec:
+      serviceAccountName: gravitee-annotation-sync
+      containers:
+        - name: sync
+          image: python:3.12-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/app/sync.py"]
+          env:
+            - name: SYNC_INTERVAL
+              value: "60"
+            - name: GRAVITEE_CONTEXT_NAME
+              value: "gravitee-default"
+            - name: GRAVITEE_CONTEXT_NAMESPACE
+              value: "k8s-api-gateway"
+            - name: DEFAULT_VISIBILITY
+              value: "PRIVATE"
+            - name: DEFAULT_STATE
+              value: "STARTED"
+            - name: DEFAULT_LIFECYCLE_STATE
+              value: "PUBLISHED"
+          volumeMounts:
+            - name: sync-script
+              mountPath: /app
+              readOnly: true
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+      volumes:
+        - name: sync-script
+          configMap:
+            name: gravitee-annotation-sync
+            defaultMode: 0555

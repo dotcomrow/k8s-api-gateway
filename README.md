@@ -130,6 +130,13 @@ Full annotation list and formats: `GRAVITEE_ANNOTATIONS.md`.
 
 Discovery watches all namespaces by default; set `K8S_NAMESPACE` to restrict scope.
 
+Install the Gravitee Kubernetes Operator and annotation sync controller:
+
+```bash
+kubectl apply -f manifests/09-gravitee-operator.yaml
+kubectl apply -f manifests/10-gravitee-annotation-sync.yaml
+```
+
 ## 📊 Key Benefits
 
 ### ✅ **Vs Backstage**

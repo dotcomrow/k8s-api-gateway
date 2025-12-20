@@ -133,6 +133,15 @@ Full annotation list and formats: `GRAVITEE_ANNOTATIONS.md`.
 
 Discovery watches all namespaces by default; set `K8S_NAMESPACE` to restrict scope.
 
+### Operator-Based Discovery
+
+Service annotations are synchronized into Gravitee via the GKO + annotation sync controller:
+
+```bash
+kubectl apply -f manifests/09-gravitee-operator.yaml
+kubectl apply -f manifests/10-gravitee-annotation-sync.yaml
+```
+
 ## 🛠️ Troubleshooting
 
 ### Common Issues

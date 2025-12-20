@@ -72,6 +72,18 @@ Discovery watches all namespaces by default; set `K8S_NAMESPACE` to restrict sco
 
 See `GRAVITEE_ANNOTATIONS.md` for the full supported annotation list and formats.
 
+## Operator-Based Discovery
+
+Annotation discovery is handled by the Gravitee Kubernetes Operator (GKO) plus a small
+sync controller that converts service annotations into `ApiV4Definition` resources.
+
+Apply the operator and sync manifests:
+
+```bash
+kubectl apply -f manifests/09-gravitee-operator.yaml
+kubectl apply -f manifests/10-gravitee-annotation-sync.yaml
+```
+
 ## Deployment
 
 1. **Build Images**: `./build-gravitee-images.sh`

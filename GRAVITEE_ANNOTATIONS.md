@@ -1,7 +1,9 @@
 # Gravitee Service Discovery Annotations
 
-This repo whitelists the annotations below in the Gravitee management API config
-under `services.discovery.kubernetes.annotations`.
+These annotations are whitelisted in the Gravitee management API config and
+consumed by the `gravitee-annotation-sync` controller in `manifests/10-gravitee-annotation-sync.yaml`.
+The controller creates `ApiV4Definition` resources for the Gravitee Kubernetes Operator (GKO).
+GKO must be installed for these annotations to take effect.
 
 ## Discovery / access flags
 - `gravitee.io/expose`: `"true"` to include the service in discovery
@@ -18,9 +20,10 @@ under `services.discovery.kubernetes.annotations`.
 - `gravitee.io/definition-description`
 - `gravitee.io/definition-version`
 - `gravitee.io/definition-context-path`
+- `gravitee.io/definition-type` (`PROXY`, `MESSAGE`, `NATIVE`, or `KAFKA`)
 - `gravitee.io/definition-visibility` (ex: `PUBLIC`, `PRIVATE`)
 - `gravitee.io/definition-state` (ex: `STARTED`, `STOPPED`)
-- `gravitee.io/definition-lifecycle-state` (ex: `CREATED`, `PUBLISHED`)
+- `gravitee.io/definition-lifecycle-state` (ex: `PUBLISHED`, `UNPUBLISHED`)
 
 ## Definition list fields (comma-separated)
 - `gravitee.io/definition-groups`
@@ -41,8 +44,16 @@ under `services.discovery.kubernetes.annotations`.
 - `gravitee.io/definition-plans`
 - `gravitee.io/definition-flows`
 - `gravitee.io/definition-response-templates`
+- `gravitee.io/definition-pages`
+- `gravitee.io/definition-listeners`
 - `gravitee.io/definition-entrypoints`
+- `gravitee.io/definition-endpoint-groups`
 - `gravitee.io/definition-endpoints`
+
+## Listener and endpoint helpers
+- `gravitee.io/definition-listener-host` (defaults to service DNS name)
+- `gravitee.io/definition-listener-port` (defaults to service port)
+- `gravitee.io/definition-endpoint-scheme` (`http` or `https`)
 
 ## Definition execution options
 - `gravitee.io/definition-execution-mode`
@@ -51,3 +62,6 @@ under `services.discovery.kubernetes.annotations`.
 ## OpenAPI import (if supported by the discovery provider)
 - `gravitee.io/definition-openapi-url`
 - `gravitee.io/definition-openapi` (inline; keep within K8s annotation size limits)
+
+Note: `definition-openapi-url` is used to generate a Swagger page in GKO; inline
+OpenAPI content is not consumed by the current sync controller.
