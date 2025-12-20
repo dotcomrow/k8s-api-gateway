@@ -532,6 +532,12 @@ spec:
           value: "noreply@k8s-api-gateway.local"
         - name: EMAIL_SUBJECT
           value: "[Gravitee.io] %s"
+        - name: GRAVITEE_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-license
+              key: license.key
+              optional: true
         command: ["/bin/sh", "-c"]
         args:
         - |
@@ -741,6 +747,12 @@ spec:
           value: "false"
         - name: GRAVITEE_NODE_ALERT_ENABLED
           value: "false"
+        - name: GRAVITEE_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-license
+              key: license.key
+              optional: true
         # Password comes from Vault -> exported below
 
         # Empty means watch all namespaces.

@@ -75,9 +75,14 @@ data:
     DEFAULT_VISIBILITY = os.environ.get("DEFAULT_VISIBILITY", "PRIVATE")
     DEFAULT_STATE = os.environ.get("DEFAULT_STATE", "STARTED")
     DEFAULT_LIFECYCLE = os.environ.get("DEFAULT_LIFECYCLE_STATE", "PUBLISHED")
+    TAGS_MODE = os.environ.get("TAGS_MODE", "ignore").strip().lower()
 
     def log(msg):
         print(msg, flush=True)
+
+    if TAGS_MODE not in ("ignore", "labels", "allow"):
+        log(f"Unknown TAGS_MODE '{TAGS_MODE}', defaulting to 'ignore'")
+        TAGS_MODE = "ignore"
 
     def read_file(path):
         with open(path, "r", encoding="utf-8") as handle:
@@ -107,6 +112,55 @@ data:
         except json.JSONDecodeError as exc:
             log(f"Invalid JSON for {label} on {svc_key}: {exc}")
             return None
+
+    def normalize_metadata(value):
+        if not value:
+            return None
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            items = []
+            for key, raw in value.items():
+                items.append({
+                    "key": str(key),
+                    "name": str(key),
+                    "format": "STRING",
+                    "value": str(raw),
+                })
+            return items
+        return None
+
+    def normalize_properties(value):
+        if not value:
+            return None
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            return [{"key": str(key), "value": str(raw)} for key, raw in value.items()]
+        return None
+
+    def normalize_services(value):
+        if isinstance(value, dict) and "dynamicProperty" in value:
+            return {"dynamicProperty": value["dynamicProperty"]}
+        return None
+
+    def normalize_plans(value, svc_key):
+        if not value:
+            return None
+        if isinstance(value, list):
+            return value
+        log(f"Ignoring definition-plans for {svc_key}: expected JSON array")
+        return None
+
+    def normalize_list(value):
+        if isinstance(value, list):
+            return value
+        return None
+
+    def normalize_map(value):
+        if isinstance(value, dict):
+            return value
+        return None
 
     def is_true(value):
         return str(value).lower() == "true"
@@ -288,36 +342,53 @@ data:
         state = annotations.get("gravitee.io/definition-state")
         lifecycle_state = annotations.get("gravitee.io/definition-lifecycle-state")
 
-        set_if(visibility or DEFAULT_VISIBILITY, "visibility")
-        set_if(state or DEFAULT_STATE, "state")
-        set_if(lifecycle_state or DEFAULT_LIFECYCLE, "lifecycleState")
+        desired_visibility = visibility or DEFAULT_VISIBILITY
+        desired_state = state or DEFAULT_STATE
+        desired_lifecycle = lifecycle_state or DEFAULT_LIFECYCLE
+
+        set_if(desired_visibility, "visibility")
+        set_if(desired_state, "state")
+        set_if(desired_lifecycle, "lifecycleState")
 
         tags = parse_csv(annotations.get("gravitee.io/definition-tags") or annotations.get("gravitee.io/tags"))
         labels = parse_csv(annotations.get("gravitee.io/definition-labels"))
         categories = parse_csv(annotations.get("gravitee.io/definition-categories"))
         groups = parse_csv(annotations.get("gravitee.io/definition-groups"))
 
+        if tags:
+            if TAGS_MODE == "ignore":
+                log(f"Ignoring tags for {svc_key} (not supported in OSS)")
+                tags = []
+            elif TAGS_MODE == "labels":
+                log(f"Mapping tags to labels for {svc_key}")
+                labels = list(dict.fromkeys(labels + tags))
+                tags = []
+
         set_if(tags or None, "tags")
         set_if(labels or None, "labels")
         set_if(categories or None, "categories")
         set_if(groups or None, "groups")
 
-        metadata_json = parse_json(annotations.get("gravitee.io/definition-metadata"), "definition-metadata", svc_key)
-        properties_json = parse_json(annotations.get("gravitee.io/definition-properties"), "definition-properties", svc_key)
-        services_json = parse_json(annotations.get("gravitee.io/definition-services"), "definition-services", svc_key)
-        resources_json = parse_json(annotations.get("gravitee.io/definition-resources"), "definition-resources", svc_key)
-        plans_json = parse_json(annotations.get("gravitee.io/definition-plans"), "definition-plans", svc_key)
-        flows_json = parse_json(annotations.get("gravitee.io/definition-flows"), "definition-flows", svc_key)
-        responses_json = parse_json(annotations.get("gravitee.io/definition-response-templates"), "definition-response-templates", svc_key)
-        pages_json = build_pages(annotations, svc_key)
+        metadata_json = normalize_metadata(parse_json(annotations.get("gravitee.io/definition-metadata"), "definition-metadata", svc_key))
+        properties_json = normalize_properties(parse_json(annotations.get("gravitee.io/definition-properties"), "definition-properties", svc_key))
+        services_json = normalize_services(parse_json(annotations.get("gravitee.io/definition-services"), "definition-services", svc_key))
+        resources_json = normalize_list(parse_json(annotations.get("gravitee.io/definition-resources"), "definition-resources", svc_key))
+        plans_json = normalize_plans(parse_json(annotations.get("gravitee.io/definition-plans"), "definition-plans", svc_key), svc_key)
+        flows_json = normalize_list(parse_json(annotations.get("gravitee.io/definition-flows"), "definition-flows", svc_key))
+        responses_json = normalize_map(parse_json(annotations.get("gravitee.io/definition-response-templates"), "definition-response-templates", svc_key))
+        pages_json = normalize_map(build_pages(annotations, svc_key))
 
         set_if(metadata_json, "metadata")
         set_if(properties_json, "properties")
         set_if(services_json, "services")
         set_if(resources_json, "resources")
+        if not plans_json and desired_state == "STARTED":
+            log(f"No plans for {svc_key}; forcing state STOPPED to satisfy GKO validation")
+            spec["state"] = "STOPPED"
         set_if(plans_json, "plans")
         set_if(flows_json, "flows")
-        set_if(responses_json, "responseTemplates")
+        if api_type != "NATIVE":
+            set_if(responses_json, "responseTemplates")
         set_if(pages_json, "pages")
 
         body = {
@@ -368,11 +439,19 @@ data:
         path = f"/apis/gravitee.io/v1alpha1/namespaces/{ns}/apiv4definitions/{name}"
         try:
             kube_request("GET", path).close()
-            kube_request("PATCH", path, api, content_type="application/merge-patch+json").close()
+            try:
+                kube_request("PATCH", path, api, content_type="application/merge-patch+json").close()
+            except urllib.error.HTTPError as exc:
+                log(f"patch error {exc.code} for {ns}/{name}: {exc.read().decode('utf-8', errors='replace')}")
+                raise
             return "patched"
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
-                kube_request("POST", f"/apis/gravitee.io/v1alpha1/namespaces/{ns}/apiv4definitions", api).close()
+                try:
+                    kube_request("POST", f"/apis/gravitee.io/v1alpha1/namespaces/{ns}/apiv4definitions", api).close()
+                except urllib.error.HTTPError as post_exc:
+                    log(f"create error {post_exc.code} for {ns}/{name}: {post_exc.read().decode('utf-8', errors='replace')}")
+                    raise
                 return "created"
             raise
 
@@ -460,6 +539,8 @@ spec:
               value: "STARTED"
             - name: DEFAULT_LIFECYCLE_STATE
               value: "PUBLISHED"
+            - name: TAGS_MODE
+              value: "ignore"
           volumeMounts:
             - name: sync-script
               mountPath: /app

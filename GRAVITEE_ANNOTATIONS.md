@@ -14,7 +14,7 @@ GKO must be installed for these annotations to take effect.
 ## Definition metadata (string)
 - `gravitee.io/description`
 - `gravitee.io/version`
-- `gravitee.io/tags` (comma-separated)
+- `gravitee.io/tags` (comma-separated; requires Gravitee license feature `apim-sharding-tags`)
 - `gravitee.io/definition-name`
 - `gravitee.io/definition-summary`
 - `gravitee.io/definition-description`
@@ -27,7 +27,7 @@ GKO must be installed for these annotations to take effect.
 
 ## Definition list fields (comma-separated)
 - `gravitee.io/definition-groups`
-- `gravitee.io/definition-tags`
+- `gravitee.io/definition-tags` (requires Gravitee license feature `apim-sharding-tags`)
 - `gravitee.io/definition-labels`
 - `gravitee.io/definition-categories`
 - `gravitee.io/definition-path-mappings`
@@ -41,7 +41,7 @@ GKO must be installed for these annotations to take effect.
 - `gravitee.io/definition-properties`
 - `gravitee.io/definition-services`
 - `gravitee.io/definition-resources`
-- `gravitee.io/definition-plans`
+- `gravitee.io/definition-plans` (JSON array; ignored if not a list)
 - `gravitee.io/definition-flows`
 - `gravitee.io/definition-response-templates`
 - `gravitee.io/definition-pages`
@@ -65,3 +65,7 @@ GKO must be installed for these annotations to take effect.
 
 Note: `definition-openapi-url` is used to generate a Swagger page in GKO; inline
 OpenAPI content is not consumed by the current sync controller.
+
+Tag handling: the sync controller defaults to `TAGS_MODE=ignore` to avoid
+license-gated sharding tags in OSS. Set `TAGS_MODE=labels` to map tags to labels
+or `TAGS_MODE=allow` if you have a license.

@@ -71,6 +71,11 @@ spec:
 Discovery watches all namespaces by default; set `K8S_NAMESPACE` to restrict scope.
 
 See `GRAVITEE_ANNOTATIONS.md` for the full supported annotation list and formats.
+Note: Gravitee tags require the `apim-sharding-tags` license feature. Provide a
+`gravitee-license` secret with `license.key` (mounted via `GRAVITEE_LICENSE_KEY`)
+to enable tag imports.
+For OSS-only deployments, the annotation sync controller defaults to
+`TAGS_MODE=ignore` so tags never block API imports.
 
 ## Operator-Based Discovery
 
