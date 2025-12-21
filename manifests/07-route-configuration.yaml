@@ -11,113 +11,131 @@ data:
   configure-routes.sh: |
     #!/bin/sh
     set -e
-    
-    echo "🔧 Configuring APISIX route for Gravitee gateway access..."
-    source /vault/secrets/admin
-    # Wait for APISIX Admin API to be ready
-    until curl -f -s http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180/apisix/admin/routes -H "X-API-KEY: $APISIX_ADMIN_KEY" > /dev/null 2>&1; do
-      echo "⏳ Waiting for APISIX Admin API..."
-      sleep 5
-    done
-    
-    echo "✅ APISIX Admin API is ready"
-    
-    # Create route for Gravitee Gateway (API runtime)  
-    echo "⚡ Creating Gravitee Gateway route..."
-    curl -X PUT "http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180/apisix/admin/routes/gravitee-gateway" \
-      -H "X-API-KEY: $APISIX_ADMIN_KEY" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "name": "gravitee-gateway",
-        "desc": "Route to Gravitee Gateway for API runtime execution",
-        "uri": "/gateway/*",
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
-        "upstream": {
-          "type": "roundrobin",
-          "nodes": {
-            "gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082": 1
-          }
-        },
-        "plugins": {
-          "request-id": {
-            "header_name": "x-request-id",
-            "include_in_response": true
-          },
-          "real-ip": {
-            "source": "X-Forwarded-For",
-            "recursive": true
-          },
-          "cors": {
-            "allow_origins": "http://apisix.k8s-api-gateway.svc.cluster.local",
-            "allow_methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-            "allow_headers": "Authorization,Content-Type,X-Requested-With,Accept,X-Real-IP,X-Forwarded-For,X-Request-Id",
-            "expose_headers": "X-Request-Id",
-            "allow_credential": true,
-            "max_age": 3600
-          },
-          "opentelemetry": {
-            "sampler": {
-              "name": "always_on"
-            },
-            "collector": {
-              "address": "http://otel-collector.observability.svc.cluster.local:4318",
-              "request_type": "http"
-            },
-            "resource": {
-              "service.name": "gravitee-gateway",
-              "service.namespace": "k8s-api-gateway"
+
+    configure_routes() {
+      admin_url="$1"
+      admin_key="$2"
+      label="$3"
+
+      if [ -z "$admin_url" ] || [ -z "$admin_key" ]; then
+        echo "⚠️ Skipping ${label} APISIX (missing admin URL or key)"
+        return 0
+      fi
+
+      echo "🔧 Configuring APISIX routes for ${label}..."
+      until curl -f -s "${admin_url}/apisix/admin/routes" -H "X-API-KEY: ${admin_key}" > /dev/null 2>&1; do
+        echo "⏳ Waiting for ${label} APISIX Admin API..."
+        sleep 5
+      done
+
+      echo "✅ ${label} APISIX Admin API is ready"
+
+      echo "⚡ Creating Gravitee Gateway route on ${label}..."
+      curl -X PUT "${admin_url}/apisix/admin/routes/gravitee-gateway" \
+        -H "X-API-KEY: ${admin_key}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "gravitee-gateway",
+          "desc": "Route to Gravitee Gateway for API runtime execution",
+          "uri": "/gateway/*",
+          "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+          "upstream": {
+            "type": "roundrobin",
+            "nodes": {
+              "gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082": 1
             }
           },
-          "proxy-rewrite": {
-            "regex_uri": ["^/gateway(.*)", "$1"],
-            "append_headers": {
-              "X-Forwarded-Proto": "$scheme",
-              "X-Forwarded-Host": "$host"
+          "plugins": {
+            "request-id": {
+              "header_name": "x-request-id",
+              "include_in_response": true
+            },
+            "real-ip": {
+              "source": "X-Forwarded-For",
+              "recursive": true
+            },
+            "cors": {
+              "allow_origins": "http://apisix.k8s-api-gateway.svc.cluster.local",
+              "allow_methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+              "allow_headers": "Authorization,Content-Type,X-Requested-With,Accept,X-Real-IP,X-Forwarded-For,X-Request-Id",
+              "expose_headers": "X-Request-Id",
+              "allow_credential": true,
+              "max_age": 3600
+            },
+            "opentelemetry": {
+              "sampler": {
+                "name": "always_on"
+              },
+              "collector": {
+                "address": "http://otel-collector.observability.svc.cluster.local:4318",
+                "request_type": "http"
+              },
+              "resource": {
+                "service.name": "gravitee-gateway",
+                "service.namespace": "k8s-api-gateway"
+              }
+            },
+            "proxy-rewrite": {
+              "regex_uri": ["^/gateway(.*)", "$1"],
+              "append_headers": {
+                "X-Forwarded-Proto": "$scheme",
+                "X-Forwarded-Host": "$host"
+              }
             }
           }
-        }
-      }'
-    
-    echo "✅ APISIX route configured successfully"
+        }'
+
+      echo "⚡ Creating Gravitee Portal API route on ${label}..."
+      curl -X PUT "${admin_url}/apisix/admin/routes/gravitee-portal-api" \
+        -H "X-API-KEY: ${admin_key}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "gravitee-portal-api",
+          "desc": "Route to Gravitee Management API portal endpoints with CORS for management UI",
+          "priority": 100,
+          "uri": "/portal/*",
+          "hosts": ["gravitee.teleport.app.suncoast.systems"],
+          "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+          "upstream": {
+            "type": "roundrobin",
+            "nodes": {
+              "gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083": 1
+            }
+          },
+          "plugins": {
+            "cors": {
+              "allow_origins": "https://gravitee-management.teleport.app.suncoast.systems",
+              "allow_methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+              "allow_headers": "Authorization,Content-Type,X-Requested-With,Accept,X-Real-IP,X-Forwarded-For,X-Request-Id,If-Match,If-None-Match,X-Gravitee-*",
+              "expose_headers": "ETag, X-Gravitee-*",
+              "allow_credential": true,
+              "max_age": 1728000
+            },
+            "real-ip": {
+              "source": "X-Forwarded-For",
+              "recursive": true
+            },
+            "request-id": {
+              "header_name": "x-request-id",
+              "include_in_response": true
+            }
+          }
+        }'
+
+      echo "✅ ${label} APISIX routes configured"
+    }
+
+    if [ -f /vault/secrets/admin ]; then
+      . /vault/secrets/admin
+      configure_routes "${APISIX_ADMIN_URL:-http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180}" "${APISIX_ADMIN_KEY:-}" "k8s-api-gateway"
+    else
+      echo "⚠️ Missing /vault/secrets/admin; skipping k8s-api-gateway APISIX config"
+    fi
+
+    configure_routes "${APISIX_PUBLIC_ADMIN_URL:-}" "${APISIX_PUBLIC_ADMIN_KEY:-}" "shared"
+
     echo "📋 Gateway Access:"
     echo "   - Gravitee Gateway: http://<apisix-host>/gateway/"
-
-    # Create route for Gravitee Portal API (used by management UI cross-origin)
-    echo "⚡ Creating Gravitee Portal API route..."
-    curl -X PUT "http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180/apisix/admin/routes/gravitee-portal-api" \
-      -H "X-API-KEY: $APISIX_ADMIN_KEY" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "name": "gravitee-portal-api",
-        "desc": "Route to Gravitee Management API portal endpoints with CORS for management UI",
-        "uri": "/portal/*",
-        "hosts": ["gravitee.teleport.app.suncoast.systems"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
-        "upstream": {
-          "type": "roundrobin",
-          "nodes": {
-            "gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083": 1
-          }
-        },
-        "plugins": {
-          "cors": {
-            "allow_origins": "https://gravitee-management.teleport.app.suncoast.systems",
-            "allow_methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-            "allow_headers": "Authorization,Content-Type,X-Requested-With,Accept,X-Real-IP,X-Forwarded-For,X-Request-Id,If-Match,If-None-Match,X-Gravitee-*",
-            "expose_headers": "ETag, X-Gravitee-*",
-            "allow_credential": true,
-            "max_age": 1728000
-          },
-          "real-ip": {
-            "source": "X-Forwarded-For",
-            "recursive": true
-          },
-          "request-id": {
-            "header_name": "x-request-id",
-            "include_in_response": true
-          }
-        }
-      }'
 ---
 # Job to configure APISIX routes after deployment
 apiVersion: batch/v1
@@ -197,6 +215,13 @@ spec:
       containers:
       - name: configure-routes
         image: curlimages/curl:8.11.1
+        env:
+        - name: APISIX_ADMIN_URL
+          value: "http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180"
+        - name: APISIX_PUBLIC_ADMIN_URL
+          value: "http://apisix-admin.apisix.svc.cluster.local:9180"
+        - name: APISIX_PUBLIC_ADMIN_KEY
+          value: "edd1c9f034335f136f87ad84b625c8f1"
         command:
         - /bin/sh
         - -c
