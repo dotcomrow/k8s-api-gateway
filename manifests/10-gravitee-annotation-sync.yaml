@@ -14,11 +14,14 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-options: PruneLast=true
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: gravitee-annotation-sync
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 rules:
   - apiGroups: [""]
     resources: ["services"]
@@ -37,6 +40,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: gravitee-annotation-cleanup
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 rules:
   - apiGroups: ["gravitee.io"]
     resources: ["apiv4definitions"]
@@ -46,6 +51,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: gravitee-annotation-sync
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -59,6 +66,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: gravitee-annotation-cleanup
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -73,17 +82,27 @@ kind: Role
 metadata:
   name: gravitee-annotation-cleanup
   namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     resourceNames: ["gravitee-annotation-sync"]
     verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "patch", "delete"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    verbs: ["get", "list", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: gravitee-annotation-cleanup
   namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
