@@ -22885,6 +22885,62 @@ metadata:
   name: gko-webhook-cert
   namespace: k8s-api-gateway
 ---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: gko-selfsigned
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gko-webhook-ca
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  isCA: true
+  commonName: gko-webhook-ca
+  secretName: gko-webhook-ca
+  issuerRef:
+    name: gko-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: gko-webhook-ca
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  ca:
+    secretName: gko-webhook-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gko-webhook-cert
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  secretName: gko-webhook-cert
+  dnsNames:
+    - gko-webhook.k8s-api-gateway.svc
+    - gko-webhook.k8s-api-gateway.svc.cluster.local
+  issuerRef:
+    name: gko-webhook-ca
+    kind: Issuer
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+---
 # Source: gko/templates/manager/config.yaml
 # Copyright (C) 2015 The Gravitee team (http://gravitee.io)
 #
@@ -23916,6 +23972,7 @@ metadata:
   annotations:
     meta.helm.sh/release-name: gko
     meta.helm.sh/release-namespace: k8s-api-gateway
+    cert-manager.io/inject-ca-from: k8s-api-gateway/gko-webhook-ca
   name: gko-mutating-webhook-configurations
   namespace: k8s-api-gateway
 webhooks:
@@ -24032,6 +24089,7 @@ metadata:
   annotations:
     meta.helm.sh/release-name: gko
     meta.helm.sh/release-namespace: k8s-api-gateway
+    cert-manager.io/inject-ca-from: k8s-api-gateway/gko-webhook-ca
   name: gko-validating-webhook-configurations
   namespace: k8s-api-gateway
 webhooks:
