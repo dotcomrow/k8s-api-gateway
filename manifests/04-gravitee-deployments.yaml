@@ -26,6 +26,31 @@ spec:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
+  name: gravitee-management-github-oauth
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-store
+    kind: ClusterSecretStore
+  target:
+    name: gravitee-management-github-oauth
+    creationPolicy: Owner
+  data:
+    - secretKey: client-id
+      remoteRef:
+        key: gravitee-management-github-client-id
+        property: value
+    - secretKey: client-secret
+      remoteRef:
+        key: gravitee-management-github-client-secret
+        property: value
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
   name: gravitee-admin-credentials
   namespace: k8s-api-gateway
   annotations:
@@ -67,6 +92,27 @@ spec:
     - secretKey: token
       remoteRef:
         key: api-gateway-github-team-token
+        property: value
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: gravitee-oauth2-proxy-cookie
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-store
+    kind: ClusterSecretStore
+  target:
+    name: gravitee-oauth2-proxy-cookie
+    creationPolicy: Owner
+  data:
+    - secretKey: cookie-secret
+      remoteRef:
+        key: gravitee-management-cookie-secret
         property: value
 ---
 # Gravitee Management API configuration (mounted into the management pod)
@@ -1819,12 +1865,12 @@ spec:
           DO UPDATE SET value = EXCLUDED.value;
 
           INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.localLogin.enabled', 'false')
+          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.localLogin.enabled', 'true')
           ON CONFLICT (reference_type, reference_id, key)
           DO UPDATE SET value = EXCLUDED.value;
 
           INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'true')
+          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'false')
           ON CONFLICT (reference_type, reference_id, key)
           DO UPDATE SET value = EXCLUDED.value;
 

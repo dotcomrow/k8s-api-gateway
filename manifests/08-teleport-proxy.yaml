@@ -186,6 +186,85 @@ spec:
         configMap:
           name: gravitee-teleport-proxy
 ---
+# OAuth2 Proxy in front of the management console (GitHub-gated)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gravitee-oauth2-proxy
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gravitee-oauth2-proxy
+  template:
+    metadata:
+      labels:
+        app: gravitee-oauth2-proxy
+      annotations:
+        linkerd.io/inject: "disabled"
+    spec:
+      containers:
+      - name: oauth2-proxy
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        imagePullPolicy: IfNotPresent
+        args:
+          - --provider=github
+          - --http-address=0.0.0.0:4180
+          - --redirect-url=https://gravitee-management.teleport.app.suncoast.systems/oauth2/callback
+          - --email-domain=*
+          - --upstream=http://gravitee-teleport-proxy.k8s-api-gateway.svc.cluster.local:8080/
+          - --cookie-secure=true
+          - --cookie-httponly=true
+          - --cookie-samesite=lax
+          - --cookie-domain=gravitee-management.teleport.app.suncoast.systems
+          - --scope=read:user read:org
+          - --github-org=dotcomrow
+          - --github-team=dotcomrow/gravitee_admin_access
+          - --github-team=dotcomrow/gravitee_user_access
+          - --reverse-proxy=true
+          - --skip-auth-preflight=true
+        env:
+        - name: OAUTH2_PROXY_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-management-github-oauth
+              key: client-id
+        - name: OAUTH2_PROXY_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-management-github-oauth
+              key: client-secret
+        - name: OAUTH2_PROXY_COOKIE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-oauth2-proxy-cookie
+              key: cookie-secret
+        ports:
+        - name: http
+          containerPort: 4180
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: 4180
+          initialDelaySeconds: 10
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /ping
+            port: 4180
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
 # Gravitee Teleport Proxy Service (management console app)
 apiVersion: v1
 kind: Service
@@ -204,11 +283,11 @@ metadata:
     teleport.dev/app: "gravitee-management"
 spec:
   ports:
-  - port: 8080
-    targetPort: 8080
+  - port: 4180
+    targetPort: 4180
     name: http
   selector:
-    app: gravitee-teleport-proxy
+    app: gravitee-oauth2-proxy
 ---
 # Gravitee Teleport Proxy Service (exposed via Teleport)
 apiVersion: v1
