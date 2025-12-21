@@ -158,10 +158,6 @@ spec:
             capabilities = ["read"]
           }
 
-          path "secret/data/gravitee-management-*" {
-            capabilities = ["read"]
-          }
-
           path "secret/data/apisix/*" {
             capabilities = ["read"]
           }
