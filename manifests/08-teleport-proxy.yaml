@@ -53,8 +53,10 @@ data:
         }
 
         server {
-            listen 8080;
-            listen [::]:8080;
+            listen 8080 default_server;
+            listen [::]:8080 default_server;
+
+            server_name gravitee.teleport.app.suncoast.systems;
 
             # Portal static assets (default path)
             location / {
