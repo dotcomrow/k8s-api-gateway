@@ -31,23 +31,14 @@ data:
             server gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083;
         }
 
-        upstream gravitee_management_ui {
-            server gravitee-management-ui.k8s-api-gateway.svc.cluster.local:8080;
-        }
-
         server {
             listen 8080;
             listen [::]:8080;
 
             server_name gravitee-management.teleport.app.suncoast.systems;
 
-            location / {
-                proxy_pass http://gravitee_management_ui;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto https;
-                proxy_set_header X-Forwarded-Port 443;
+            location = / {
+                return 302 /management/;
             }
 
             # Management REST API (and UI if deployed behind /management)
@@ -59,34 +50,11 @@ data:
                 proxy_set_header X-Forwarded-Proto https;
                 proxy_set_header X-Forwarded-Port 443;
             }
-
-            # Portal API endpoint (used by the Angular UI when portal URL is same-origin)
-            location /portal/ {
-                if ($request_method = OPTIONS) {
-                    add_header 'Access-Control-Allow-Origin' 'https://gravitee-management.teleport.app.suncoast.systems' always;
-                    add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS' always;
-                    add_header 'Access-Control-Allow-Headers' 'Cache-Control, Pragma, Origin, Authorization, Content-Type, X-Requested-With, If-Match, If-None-Match, X-Gravitee-*' always;
-                    add_header 'Access-Control-Allow-Credentials' 'true' always;
-                    add_header 'Access-Control-Max-Age' '1728000' always;
-                    return 204;
-                }
-
-                add_header 'Access-Control-Allow-Origin' 'https://gravitee-management.teleport.app.suncoast.systems' always;
-                add_header 'Access-Control-Allow-Credentials' 'true' always;
-                proxy_pass http://gravitee_management$request_uri;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto https;
-                proxy_set_header X-Forwarded-Port 443;
-            }
         }
 
         server {
-            listen 8080 default_server;
-            listen [::]:8080 default_server;
-
-            server_name gravitee.teleport.app.suncoast.systems;
+            listen 8080;
+            listen [::]:8080;
 
             # Portal static assets (default path)
             location / {
@@ -100,17 +68,6 @@ data:
 
             # Portal API endpoint (used by the Angular UI)
             location /portal/ {
-                if ($request_method = OPTIONS) {
-                    add_header 'Access-Control-Allow-Origin' 'https://gravitee-management.teleport.app.suncoast.systems' always;
-                    add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS' always;
-                    add_header 'Access-Control-Allow-Headers' 'Cache-Control, Pragma, Origin, Authorization, Content-Type, X-Requested-With, If-Match, If-None-Match, X-Gravitee-*' always;
-                    add_header 'Access-Control-Allow-Credentials' 'true' always;
-                    add_header 'Access-Control-Max-Age' '1728000' always;
-                    return 204;
-                }
-
-                add_header 'Access-Control-Allow-Origin' 'https://gravitee-management.teleport.app.suncoast.systems' always;
-                add_header 'Access-Control-Allow-Credentials' 'true' always;
                 proxy_pass http://gravitee_management$request_uri;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;

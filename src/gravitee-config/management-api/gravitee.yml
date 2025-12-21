@@ -15,7 +15,7 @@ gravitee:
 
       portal:
         # Public URL for the developer portal
-        url: https://gravitee-management.teleport.app.suncoast.systems/portal
+        url: https://gravitee.teleport.app.suncoast.systems/portal
 
     # (optional but harmless) keep the older structure too, in case your version still reads it
     api:
@@ -23,7 +23,7 @@ gravitee:
       console:
         url: https://gravitee.teleport.app.suncoast.systems/management
       portal:
-        url: https://gravitee-management.teleport.app.suncoast.systems/portal
+        url: https://gravitee.teleport.app.suncoast.systems/portal
 
   # Management configuration
   management:
@@ -92,8 +92,7 @@ jwt:
 # CORS configuration
 http:
   cors:
-    enabled: true
-    allow-origin: 'https://gravitee.teleport.app.suncoast.systems,https://gravitee-management.teleport.app.suncoast.systems'
+    allow-origin: 'https://gravitee.teleport.app.suncoast.systems'
     allow-headers: 'Cache-Control, Pragma, Origin, Authorization, Content-Type, X-Requested-With, If-Match, If-None-Match, X-Gravitee-*'
     allow-methods: 'OPTIONS, GET, POST, PUT, DELETE, PATCH'
     exposed-headers: 'ETag, X-Gravitee-*'
