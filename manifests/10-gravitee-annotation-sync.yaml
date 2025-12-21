@@ -124,12 +124,16 @@ spec:
             - |
               set -e
               kubectl -n k8s-api-gateway scale deployment gravitee-annotation-sync --replicas=0 || true
+              kubectl -n k8s-api-gateway delete externalsecret gravitee-admin-credentials --ignore-not-found || true
               kubectl get apiv4definitions.gravitee.io -A \
                 -o jsonpath='{range .items[?(@.spec.contextRef.name=="gravitee-default")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
                 | while read -r ns name; do
                     [ -n "$ns" ] && [ -n "$name" ] || continue
                     kubectl delete apiv4definitions.gravitee.io -n "$ns" "$name" --ignore-not-found
                   done
+              kubectl -n k8s-api-gateway patch secret gravitee-admin-credentials \
+                --type=merge -p '{"metadata":{"finalizers":[]}}' || true
+              kubectl -n k8s-api-gateway delete secret gravitee-admin-credentials --ignore-not-found || true
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -159,6 +163,9 @@ data:
     SYNC_INTERVAL = int(os.environ.get("SYNC_INTERVAL", "60"))
     CONTEXT_NAME = os.environ.get("GRAVITEE_CONTEXT_NAME", "gravitee-default")
     CONTEXT_NAMESPACE = os.environ.get("GRAVITEE_CONTEXT_NAMESPACE", "k8s-api-gateway")
+    ARGOCD_APP_NAME = os.environ.get("ARGOCD_APP_NAME", "").strip()
+    ARGOCD_TRACKING = os.environ.get("ARGOCD_TRACKING_ENABLED", "true").lower() in ("1", "true", "yes")
+    ARGOCD_SYNC_WAVE = os.environ.get("ARGOCD_SYNC_WAVE", "2")
     DEFAULT_VISIBILITY = os.environ.get("DEFAULT_VISIBILITY", "PRIVATE")
     DEFAULT_STATE = os.environ.get("DEFAULT_STATE", "STARTED")
     DEFAULT_LIFECYCLE = os.environ.get("DEFAULT_LIFECYCLE_STATE", "PUBLISHED")
@@ -578,19 +585,27 @@ data:
             set_if(responses_json, "responseTemplates")
         set_if(pages_json, "pages")
 
+        labels = {
+            "gravitee.io/managed-by": "annotation-sync",
+        }
+        annotations_out = {
+            "gravitee.io/source-service": svc_name,
+            "gravitee.io/source-namespace": svc_ns,
+        }
+        if ARGOCD_TRACKING and ARGOCD_APP_NAME:
+            tracking_id = f"{ARGOCD_APP_NAME}:gravitee.io/ApiV4Definition:{svc_ns}/{svc_name}"
+            annotations_out["argocd.argoproj.io/tracking-id"] = tracking_id
+            annotations_out["argocd.argoproj.io/sync-wave"] = ARGOCD_SYNC_WAVE
+            labels["argocd.argoproj.io/instance"] = ARGOCD_APP_NAME
+
         body = {
             "apiVersion": "gravitee.io/v1alpha1",
             "kind": "ApiV4Definition",
             "metadata": {
                 "name": svc_name,
                 "namespace": svc_ns,
-                "labels": {
-                    "gravitee.io/managed-by": "annotation-sync",
-                },
-                "annotations": {
-                    "gravitee.io/source-service": svc_name,
-                    "gravitee.io/source-namespace": svc_ns,
-                },
+                "labels": labels,
+                "annotations": annotations_out,
                 "ownerReferences": [
                     {
                         "apiVersion": "v1",
@@ -739,6 +754,12 @@ spec:
               value: "PUBLISHED"
             - name: TAGS_MODE
               value: "ignore"
+            - name: ARGOCD_APP_NAME
+              value: "k8s-api-gateway"
+            - name: ARGOCD_TRACKING_ENABLED
+              value: "true"
+            - name: ARGOCD_SYNC_WAVE
+              value: "2"
             - name: GRAVITEE_MANAGEMENT_API
               value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management"
             - name: GRAVITEE_ORG
