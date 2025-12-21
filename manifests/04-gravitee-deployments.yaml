@@ -171,6 +171,7 @@ data:
     # CORS configuration
     http:
       cors:
+        enabled: true
         allow-origin: 'https://gravitee.teleport.app.suncoast.systems,https://gravitee-management.teleport.app.suncoast.systems'
         allow-headers: 'Cache-Control, Pragma, Origin, Authorization, Content-Type, X-Requested-With, If-Match, If-None-Match, X-Gravitee-*'
         allow-methods: 'OPTIONS, GET, POST, PUT, DELETE, PATCH'

@@ -23605,6 +23605,7 @@ spec:
     metadata:
       annotations:
         checksum/config: '34d38dabbe5ea52053f3d250707d90b89739c3b375d4815d21e0d8d82b16a2f2'
+        linkerd.io/inject: "disabled"
       labels:
         control-plane: controller-manager
     spec:
