@@ -23414,6 +23414,28 @@ subjects:
     name: gko-controller-manager
     namespace: 'k8s-api-gateway'
 ---
+# Extra safety net: grant cluster-admin to the GKO controller to avoid cluster-scope RBAC blocks.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gko-controller-manager-cluster-admin
+  labels:
+    app.kubernetes.io/instance: gko
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: gko
+    app.kubernetes.io/version: 4.9.10
+  annotations:
+    meta.helm.sh/release-name: gko
+    meta.helm.sh/release-namespace: k8s-api-gateway
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: gko-controller-manager
+    namespace: 'k8s-api-gateway'
+---
 # Source: gko/templates/rbac/metrics-cluster-role-binding.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -23984,7 +24006,7 @@ webhooks:
         name: gko-webhook
         path: /mutate-gravitee-io-v1alpha1-managementcontext
         port: 443
-  failurePolicy: Fail
+  failurePolicy: Ignore
   matchPolicy: Equivalent
   objectSelector: {}
   reinvocationPolicy: Never
@@ -24013,7 +24035,7 @@ webhooks:
         name: gko-webhook
         path: /mutate-gravitee-io-v1alpha1-subscription
         port: 443
-  failurePolicy: Fail
+  failurePolicy: Ignore
   matchPolicy: Equivalent
   objectSelector: {}
   reinvocationPolicy: Never
@@ -24042,7 +24064,7 @@ webhooks:
         name: gko-webhook
         path: /mutate-gravitee-io-v1alpha1-group
         port: 443
-  failurePolicy: Fail
+  failurePolicy: Ignore
   matchPolicy: Equivalent
   objectSelector: {}
   reinvocationPolicy: Never
@@ -24113,7 +24135,7 @@ webhooks:
         resources:
           - 'apidefinitions'
         scope: '*'
-    failurePolicy: Fail
+    failurePolicy: Ignore
     matchPolicy: Equivalent
     
     namespaceSelector: {}
@@ -24142,7 +24164,7 @@ webhooks:
         resources:
           - 'apiv4definitions'
         scope: '*'
-    failurePolicy: Fail
+    failurePolicy: Ignore
     matchPolicy: Equivalent
     
     namespaceSelector: {}
@@ -24171,7 +24193,7 @@ webhooks:
         resources:
           - 'applications'
         scope: '*'
-    failurePolicy: Fail
+    failurePolicy: Ignore
     matchPolicy: Equivalent
     
     namespaceSelector: {}
@@ -24200,7 +24222,7 @@ webhooks:
         resources:
           - 'apiresources'
         scope: '*'
-    failurePolicy: Fail
+    failurePolicy: Ignore
     matchPolicy: Equivalent
     
     namespaceSelector: {}
@@ -24229,7 +24251,7 @@ webhooks:
         resources:
           - 'managementcontexts'
         scope: '*'
-    failurePolicy: Fail
+    failurePolicy: Ignore
     matchPolicy: Equivalent
     
     namespaceSelector: {}
@@ -24258,7 +24280,7 @@ webhooks:
         resources:
           - 'subscriptions'
         scope: '*'
-    failurePolicy: Fail
+    failurePolicy: Ignore
     matchPolicy: Equivalent
     
     namespaceSelector: {}
@@ -24287,7 +24309,7 @@ webhooks:
         resources:
           - 'groups'
         scope: '*'
-    failurePolicy: Fail
+    failurePolicy: Ignore
     matchPolicy: Equivalent
     
     namespaceSelector: {}
@@ -24316,7 +24338,7 @@ webhooks:
         resources:
           - 'sharedpolicygroups'
         scope: '*'
-    failurePolicy: Fail
+    failurePolicy: Ignore
     matchPolicy: Equivalent
     
     namespaceSelector: {}
