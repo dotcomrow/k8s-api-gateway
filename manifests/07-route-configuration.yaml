@@ -81,6 +81,43 @@ data:
     echo "✅ APISIX route configured successfully"
     echo "📋 Gateway Access:"
     echo "   - Gravitee Gateway: http://<apisix-host>/gateway/"
+
+    # Create route for Gravitee Portal API (used by management UI cross-origin)
+    echo "⚡ Creating Gravitee Portal API route..."
+    curl -X PUT "http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180/apisix/admin/routes/gravitee-portal-api" \
+      -H "X-API-KEY: $APISIX_ADMIN_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "gravitee-portal-api",
+        "desc": "Route to Gravitee Management API portal endpoints with CORS for management UI",
+        "uri": "/portal/*",
+        "hosts": ["gravitee.teleport.app.suncoast.systems"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+        "upstream": {
+          "type": "roundrobin",
+          "nodes": {
+            "gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083": 1
+          }
+        },
+        "plugins": {
+          "cors": {
+            "allow_origins": "https://gravitee-management.teleport.app.suncoast.systems",
+            "allow_methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+            "allow_headers": "Authorization,Content-Type,X-Requested-With,Accept,X-Real-IP,X-Forwarded-For,X-Request-Id,If-Match,If-None-Match,X-Gravitee-*",
+            "expose_headers": "ETag, X-Gravitee-*",
+            "allow_credential": true,
+            "max_age": 1728000
+          },
+          "real-ip": {
+            "source": "X-Forwarded-For",
+            "recursive": true
+          },
+          "request-id": {
+            "header_name": "x-request-id",
+            "include_in_response": true
+          }
+        }
+      }'
 ---
 # Job to configure APISIX routes after deployment
 apiVersion: batch/v1
@@ -90,6 +127,8 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
     linkerd.io/inject: "disabled"
 spec:
   template:
