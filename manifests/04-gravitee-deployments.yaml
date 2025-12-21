@@ -1373,6 +1373,8 @@ spec:
               key: client-secret
         - name: GITHUB_SERVER_URL
           value: "https://github.com/login/oauth"
+        - name: FORCE_BASIC_AUTH
+          value: "true"
         - name: YUGABYTE_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
         - name: YUGABYTE_PORT
@@ -1617,6 +1619,7 @@ spec:
           GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:-}"
           GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}"
           GITHUB_SERVER_URL="${GITHUB_SERVER_URL:-}"
+          FORCE_BASIC_AUTH="${FORCE_BASIC_AUTH:-true}"
 
           USERS_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users"
 
@@ -1670,13 +1673,17 @@ spec:
 
           AUTH_MODE=""
           TOKEN=""
-          try_login_endpoints || true
-
-          if [ -z "$AUTH_MODE" ]; then
+          if [ "$FORCE_BASIC_AUTH" = "true" ]; then
             AUTH_MODE="basic"
-            echo "⚠️ Falling back to basic auth with user '${ADMIN_USERNAME}'."
+            echo "ℹ️ Skipping bearer login; using basic auth with user '${ADMIN_USERNAME}'."
           else
-            echo "🔐 Using bearer auth for subsequent Management API calls."
+            try_login_endpoints || true
+            if [ -z "$AUTH_MODE" ]; then
+              AUTH_MODE="basic"
+              echo "⚠️ Falling back to basic auth with user '${ADMIN_USERNAME}'."
+            else
+              echo "🔐 Using bearer auth for subsequent Management API calls."
+            fi
           fi
 
           verify_users_call() {
