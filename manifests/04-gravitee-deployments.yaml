@@ -952,6 +952,74 @@ spec:
         configMap:
           name: gravitee-portal-nginx
 ---
+# Gravitee Management Console UI
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gravitee-management-ui-config
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  constants.json: |-
+    {
+      "baseURL": "https://gravitee-management.teleport.app.suncoast.systems/management/organizations/DEFAULT/environments/DEFAULT/"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gravitee-management-ui
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gravitee-management-ui
+  template:
+    metadata:
+      labels:
+        app: gravitee-management-ui
+      annotations:
+        linkerd.io/inject: "disabled"
+    spec:
+      serviceAccountName: gravitee
+      containers:
+      - name: gravitee-management-ui
+        image: graviteeio/apim-management-ui:4.6.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /usr/share/nginx/html/constants.json
+          subPath: constants.json
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+      volumes:
+      - name: config
+        configMap:
+          name: gravitee-management-ui-config
+---
 # Gravitee Portal Nginx config
 apiVersion: v1
 kind: ConfigMap

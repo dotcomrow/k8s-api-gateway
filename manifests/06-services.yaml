@@ -47,6 +47,21 @@ spec:
   selector:
     app: gravitee-portal
 ---
+# Gravitee Management UI Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: gravitee-management-ui
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: gravitee-management-ui
 ---
 # APISIX Service (Internal Only)
 apiVersion: v1
