@@ -5,6 +5,7 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-options: PruneLast=true
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -21,6 +22,12 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "patch", "delete"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["gravitee.io"]
     resources: ["apiv4definitions"]
@@ -175,6 +182,8 @@ data:
     GRAVITEE_ENV = os.environ.get("GRAVITEE_ENV", "DEFAULT")
     GRAVITEE_ADMIN_USERNAME = os.environ.get("GRAVITEE_ADMIN_USERNAME")
     GRAVITEE_ADMIN_PASSWORD = os.environ.get("GRAVITEE_ADMIN_PASSWORD")
+    ADMIN_SECRET_NAME = os.environ.get("GRAVITEE_ADMIN_SECRET", "gravitee-admin-credentials")
+    ADMIN_EXTERNAL_SECRET = os.environ.get("GRAVITEE_ADMIN_EXTERNAL_SECRET", "gravitee-admin-credentials")
     AUTO_CREATE_GROUPS = os.environ.get("AUTO_CREATE_GROUPS", "true").strip().lower() == "true"
     AUTO_CREATE_CATEGORIES = os.environ.get("AUTO_CREATE_CATEGORIES", "true").strip().lower() == "true"
 
@@ -214,6 +223,45 @@ data:
             data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(f"{GRAVITEE_MANAGEMENT_API}{path}", data=data, headers=headers, method=method)
         return urllib.request.urlopen(req, timeout=10)
+
+    def cleanup_admin_secret():
+        ns = CONTEXT_NAMESPACE
+        secret_path = f"/api/v1/namespaces/{ns}/secrets/{ADMIN_SECRET_NAME}"
+        external_path = f"/apis/external-secrets.io/v1/namespaces/{ns}/externalsecrets/{ADMIN_EXTERNAL_SECRET}"
+        try:
+            with kube_request("GET", secret_path) as resp:
+                secret = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return
+            raise
+
+        deleting = "deletionTimestamp" in secret.get("metadata", {})
+        finalizers = secret.get("metadata", {}).get("finalizers", [])
+
+        external_exists = True
+        try:
+            kube_request("GET", external_path).close()
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                external_exists = False
+            else:
+                raise
+
+        if deleting or not external_exists:
+            if finalizers:
+                patch_body = {"metadata": {"finalizers": []}}
+                try:
+                    kube_request("PATCH", secret_path, patch_body, content_type="application/merge-patch+json").close()
+                    log(f"Removed finalizers from {ns}/{ADMIN_SECRET_NAME}")
+                except urllib.error.HTTPError as exc:
+                    log(f"finalizer patch error {exc.code} for {ns}/{ADMIN_SECRET_NAME}: {exc.read().decode('utf-8', errors='replace')}")
+            if not external_exists:
+                try:
+                    kube_request("DELETE", secret_path).close()
+                    log(f"Deleted orphaned secret {ns}/{ADMIN_SECRET_NAME}")
+                except urllib.error.HTTPError as exc:
+                    log(f"secret delete error {exc.code} for {ns}/{ADMIN_SECRET_NAME}: {exc.read().decode('utf-8', errors='replace')}")
 
     def parse_csv(value):
         if not value:
@@ -668,6 +716,7 @@ data:
             raise
 
     def run_once():
+        cleanup_admin_secret()
         services = list_services()
         desired_groups = set()
         desired_categories = set()
@@ -746,6 +795,10 @@ spec:
               value: "gravitee-default"
             - name: GRAVITEE_CONTEXT_NAMESPACE
               value: "k8s-api-gateway"
+            - name: GRAVITEE_ADMIN_SECRET
+              value: "gravitee-admin-credentials"
+            - name: GRAVITEE_ADMIN_EXTERNAL_SECRET
+              value: "gravitee-admin-credentials"
             - name: DEFAULT_VISIBILITY
               value: "PRIVATE"
             - name: DEFAULT_STATE
