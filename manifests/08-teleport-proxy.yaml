@@ -219,11 +219,12 @@ spec:
           - --cookie-secure=true
           - --cookie-httponly=true
           - --cookie-samesite=lax
-          - --cookie-domain=gravitee-management.teleport.app.suncoast.systems
+          - --cookie-domain=.teleport.app.suncoast.systems
+          - --whitelist-domain=gravitee-management.teleport.app.suncoast.systems
+          - --whitelist-domain=teleport.app.suncoast.systems
           - --scope=read:user read:org
           - --github-org=dotcomrow
           - --github-team=dotcomrow/gravitee_admin_access
-          - --github-team=dotcomrow/gravitee_user_access
           - --reverse-proxy=true
           - --skip-auth-preflight=true
         env:

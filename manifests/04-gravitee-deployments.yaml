@@ -1873,6 +1873,7 @@ spec:
           VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'false')
           ON CONFLICT (reference_type, reference_id, key)
           DO UPDATE SET value = EXCLUDED.value;
+          DO UPDATE SET value = EXCLUDED.value;
 
           INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
           VALUES ('github', 'ENVIRONMENT', 'DEFAULT', now())
