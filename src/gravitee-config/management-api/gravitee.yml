@@ -15,7 +15,7 @@ gravitee:
 
       portal:
         # Public URL for the developer portal
-        url: https://gravitee.teleport.app.suncoast.systems/portal
+        url: https://gravitee-management.teleport.app.suncoast.systems/portal
 
     # (optional but harmless) keep the older structure too, in case your version still reads it
     api:
@@ -23,7 +23,7 @@ gravitee:
       console:
         url: https://gravitee.teleport.app.suncoast.systems/management
       portal:
-        url: https://gravitee.teleport.app.suncoast.systems/portal
+        url: https://gravitee-management.teleport.app.suncoast.systems/portal
 
   # Management configuration
   management:
