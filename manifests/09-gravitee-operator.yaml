@@ -22881,6 +22881,7 @@ metadata:
   annotations:
     meta.helm.sh/release-name: gko
     meta.helm.sh/release-namespace: k8s-api-gateway
+    argocd.argoproj.io/sync-wave: "-3"
   name: gko-webhook-cert
   namespace: k8s-api-gateway
 ---
