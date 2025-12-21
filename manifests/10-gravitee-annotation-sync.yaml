@@ -46,6 +46,9 @@ rules:
   - apiGroups: ["gravitee.io"]
     resources: ["apiv4definitions"]
     verbs: ["get", "list", "delete"]
+  - apiGroups: ["gravitee.io"]
+    resources: ["managementcontexts"]
+    verbs: ["get", "list", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -157,6 +160,9 @@ spec:
                     [ -n "$ns" ] && [ -n "$name" ] || continue
                     kubectl delete apiv4definitions.gravitee.io -n "$ns" "$name" --ignore-not-found
                   done
+              kubectl -n k8s-api-gateway patch managementcontext gravitee-default \
+                --type=merge -p '{"metadata":{"finalizers":[]}}' || true
+              kubectl -n k8s-api-gateway delete managementcontext gravitee-default --ignore-not-found || true
               kubectl -n k8s-api-gateway patch secret gravitee-admin-credentials \
                 --type=merge -p '{"metadata":{"finalizers":[]}}' || true
               kubectl -n k8s-api-gateway delete secret gravitee-admin-credentials --ignore-not-found || true
