@@ -1865,14 +1865,13 @@ spec:
           DO UPDATE SET value = EXCLUDED.value;
 
           INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.localLogin.enabled', 'true')
+          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.localLogin.enabled', 'false')
           ON CONFLICT (reference_type, reference_id, key)
           DO UPDATE SET value = EXCLUDED.value;
 
           INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'false')
+          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'true')
           ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
           DO UPDATE SET value = EXCLUDED.value;
 
           INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)

@@ -5,9 +5,9 @@
   },
   "loaderURL": "assets/images/gravitee-loader.gif",
   "authentication": {
-    "forceLogin": false,
+    "forceLogin": true,
     "localLogin": {
-      "enabled": true
+      "enabled": false
     },
     "oauth2": {
       "enabled": true,

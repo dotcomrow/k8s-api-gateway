@@ -19,7 +19,7 @@
       ]
     },
     "localLogin": {
-      "enabled": true
+      "enabled": false
     }
   },
   "scheduler": {
