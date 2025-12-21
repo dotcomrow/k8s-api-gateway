@@ -23536,6 +23536,8 @@ metadata:
     app.kubernetes.io/instance: gko
     app.kubernetes.io/version: 4.9.10
     checksum/config: '34d38dabbe5ea52053f3d250707d90b89739c3b375d4815d21e0d8d82b16a2f2'
+    argocd.argoproj.io/sync-wave: "-2"
+    argocd.argoproj.io/sync-options: PruneLast=true
 spec:
   replicas: 1
   selector:
