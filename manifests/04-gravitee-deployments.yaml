@@ -1069,6 +1069,183 @@ spec:
         configMap:
           name: gravitee-management-ui-config
 ---
+# GitHub email proxy (merge /user and /user/emails)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gravitee-github-email-proxy
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  server.py: |-
+    #!/usr/bin/env python3
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
+
+    GITHUB_API = os.environ.get("GITHUB_API", "https://api.github.com")
+    USER_AGENT = os.environ.get("USER_AGENT", "gravitee-github-email-proxy")
+    PORT = int(os.environ.get("PORT", "8080"))
+
+    def extract_token(auth_header):
+        if not auth_header:
+            return ""
+        parts = auth_header.split()
+        if len(parts) == 2 and parts[0].lower() in ("bearer", "token"):
+            return parts[1]
+        return ""
+
+    def fetch_json(url, token, allow_fail=False):
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": USER_AGENT,
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        req = Request(url, headers=headers)
+        try:
+            with urlopen(req, timeout=10) as resp:
+                payload = resp.read().decode("utf-8")
+                return json.loads(payload)
+        except (HTTPError, URLError, ValueError):
+            if allow_fail:
+                return None
+            raise
+
+    def pick_email(emails):
+        if not emails:
+            return ""
+        for item in emails:
+            if item.get("primary") and item.get("verified") and item.get("email"):
+                return item.get("email")
+        for item in emails:
+            if item.get("verified") and item.get("email"):
+                return item.get("email")
+        first = emails[0] if emails else {}
+        return first.get("email", "")
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.startswith("/healthz"):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+
+            if not self.path.startswith("/userinfo"):
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b"not found")
+                return
+
+            token = extract_token(self.headers.get("Authorization", ""))
+            if not token:
+                self.send_response(401)
+                self.end_headers()
+                self.wfile.write(b"missing token")
+                return
+
+            try:
+                profile = fetch_json(f"{GITHUB_API}/user", token, allow_fail=False) or {}
+                emails = fetch_json(f"{GITHUB_API}/user/emails", token, allow_fail=True) or []
+            except Exception:
+                self.send_response(502)
+                self.end_headers()
+                self.wfile.write(b"upstream error")
+                return
+
+            email = pick_email(emails)
+            if email:
+                profile["email"] = email
+
+            body = json.dumps(profile).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            return
+
+    if __name__ == "__main__":
+        HTTPServer(("", PORT), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gravitee-github-email-proxy
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gravitee-github-email-proxy
+  template:
+    metadata:
+      labels:
+        app: gravitee-github-email-proxy
+      annotations:
+        linkerd.io/inject: "disabled"
+    spec:
+      containers:
+      - name: proxy
+        image: python:3.12-alpine
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: PORT
+          value: "8080"
+        ports:
+        - containerPort: 8080
+        command: ["python", "/app/server.py"]
+        volumeMounts:
+        - name: config
+          mountPath: /app/server.py
+          subPath: server.py
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+      volumes:
+      - name: config
+        configMap:
+          name: gravitee-github-email-proxy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gravitee-github-email-proxy
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  selector:
+    app: gravitee-github-email-proxy
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+---
 # Gravitee Portal Nginx config
 apiVersion: v1
 kind: ConfigMap
@@ -1421,8 +1598,20 @@ spec:
             secretKeyRef:
               name: api-gateway-github-oauth
               key: client-secret
+        - name: GITHUB_CONSOLE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-management-github-oauth
+              key: client-id
+        - name: GITHUB_CONSOLE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-management-github-oauth
+              key: client-secret
         - name: GITHUB_SERVER_URL
           value: "https://github.com/login/oauth"
+        - name: GITHUB_USERINFO_ENDPOINT
+          value: "http://gravitee-github-email-proxy.k8s-api-gateway.svc.cluster.local:8080/userinfo"
         - name: FORCE_BASIC_AUTH
           value: "true"
         - name: YUGABYTE_HOST
@@ -1668,6 +1857,8 @@ spec:
           ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
           GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:-}"
           GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}"
+          GITHUB_CONSOLE_CLIENT_ID="${GITHUB_CONSOLE_CLIENT_ID:-}"
+          GITHUB_CONSOLE_CLIENT_SECRET="${GITHUB_CONSOLE_CLIENT_SECRET:-}"
           GITHUB_SERVER_URL="${GITHUB_SERVER_URL:-}"
           FORCE_BASIC_AUTH="${FORCE_BASIC_AUTH:-true}"
 
@@ -1681,6 +1872,7 @@ spec:
           BASE_URL="${GITHUB_SERVER_URL%/}"
           AUTH_ENDPOINT="${BASE_URL}/authorize"
           TOKEN_ENDPOINT="${BASE_URL}/access_token"
+          USERINFO_ENDPOINT="${GITHUB_USERINFO_ENDPOINT:-https://api.github.com/user}"
 
           attempt_login() {
             endpoint="$1"
@@ -1770,52 +1962,76 @@ spec:
           echo "  Using AUTH_ENDPOINT  = ${AUTH_ENDPOINT}"
           echo "  Using TOKEN_ENDPOINT = ${TOKEN_ENDPOINT}"
 
-          "$JQ_BIN" -n \
-            --arg clientId "$GITHUB_CLIENT_ID" \
-            --arg clientSecret "$GITHUB_CLIENT_SECRET" \
-            --arg authEndpoint "$AUTH_ENDPOINT" \
-            --arg tokenEndpoint "$TOKEN_ENDPOINT" \
-            '{
-              id: "github",
-              name: "GitHub",
-              type: "GITHUB",
-              enabled: true,
-              target: ["PORTAL","CONSOLE"],
-              color: "#24292F",
-              syncMappings: true,
-              scopes: ["read:user","read:org","user:email"],
-              configuration: {
-                clientId: $clientId,
-                clientSecret: $clientSecret,
-                authorizationEndpoint: $authEndpoint,
-                tokenEndpoint: $tokenEndpoint,
-                userInfoEndpoint: "https://api.github.com/user",
-                useSystemProxy: false
-              }
-            }' > /tmp/github-idp.json
+          build_github_idp() {
+            idp_id="$1"
+            idp_name="$2"
+            target_json="$3"
+            client_id="$4"
+            client_secret="$5"
+            userinfo_endpoint="$6"
+            outfile="$7"
 
-          echo "📤 IDP payload (/tmp/github-idp.json):"
-          cat /tmp/github-idp.json || true
+            "$JQ_BIN" -n \
+              --arg id "$idp_id" \
+              --arg name "$idp_name" \
+              --argjson target "$target_json" \
+              --arg clientId "$client_id" \
+              --arg clientSecret "$client_secret" \
+              --arg authEndpoint "$AUTH_ENDPOINT" \
+              --arg tokenEndpoint "$TOKEN_ENDPOINT" \
+              --arg userInfoEndpoint "$userinfo_endpoint" \
+              '{
+                id: $id,
+                name: $name,
+                type: "GITHUB",
+                enabled: true,
+                target: $target,
+                color: "#24292F",
+                syncMappings: true,
+                scopes: ["read:user","read:org","user:email"],
+                configuration: {
+                  clientId: $clientId,
+                  clientSecret: $clientSecret,
+                  authorizationEndpoint: $authEndpoint,
+                  tokenEndpoint: $tokenEndpoint,
+                  userInfoEndpoint: $userInfoEndpoint,
+                  useSystemProxy: false
+                }
+              }' > "$outfile"
+          }
+
+          build_github_idp "github" "GitHub" '["PORTAL"]' \
+            "$GITHUB_CLIENT_ID" "$GITHUB_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-portal-idp.json
+          build_github_idp "github-console" "GitHub" '["CONSOLE"]' \
+            "$GITHUB_CONSOLE_CLIENT_ID" "$GITHUB_CONSOLE_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-console-idp.json
+
+          echo "📤 IDP payloads:"
+          echo "  - /tmp/github-portal-idp.json"
+          cat /tmp/github-portal-idp.json || true
+          echo "  - /tmp/github-console-idp.json"
+          cat /tmp/github-console-idp.json || true
 
           apply_github_idp() {
-            scope_label="$1"
-            base_url="$2"
+            idp_file="$1"
+            scope_label="$2"
+            base_url="$3"
             config_url="$base_url/configuration/identities"
+            idp_id="$("$JQ_BIN" -r '.id' "$idp_file")"
 
-            echo "🔧 Applying GitHub identity provider configuration for ${scope_label} scope..."
+            echo "🔧 Applying GitHub identity provider '${idp_id}' for ${scope_label} scope..."
             if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
               IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
                 -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-                -X PUT "$config_url/github" \
-                --data-binary @/tmp/github-idp.json || echo "000")
+                -X PUT "$config_url/${idp_id}" \
+                --data-binary @"$idp_file" || echo "000")
             else
               IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
                 -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
-                -X PUT "$config_url/github" \
-                --data-binary @/tmp/github-idp.json || echo "000")
+                -X PUT "$config_url/${idp_id}" \
+                --data-binary @"$idp_file" || echo "000")
             fi
 
-            echo "ℹ️ PUT /identities/github (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
+            echo "ℹ️ PUT /identities/${idp_id} (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
             echo "ℹ️ PUT response body:"
             cat /tmp/idp-response || true
 
@@ -1825,12 +2041,12 @@ spec:
                 IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
                   -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
                   -X POST "$config_url" \
-                  --data-binary @/tmp/github-idp.json || echo "000")
+                  --data-binary @"$idp_file" || echo "000")
               else
                 IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
                   -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
                   -X POST "$config_url" \
-                  --data-binary @/tmp/github-idp.json || echo "000")
+                  --data-binary @"$idp_file" || echo "000")
               fi
 
               echo "ℹ️ POST /identities (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
@@ -1847,12 +2063,20 @@ spec:
             return 0
           }
 
-          if ! retry 3 5 apply_github_idp "environment" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT"; then
-            echo "❌ Failed to configure GitHub identity provider after retries for environment scope."
+          if ! retry 3 5 apply_github_idp /tmp/github-portal-idp.json "environment" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT"; then
+            echo "❌ Failed to configure GitHub portal identity provider after retries for environment scope."
             exit 1
           fi
-          if ! retry 3 5 apply_github_idp "organization" "$MGMT_API_URL/management/organizations/DEFAULT"; then
-            echo "❌ Failed to configure GitHub identity provider after retries for organization scope."
+          if ! retry 3 5 apply_github_idp /tmp/github-console-idp.json "environment" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT"; then
+            echo "❌ Failed to configure GitHub console identity provider after retries for environment scope."
+            exit 1
+          fi
+          if ! retry 3 5 apply_github_idp /tmp/github-portal-idp.json "organization" "$MGMT_API_URL/management/organizations/DEFAULT"; then
+            echo "❌ Failed to configure GitHub portal identity provider after retries for organization scope."
+            exit 1
+          fi
+          if ! retry 3 5 apply_github_idp /tmp/github-console-idp.json "organization" "$MGMT_API_URL/management/organizations/DEFAULT"; then
+            echo "❌ Failed to configure GitHub console identity provider after retries for organization scope."
             exit 1
           fi
 
@@ -1884,6 +2108,16 @@ spec:
 
           INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
           VALUES ('github', 'ORGANIZATION', 'DEFAULT', now())
+          ON CONFLICT (identity_provider_id, reference_type, reference_id)
+          DO NOTHING;
+
+          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
+          VALUES ('github-console', 'ENVIRONMENT', 'DEFAULT', now())
+          ON CONFLICT (identity_provider_id, reference_type, reference_id)
+          DO NOTHING;
+
+          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
+          VALUES ('github-console', 'ORGANIZATION', 'DEFAULT', now())
           ON CONFLICT (identity_provider_id, reference_type, reference_id)
           DO NOTHING;"
           printf "%s\n" "$portal_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
