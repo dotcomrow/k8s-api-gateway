@@ -186,9 +186,13 @@ spec:
               kubectl -n k8s-api-gateway delete managementcontext gravitee-default --ignore-not-found || true
               kubectl -n k8s-api-gateway patch externalsecret gravitee-admin-credentials \
                 --type=merge -p '{"metadata":{"finalizers":[]}}' || true
+              kubectl -n k8s-api-gateway patch externalsecret gravitee-admin-credentials \
+                --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]' || true
               kubectl -n k8s-api-gateway delete externalsecret gravitee-admin-credentials --ignore-not-found || true
               kubectl -n k8s-api-gateway patch secret gravitee-admin-credentials \
                 --type=merge -p '{"metadata":{"finalizers":[]}}' || true
+              kubectl -n k8s-api-gateway patch secret gravitee-admin-credentials \
+                --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]' || true
               kubectl -n k8s-api-gateway delete secret gravitee-admin-credentials --ignore-not-found || true
 ---
 apiVersion: v1
