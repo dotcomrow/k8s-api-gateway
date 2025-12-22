@@ -61,22 +61,13 @@ gravitee:
       autoCommit: true
       registerMbeans: false
 
-# Analytics repository configuration
+# Analytics repository configuration (OSS analytics via OpenSearch)
 analytics:
-  type: jdbc
-  jdbc:
-    url: ${ANALYTICS_JDBC_URL:jdbc:postgresql://${YUGABYTE_HOST:yugabytedb-service.k8s-api-gateway.svc.cluster.local}:${YUGABYTE_PORT:5433}/${YUGABYTE_DATABASE:gravitee}?currentSchema=${YUGABYTE_SCHEMA:gravitee}}
-    username: ${YUGABYTE_USER:gravitee_app}
-    password: ${YUGABYTE_PASSWORD}
-    schema: ${YUGABYTE_SCHEMA:gravitee}
-    pool:
-      maxPoolSize: ${ANALYTICS_JDBC_POOL_MAX_POOL_SIZE:2}
-      minIdle: ${ANALYTICS_JDBC_POOL_MIN_IDLE:0}
-      connectionTimeout: ${ANALYTICS_JDBC_POOL_CONNECTION_TIMEOUT:10000}
-      idleTimeout: ${ANALYTICS_JDBC_POOL_IDLE_TIMEOUT:30000}
-      maxLifetime: ${ANALYTICS_JDBC_POOL_MAX_LIFETIME:600000}
-      autoCommit: true
-      registerMbeans: false
+  type: elasticsearch
+  elasticsearch:
+    endpoints:
+      - http://gravitee-opensearch.k8s-api-gateway.svc.cluster.local:9200
+    index: ${ANALYTICS_ES_INDEX:gravitee}
 
 # HTTP server configuration
 jetty:
