@@ -2012,7 +2012,7 @@ spec:
 
           build_github_idp "github" "GitHub" '["PORTAL"]' \
             "$GITHUB_CLIENT_ID" "$GITHUB_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-portal-idp.json
-          build_github_idp "github-console" "GitHub Console" '["CONSOLE"]' \
+          build_github_idp "github" "GitHub" '["CONSOLE"]' \
             "$GITHUB_CONSOLE_CLIENT_ID" "$GITHUB_CONSOLE_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-console-idp.json
 
           echo "📤 IDP payloads:"
@@ -2082,24 +2082,7 @@ spec:
             exit 1
           fi
 
-          cleanup_identity() {
-            idp_id="$1"
-            base_url="$2"
-            config_url="$base_url/configuration/identities/${idp_id}"
-            if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
-              curl -s -o /tmp/idp-delete-response -w "%{http_code}" \
-                -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-                -X DELETE "$config_url" || true
-            else
-              curl -s -o /tmp/idp-delete-response -w "%{http_code}" \
-                -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
-                -X DELETE "$config_url" || true
-            fi
-          }
-
-          # Ensure portal IDP is only environment-scoped and console IDP only organization-scoped.
-          cleanup_identity "github" "$MGMT_API_URL/management/organizations/DEFAULT" || true
-          cleanup_identity "github-console" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT" || true
+          # Provider scoping is controlled by the target and the endpoint we apply to.
 
           echo "🔧 Forcing portal user self-signup flags directly in database..."
           portal_sql="INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
