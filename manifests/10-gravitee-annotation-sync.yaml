@@ -47,6 +47,9 @@ metadata:
     argocd.argoproj.io/hook: PreDelete
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed
 rules:
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+    verbs: ["get", "list", "patch", "delete"]
   - apiGroups: ["gravitee.io"]
     resources: ["apiv4definitions"]
     verbs: ["get", "list", "patch", "delete"]
@@ -164,6 +167,8 @@ spec:
               set -e
               kubectl -n k8s-api-gateway scale deployment gko-controller-manager --replicas=0 || true
               kubectl -n k8s-api-gateway scale deployment gravitee-annotation-sync --replicas=0 || true
+              kubectl delete validatingwebhookconfiguration gko-validating-webhook-configurations --ignore-not-found || true
+              kubectl delete mutatingwebhookconfiguration gko-mutating-webhook-configurations --ignore-not-found || true
               kubectl get apiv4definitions.gravitee.io -A \
                 -o jsonpath='{range .items[?(@.spec.contextRef.name=="gravitee-default")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
                 | while read -r ns name; do
