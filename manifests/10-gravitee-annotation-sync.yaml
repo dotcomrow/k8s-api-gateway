@@ -150,6 +150,9 @@ spec:
     spec:
       ttlSecondsAfterFinished: 120
       template:
+        metadata:
+          annotations:
+            linkerd.io/inject: "disabled"
         spec:
           serviceAccountName: gravitee-annotation-cleanup
           restartPolicy: Never
@@ -160,8 +163,8 @@ spec:
               args:
                 - |
                   set -e
-                  ctx_ts="$(kubectl -n k8s-api-gateway get managementcontext gravitee-default -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || true)"
-                  es_ts="$(kubectl -n k8s-api-gateway get externalsecret gravitee-admin-credentials -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || true)"
+                  ctx_ts="$(kubectl -n k8s-api-gateway get managementcontexts.gravitee.io gravitee-default -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || true)"
+                  es_ts="$(kubectl -n k8s-api-gateway get externalsecrets.external-secrets.io gravitee-admin-credentials -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || true)"
                   secret_ts="$(kubectl -n k8s-api-gateway get secret gravitee-admin-credentials -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || true)"
                   if [ -z "$ctx_ts$es_ts$secret_ts" ]; then
                     echo "No deletion in progress; skipping cleanup."
