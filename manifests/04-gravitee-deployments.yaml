@@ -308,6 +308,7 @@ data:
           scopes:
             - read:user
             - read:org
+            - user:email
           userMapping:
             condition: "{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access') or #jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
             id: id
@@ -1781,7 +1782,7 @@ spec:
               target: ["PORTAL","CONSOLE"],
               color: "#24292F",
               syncMappings: true,
-              scopes: ["read:user","read:org"],
+              scopes: ["read:user","read:org","user:email"],
               configuration: {
                 clientId: $clientId,
                 clientSecret: $clientSecret,

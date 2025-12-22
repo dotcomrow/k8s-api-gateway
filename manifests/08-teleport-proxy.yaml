@@ -226,6 +226,7 @@ spec:
           - --github-org=dotcomrow
           - --github-team=gravitee_admin_access
           - --reverse-proxy=true
+          - --pass-host-header=true
           - --skip-auth-preflight=true
         env:
         - name: OAUTH2_PROXY_CLIENT_ID
