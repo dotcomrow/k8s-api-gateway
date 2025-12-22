@@ -137,7 +137,7 @@ data:
 
           console:
             # Public URL for the console
-            url: https://gravitee-management.teleport.app.suncoast.systems
+            url: https://gravitee-management.teleport.app.suncoast.systems/management
 
           portal:
             # Public URL for the developer portal
@@ -147,7 +147,7 @@ data:
         api:
           url: https://gravitee.teleport.app.suncoast.systems
           console:
-            url: https://gravitee-management.teleport.app.suncoast.systems
+            url: https://gravitee-management.teleport.app.suncoast.systems/management
           portal:
             url: https://gravitee.teleport.app.suncoast.systems
 
@@ -2067,18 +2067,29 @@ spec:
             echo "❌ Failed to configure GitHub portal identity provider after retries for environment scope."
             exit 1
           fi
-          if ! retry 3 5 apply_github_idp /tmp/github-console-idp.json "environment" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT"; then
-            echo "❌ Failed to configure GitHub console identity provider after retries for environment scope."
-            exit 1
-          fi
-          if ! retry 3 5 apply_github_idp /tmp/github-portal-idp.json "organization" "$MGMT_API_URL/management/organizations/DEFAULT"; then
-            echo "❌ Failed to configure GitHub portal identity provider after retries for organization scope."
-            exit 1
-          fi
           if ! retry 3 5 apply_github_idp /tmp/github-console-idp.json "organization" "$MGMT_API_URL/management/organizations/DEFAULT"; then
             echo "❌ Failed to configure GitHub console identity provider after retries for organization scope."
             exit 1
           fi
+
+          cleanup_identity() {
+            idp_id="$1"
+            base_url="$2"
+            config_url="$base_url/configuration/identities/${idp_id}"
+            if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
+              curl -s -o /tmp/idp-delete-response -w "%{http_code}" \
+                -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+                -X DELETE "$config_url" || true
+            else
+              curl -s -o /tmp/idp-delete-response -w "%{http_code}" \
+                -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
+                -X DELETE "$config_url" || true
+            fi
+          }
+
+          # Ensure portal IDP is only environment-scoped and console IDP only organization-scoped.
+          cleanup_identity "github" "$MGMT_API_URL/management/organizations/DEFAULT" || true
+          cleanup_identity "github-console" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT" || true
 
           echo "🔧 Forcing portal user self-signup flags directly in database..."
           portal_sql="INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
@@ -2103,16 +2114,6 @@ spec:
 
           INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
           VALUES ('github', 'ENVIRONMENT', 'DEFAULT', now())
-          ON CONFLICT (identity_provider_id, reference_type, reference_id)
-          DO NOTHING;
-
-          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
-          VALUES ('github', 'ORGANIZATION', 'DEFAULT', now())
-          ON CONFLICT (identity_provider_id, reference_type, reference_id)
-          DO NOTHING;
-
-          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
-          VALUES ('github-console', 'ENVIRONMENT', 'DEFAULT', now())
           ON CONFLICT (identity_provider_id, reference_type, reference_id)
           DO NOTHING;
 
