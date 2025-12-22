@@ -1888,6 +1888,13 @@ spec:
           echo "  ADMIN_USERNAME    = $ADMIN_USERNAME"
           echo "  GITHUB_SERVER_URL = $GITHUB_SERVER_URL"
 
+          echo "🧹 Clearing stale GitHub Console activations before applying IDPs..."
+          cleanup_idp_sql="DELETE FROM gravitee.identity_provider_activations
+          WHERE identity_provider_id = 'github-console'
+            AND reference_type = 'ORGANIZATION'
+            AND reference_id = 'DEFAULT';"
+          printf "%s\n" "$cleanup_idp_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+
           BASE_URL="${GITHUB_SERVER_URL%/}"
           AUTH_ENDPOINT="${BASE_URL}/authorize"
           TOKEN_ENDPOINT="${BASE_URL}/access_token"
