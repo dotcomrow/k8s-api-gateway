@@ -2019,7 +2019,7 @@ spec:
 
           build_github_idp "github" "GitHub" '["PORTAL"]' \
             "$GITHUB_CLIENT_ID" "$GITHUB_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-portal-idp.json
-          build_github_idp "github-console" "GitHub Console" '["CONSOLE"]' \
+          build_github_idp "github" "GitHub" '["CONSOLE"]' \
             "$GITHUB_CONSOLE_CLIENT_ID" "$GITHUB_CONSOLE_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-console-idp.json
 
           echo "📤 IDP payloads:"
@@ -2127,13 +2127,8 @@ spec:
           ON CONFLICT (identity_provider_id, reference_type, reference_id)
           DO NOTHING;
 
-          DELETE FROM gravitee.identity_provider_activations
-           WHERE identity_provider_id = 'github'
-             AND reference_type = 'ORGANIZATION'
-             AND reference_id = 'DEFAULT';
-
           INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
-          VALUES ('github-console', 'ORGANIZATION', 'DEFAULT', now())
+          VALUES ('github', 'ORGANIZATION', 'DEFAULT', now())
           ON CONFLICT (identity_provider_id, reference_type, reference_id)
           DO NOTHING;"
           printf "%s\n" "$portal_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
