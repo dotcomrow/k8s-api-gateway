@@ -731,8 +731,11 @@ data:
                 labels = list(dict.fromkeys(labels + tags))
                 tags = []
 
-        if api_type == "NATIVE" and categories and not ENABLE_NATIVE_CATEGORIES:
-            log(f"Skipping categories for native API {svc_key} (ENABLE_NATIVE_CATEGORIES=false)")
+        if api_type == "NATIVE" and not ENABLE_NATIVE_CATEGORIES:
+            if categories:
+                log(f"Skipping categories for native API {svc_key} (ENABLE_NATIVE_CATEGORIES=false)")
+            # Explicitly clear categories to avoid empty-category SQL errors in Management API.
+            spec["categories"] = None
             categories = []
 
         set_if(tags or None, "tags")

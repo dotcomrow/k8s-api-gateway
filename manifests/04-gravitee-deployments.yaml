@@ -577,8 +577,6 @@ spec:
           value: "k8s-api-gateway"
         - name: JWT_EXPIRE_AFTER
           value: "604800"
-        - name: PORTAL_URL
-          value: "https://gravitee.teleport.app.suncoast.systems/portal"
         - name: GATEWAY_URL
           value: "http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082"
         - name: EMAIL_HOST
