@@ -558,9 +558,9 @@ spec:
         # - name: MANAGEMENT_JDBC_PASSWORD  <-- intentionally not set here
 
         - name: ANALYTICS_TYPE
-          value: "none"
+          value: "jdbc"
         - name: ANALYTICS_JDBC_LIQUIBASE_ENABLED
-          value: "false"
+          value: "true"
         - name: REPORTERS_ELASTIC_ENABLED
           value: "false"
         - name: SERVICES_CACHE_ENABLED
@@ -2028,7 +2028,7 @@ spec:
 
           build_github_idp "github" "GitHub" '["PORTAL"]' \
             "$GITHUB_CLIENT_ID" "$GITHUB_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-portal-idp.json
-          build_github_idp "github" "GitHub" '["CONSOLE"]' \
+          build_github_idp "github-console" "GitHub Console" '["CONSOLE"]' \
             "$GITHUB_CONSOLE_CLIENT_ID" "$GITHUB_CONSOLE_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-console-idp.json
 
           echo "📤 IDP payloads:"
@@ -2137,9 +2137,19 @@ spec:
           DO NOTHING;
 
           INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
-          VALUES ('github', 'ORGANIZATION', 'DEFAULT', now())
+          VALUES ('github-console', 'ORGANIZATION', 'DEFAULT', now())
           ON CONFLICT (identity_provider_id, reference_type, reference_id)
-          DO NOTHING;"
+          DO NOTHING;
+
+          DELETE FROM gravitee.identity_provider_activations
+          WHERE identity_provider_id = 'github'
+            AND reference_type = 'ORGANIZATION'
+            AND reference_id = 'DEFAULT';
+
+          DELETE FROM gravitee.identity_provider_activations
+          WHERE identity_provider_id = 'github-console'
+            AND reference_type = 'ENVIRONMENT'
+            AND reference_id = 'DEFAULT';"
           printf "%s\n" "$portal_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
           echo "✅ Portal user creation disabled via database parameters."
 

@@ -966,7 +966,7 @@ spec:
             - name: AUTO_CREATE_CATEGORIES
               value: "true"
             - name: ENABLE_NATIVE_CATEGORIES
-              value: "true"
+              value: "false"
           volumeMounts:
             - name: sync-script
               mountPath: /app
