@@ -734,8 +734,8 @@ data:
         if api_type == "NATIVE" and not ENABLE_NATIVE_CATEGORIES:
             if categories:
                 log(f"Skipping categories for native API {svc_key} (ENABLE_NATIVE_CATEGORIES=false)")
-            # Remove categories entirely to avoid empty-category SQL errors in Management API.
-            spec.pop("categories", None)
+            # Set to null so merge-patch removes existing categories and avoids empty-category SQL errors.
+            spec["categories"] = None
             categories = None
 
         set_if(tags or None, "tags")
