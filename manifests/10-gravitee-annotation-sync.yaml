@@ -310,6 +310,7 @@ data:
     ADMIN_EXTERNAL_SECRET = os.environ.get("GRAVITEE_ADMIN_EXTERNAL_SECRET", "gravitee-admin-credentials")
     AUTO_CREATE_GROUPS = os.environ.get("AUTO_CREATE_GROUPS", "true").strip().lower() == "true"
     AUTO_CREATE_CATEGORIES = os.environ.get("AUTO_CREATE_CATEGORIES", "true").strip().lower() == "true"
+    ENABLE_NATIVE_CATEGORIES = os.environ.get("ENABLE_NATIVE_CATEGORIES", "false").strip().lower() == "true"
 
     def log(msg):
         print(msg, flush=True)
@@ -730,6 +731,10 @@ data:
                 labels = list(dict.fromkeys(labels + tags))
                 tags = []
 
+        if api_type == "NATIVE" and categories and not ENABLE_NATIVE_CATEGORIES:
+            log(f"Skipping categories for native API {svc_key} (ENABLE_NATIVE_CATEGORIES=false)")
+            categories = []
+
         set_if(tags or None, "tags")
         set_if(labels or None, "labels")
         set_if(categories or None, "categories")
@@ -957,6 +962,8 @@ spec:
               value: "true"
             - name: AUTO_CREATE_CATEGORIES
               value: "true"
+            - name: ENABLE_NATIVE_CATEGORIES
+              value: "false"
           volumeMounts:
             - name: sync-script
               mountPath: /app

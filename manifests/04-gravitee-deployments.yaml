@@ -524,6 +524,8 @@ spec:
           value: "https://gravitee.teleport.app.suncoast.systems/management/auth/oauth2/github/access_token"
         - name: PORTAL_SSO_USERINFO_URL
           value: "https://gravitee.teleport.app.suncoast.systems/management/auth/oauth2/github/userinfo"
+        - name: PORTAL_URL
+          value: "https://gravitee.teleport.app.suncoast.systems"
         - name: YUGABYTE_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
         - name: YUGABYTE_PORT
@@ -1137,6 +1139,14 @@ data:
         first = emails[0] if emails else {}
         return first.get("email", "")
 
+    def fallback_email(profile, current_email):
+        if current_email:
+            return current_email
+        login = profile.get("login")
+        if login:
+            return f"{login}@users.noreply.github.com"
+        return ""
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path.startswith("/healthz"):
@@ -1168,6 +1178,7 @@ data:
                 return
 
             email = pick_email(emails)
+            email = fallback_email(profile, email)
             if email:
                 profile["email"] = email
 
