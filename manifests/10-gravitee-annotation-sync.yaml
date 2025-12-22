@@ -15,6 +15,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "4"
     argocd.argoproj.io/sync-options: PruneLast=true
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -42,6 +44,8 @@ metadata:
   name: gravitee-annotation-cleanup
   annotations:
     argocd.argoproj.io/sync-options: PruneLast=true
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed
 rules:
   - apiGroups: ["gravitee.io"]
     resources: ["apiv4definitions"]
@@ -71,6 +75,8 @@ metadata:
   name: gravitee-annotation-cleanup
   annotations:
     argocd.argoproj.io/sync-options: PruneLast=true
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -87,6 +93,8 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-options: PruneLast=true
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -106,6 +114,8 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-options: PruneLast=true
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -173,12 +183,12 @@ spec:
               kubectl -n k8s-api-gateway patch managementcontext.gravitee.io gravitee-default \
                 --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]' || true
               kubectl -n k8s-api-gateway delete managementcontext gravitee-default --ignore-not-found || true
-              kubectl -n k8s-api-gateway patch secret gravitee-admin-credentials \
-                --type=merge -p '{"metadata":{"finalizers":[]}}' || true
-              kubectl -n k8s-api-gateway delete secret gravitee-admin-credentials --ignore-not-found || true
               kubectl -n k8s-api-gateway patch externalsecret gravitee-admin-credentials \
                 --type=merge -p '{"metadata":{"finalizers":[]}}' || true
               kubectl -n k8s-api-gateway delete externalsecret gravitee-admin-credentials --ignore-not-found || true
+              kubectl -n k8s-api-gateway patch secret gravitee-admin-credentials \
+                --type=merge -p '{"metadata":{"finalizers":[]}}' || true
+              kubectl -n k8s-api-gateway delete secret gravitee-admin-credentials --ignore-not-found || true
 ---
 apiVersion: v1
 kind: ConfigMap

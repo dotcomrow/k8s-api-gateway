@@ -63,6 +63,7 @@ spec:
   target:
     name: gravitee-admin-credentials
     creationPolicy: Owner
+    deletionPolicy: Delete
   data:
     - secretKey: username
       remoteRef:
