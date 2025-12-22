@@ -224,7 +224,7 @@ spec:
           - --whitelist-domain=teleport.app.suncoast.systems
           - --scope=read:user read:org
           - --github-org=dotcomrow
-          - --github-team=dotcomrow/gravitee_admin_access
+          - --github-team=gravitee_admin_access
           - --reverse-proxy=true
           - --skip-auth-preflight=true
         env:
