@@ -137,19 +137,19 @@ data:
 
           console:
             # Public URL for the console
-            url: https://gravitee.teleport.app.suncoast.systems/management
+            url: https://gravitee-management.teleport.app.suncoast.systems
 
           portal:
             # Public URL for the developer portal
-            url: https://gravitee-management.teleport.app.suncoast.systems/portal
+            url: https://gravitee.teleport.app.suncoast.systems
 
         # (optional but harmless) keep the older structure too, in case your version still reads it
         api:
           url: https://gravitee.teleport.app.suncoast.systems
           console:
-            url: https://gravitee.teleport.app.suncoast.systems/management
+            url: https://gravitee-management.teleport.app.suncoast.systems
           portal:
-            url: https://gravitee-management.teleport.app.suncoast.systems/portal
+            url: https://gravitee.teleport.app.suncoast.systems
 
       # Management configuration
       management:
