@@ -114,6 +114,13 @@ data:
               "allow_credential": true,
               "max_age": 1728000
             },
+            "proxy-rewrite": {
+              "headers": {
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-Port": "443",
+                "X-Forwarded-Host": "$host"
+              }
+            },
             "real-ip": {
               "source": "X-Forwarded-For",
               "recursive": true
