@@ -2026,7 +2026,7 @@ spec:
               }' > "$outfile"
           }
 
-          build_github_idp "github" "GitHub" '["PORTAL"]' \
+          build_github_idp "github-portal" "GitHub" '["PORTAL"]' \
             "$GITHUB_CLIENT_ID" "$GITHUB_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-portal-idp.json
           build_github_idp "github" "GitHub" '["CONSOLE"]' \
             "$GITHUB_CONSOLE_CLIENT_ID" "$GITHUB_CONSOLE_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-console-idp.json
@@ -2098,6 +2098,22 @@ spec:
             exit 1
           fi
 
+          # Remove any legacy environment GitHub provider to avoid duplicate portal buttons.
+          delete_identity_provider() {
+            idp_id="$1"
+            scope_label="$2"
+            base_url="$3"
+            config_url="$base_url/configuration/identities"
+            if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
+              curl -s -H "Authorization: Bearer ${TOKEN}" -X DELETE "$config_url/${idp_id}" >/tmp/idp-delete-body || true
+            else
+              curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -X DELETE "$config_url/${idp_id}" >/tmp/idp-delete-body || true
+            fi
+            return 0
+          }
+
+          delete_identity_provider "github" "environment" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT"
+
           # Provider scoping is controlled by the target and the endpoint we apply to.
 
           echo "🔧 Forcing portal user self-signup flags directly in database..."
@@ -2131,8 +2147,13 @@ spec:
           ON CONFLICT (reference_type, reference_id, key)
           DO UPDATE SET value = EXCLUDED.value;
 
+          DELETE FROM gravitee.identity_provider_activations
+           WHERE identity_provider_id = 'github'
+             AND reference_type = 'ENVIRONMENT'
+             AND reference_id = 'DEFAULT';
+
           INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
-          VALUES ('github', 'ENVIRONMENT', 'DEFAULT', now())
+          VALUES ('github-portal', 'ENVIRONMENT', 'DEFAULT', now())
           ON CONFLICT (identity_provider_id, reference_type, reference_id)
           DO NOTHING;
 
