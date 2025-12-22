@@ -98,7 +98,7 @@ metadata:
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    resourceNames: ["gravitee-annotation-sync"]
+    resourceNames: ["gravitee-annotation-sync", "gko-controller-manager"]
     verbs: ["get", "patch", "update"]
   - apiGroups: [""]
     resources: ["secrets"]
@@ -162,6 +162,7 @@ spec:
           args:
             - |
               set -e
+              kubectl -n k8s-api-gateway scale deployment gko-controller-manager --replicas=0 || true
               kubectl -n k8s-api-gateway scale deployment gravitee-annotation-sync --replicas=0 || true
               kubectl get apiv4definitions.gravitee.io -A \
                 -o jsonpath='{range .items[?(@.spec.contextRef.name=="gravitee-default")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
