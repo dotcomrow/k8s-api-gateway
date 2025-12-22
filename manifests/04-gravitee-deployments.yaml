@@ -2002,7 +2002,7 @@ spec:
 
           build_github_idp "github" "GitHub" '["PORTAL"]' \
             "$GITHUB_CLIENT_ID" "$GITHUB_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-portal-idp.json
-          build_github_idp "github-console" "GitHub" '["CONSOLE"]' \
+          build_github_idp "github-console" "GitHub Console" '["CONSOLE"]' \
             "$GITHUB_CONSOLE_CLIENT_ID" "$GITHUB_CONSOLE_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-console-idp.json
 
           echo "📤 IDP payloads:"
