@@ -301,8 +301,8 @@ data:
         - type: oauth2
           id: github
           name: GitHub
-          clientId: ${PORTAL_OAUTH_CLIENT_ID}
-          clientSecret: ${PORTAL_OAUTH_CLIENT_SECRET}
+          clientId: ${CONSOLE_OAUTH_CLIENT_ID}
+          clientSecret: ${CONSOLE_OAUTH_CLIENT_SECRET}
           color: "#24292F"
           syncMappings: true
           scopes:
@@ -499,6 +499,16 @@ spec:
           valueFrom:
             secretKeyRef:
               name: api-gateway-github-oauth
+              key: client-secret
+        - name: CONSOLE_OAUTH_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-management-github-oauth
+              key: client-id
+        - name: CONSOLE_OAUTH_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-management-github-oauth
               key: client-secret
         - name: PORTAL_OAUTH_SERVER_URL
           value: "https://github.com/login/oauth"
