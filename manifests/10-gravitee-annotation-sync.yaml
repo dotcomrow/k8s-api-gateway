@@ -734,9 +734,9 @@ data:
         if api_type == "NATIVE" and not ENABLE_NATIVE_CATEGORIES:
             if categories:
                 log(f"Skipping categories for native API {svc_key} (ENABLE_NATIVE_CATEGORIES=false)")
-            # Explicitly clear categories to avoid empty-category SQL errors in Management API.
-            spec["categories"] = None
-            categories = []
+            # Remove categories entirely to avoid empty-category SQL errors in Management API.
+            spec.pop("categories", None)
+            categories = None
 
         set_if(tags or None, "tags")
         set_if(labels or None, "labels")

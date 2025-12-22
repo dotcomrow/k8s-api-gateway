@@ -1092,6 +1092,7 @@ data:
     #!/usr/bin/env python3
     import json
     import os
+    import sys
     from http.server import BaseHTTPRequestHandler, HTTPServer
     from urllib.error import HTTPError, URLError
     from urllib.request import Request, urlopen
@@ -1099,6 +1100,10 @@ data:
     GITHUB_API = os.environ.get("GITHUB_API", "https://api.github.com")
     USER_AGENT = os.environ.get("USER_AGENT", "gravitee-github-email-proxy")
     PORT = int(os.environ.get("PORT", "8080"))
+
+    def log(msg):
+        sys.stderr.write(f"[github-email-proxy] {msg}\n")
+        sys.stderr.flush()
 
     def extract_token(auth_header):
         if not auth_header:
@@ -1179,6 +1184,7 @@ data:
             email = fallback_email(profile, email)
             if email:
                 profile["email"] = email
+            log(f"user={profile.get('login','')} email={'set' if email else 'missing'}")
 
             body = json.dumps(profile).encode("utf-8")
             self.send_response(200)
@@ -2159,6 +2165,84 @@ spec:
             AND reference_id = 'DEFAULT';"
           printf "%s\n" "$portal_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
           echo "✅ Portal user creation disabled via database parameters."
+
+          echo "🔧 Promoting github-console users to ADMIN roles (organization + environment)..."
+          role_sql="DO \$\$
+          DECLARE
+            org_role_id TEXT;
+            env_role_id TEXT;
+          BEGIN
+            SELECT id INTO org_role_id
+              FROM gravitee.roles
+             WHERE scope = 'ORGANIZATION'
+               AND reference_id = 'DEFAULT'
+               AND name = 'ADMIN'
+             ORDER BY created_at
+             LIMIT 1;
+
+            SELECT id INTO env_role_id
+              FROM gravitee.roles
+             WHERE scope = 'ENVIRONMENT'
+               AND reference_id = 'DEFAULT'
+               AND name = 'ADMIN'
+             ORDER BY created_at
+             LIMIT 1;
+
+            UPDATE gravitee.memberships m
+               SET role_id = org_role_id,
+                   updated_at = now()
+              FROM gravitee.users u
+             WHERE u.source = 'github-console'
+               AND m.member_id = u.id
+               AND m.reference_type = 'ORGANIZATION'
+               AND m.reference_id = 'DEFAULT';
+
+            UPDATE gravitee.memberships m
+               SET role_id = env_role_id,
+                   updated_at = now()
+              FROM gravitee.users u
+             WHERE u.source = 'github-console'
+               AND m.member_id = u.id
+               AND m.reference_type = 'ENVIRONMENT'
+               AND m.reference_id = 'DEFAULT';
+
+            INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
+            SELECT u.id || '-org-admin',
+                   'ORGANIZATION',
+                   'DEFAULT',
+                   'USER',
+                   u.id,
+                   org_role_id,
+                   now(),
+                   now()
+              FROM gravitee.users u
+             WHERE u.source = 'github-console'
+               AND NOT EXISTS (
+                 SELECT 1 FROM gravitee.memberships m
+                  WHERE m.member_id = u.id
+                    AND m.reference_type = 'ORGANIZATION'
+                    AND m.reference_id = 'DEFAULT'
+               );
+
+            INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
+            SELECT u.id || '-env-admin',
+                   'ENVIRONMENT',
+                   'DEFAULT',
+                   'USER',
+                   u.id,
+                   env_role_id,
+                   now(),
+                   now()
+              FROM gravitee.users u
+             WHERE u.source = 'github-console'
+               AND NOT EXISTS (
+                 SELECT 1 FROM gravitee.memberships m
+                  WHERE m.member_id = u.id
+                    AND m.reference_type = 'ENVIRONMENT'
+                    AND m.reference_id = 'DEFAULT'
+               );
+          END \$\$;"
+          printf "%s\n" "$role_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
 
           echo "🔧 Config context:"
           echo "  MGMT_API_URL      = ${MGMT_API_URL:-}"
