@@ -222,7 +222,7 @@ spec:
           - --cookie-domain=.teleport.app.suncoast.systems
           - --whitelist-domain=gravitee-management.teleport.app.suncoast.systems
           - --whitelist-domain=teleport.app.suncoast.systems
-          - --scope=read:user read:org
+          - --scope=read:user read:org user:email
           - --github-org=dotcomrow
           - --github-team=gravitee_admin_access
           - --reverse-proxy=true
