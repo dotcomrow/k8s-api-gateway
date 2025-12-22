@@ -97,7 +97,7 @@ rules:
     verbs: ["get", "list", "patch", "delete"]
   - apiGroups: ["external-secrets.io"]
     resources: ["externalsecrets"]
-    verbs: ["get", "list", "delete"]
+    verbs: ["get", "list", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -153,7 +153,6 @@ spec:
             - |
               set -e
               kubectl -n k8s-api-gateway scale deployment gravitee-annotation-sync --replicas=0 || true
-              kubectl -n k8s-api-gateway delete externalsecret gravitee-admin-credentials --ignore-not-found || true
               kubectl get apiv4definitions.gravitee.io -A \
                 -o jsonpath='{range .items[?(@.spec.contextRef.name=="gravitee-default")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
                 | while read -r ns name; do
@@ -166,6 +165,9 @@ spec:
               kubectl -n k8s-api-gateway patch secret gravitee-admin-credentials \
                 --type=merge -p '{"metadata":{"finalizers":[]}}' || true
               kubectl -n k8s-api-gateway delete secret gravitee-admin-credentials --ignore-not-found || true
+              kubectl -n k8s-api-gateway patch externalsecret gravitee-admin-credentials \
+                --type=merge -p '{"metadata":{"finalizers":[]}}' || true
+              kubectl -n k8s-api-gateway delete externalsecret gravitee-admin-credentials --ignore-not-found || true
 ---
 apiVersion: v1
 kind: ConfigMap
