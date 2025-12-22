@@ -173,20 +173,7 @@ data:
       # Analytics repository configuration
       repositories:
         analytics:
-          type: jdbc
-          jdbc:
-            url: ${ANALYTICS_JDBC_URL:jdbc:postgresql://${YUGABYTE_HOST:yugabytedb-service.k8s-api-gateway.svc.cluster.local}:${YUGABYTE_PORT:5433}/${YUGABYTE_DATABASE:gravitee}?currentSchema=${YUGABYTE_SCHEMA:gravitee}}
-            username: ${YUGABYTE_USER:gravitee_app}
-            password: ${YUGABYTE_PASSWORD}
-            schema: ${YUGABYTE_SCHEMA:gravitee}
-            pool:
-              maxPoolSize: ${ANALYTICS_JDBC_POOL_MAX_POOL_SIZE:2}
-              minIdle: ${ANALYTICS_JDBC_POOL_MIN_IDLE:0}
-              connectionTimeout: ${ANALYTICS_JDBC_POOL_CONNECTION_TIMEOUT:10000}
-              idleTimeout: ${ANALYTICS_JDBC_POOL_IDLE_TIMEOUT:30000}
-              maxLifetime: ${ANALYTICS_JDBC_POOL_MAX_LIFETIME:600000}
-              autoCommit: true
-              registerMbeans: false
+          type: noop
 
       # Rate limiting repository
       ratelimit:
@@ -559,9 +546,9 @@ spec:
         # - name: MANAGEMENT_JDBC_PASSWORD  <-- intentionally not set here
 
         - name: ANALYTICS_TYPE
-          value: "jdbc"
+          value: "noop"
         - name: ANALYTICS_JDBC_LIQUIBASE_ENABLED
-          value: "true"
+          value: "false"
         - name: REPORTERS_ELASTIC_ENABLED
           value: "false"
         - name: SERVICES_CACHE_ENABLED
@@ -1165,8 +1152,10 @@ data:
                 self.wfile.write(b"not found")
                 return
 
+            log("userinfo request received")
             token = extract_token(self.headers.get("Authorization", ""))
             if not token:
+                log("missing bearer token on /userinfo")
                 self.send_response(401)
                 self.end_headers()
                 self.wfile.write(b"missing token")
@@ -1176,6 +1165,7 @@ data:
                 profile = fetch_json(f"{GITHUB_API}/user", token, allow_fail=False) or {}
                 emails = fetch_json(f"{GITHUB_API}/user/emails", token, allow_fail=True) or []
             except Exception:
+                log("upstream error while fetching GitHub profile/emails")
                 self.send_response(502)
                 self.end_headers()
                 self.wfile.write(b"upstream error")
