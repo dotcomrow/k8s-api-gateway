@@ -71,7 +71,7 @@ services:
     enabled: false
 
   heartbeat:
-    enabled: false
+    enabled: true
 
   alert:
     enabled: false
@@ -126,14 +126,14 @@ node:
   cache:
     enabled: false
   heartbeat:
-    enabled: false
+    enabled: true
   alert:
     enabled: false
   services:
     cache:
       enabled: false
     heartbeat:
-      enabled: false
+      enabled: true
     alert:
       enabled: false
   name: ${NODE_NAME:gravitee-gateway}
