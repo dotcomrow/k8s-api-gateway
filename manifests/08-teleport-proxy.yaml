@@ -131,6 +131,81 @@ data:
         }
     }
 ---
+# Gravitee Management Proxy Config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gravitee-management-proxy
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+data:
+  nginx.conf: |-
+    worker_processes  1;
+
+    events {
+        worker_connections  1024;
+    }
+
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+
+        sendfile        on;
+        keepalive_timeout  65;
+
+        upstream gravitee_management {
+            server gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083;
+        }
+
+        upstream gravitee_management_ui {
+            server gravitee-management-ui.k8s-api-gateway.svc.cluster.local:8080;
+        }
+
+        server {
+            listen 8080;
+            listen [::]:8080;
+
+            location / {
+                proxy_pass http://gravitee_management_ui;
+                proxy_set_header Host gravitee-management.teleport.app.suncoast.systems;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_set_header X-Forwarded-Port 443;
+            }
+
+            location /management/ {
+                proxy_pass http://gravitee_management$request_uri;
+                proxy_set_header Host gravitee-management.teleport.app.suncoast.systems;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_set_header X-Forwarded-Port 443;
+            }
+
+            location /portal/ {
+                if ($request_method = OPTIONS) {
+                    add_header 'Access-Control-Allow-Origin' 'https://gravitee-management.teleport.app.suncoast.systems' always;
+                    add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS' always;
+                    add_header 'Access-Control-Allow-Headers' 'Cache-Control, Pragma, Origin, Authorization, Content-Type, X-Requested-With, If-Match, If-None-Match, X-Gravitee-*' always;
+                    add_header 'Access-Control-Allow-Credentials' 'true' always;
+                    add_header 'Access-Control-Max-Age' '1728000' always;
+                    return 204;
+                }
+
+                add_header 'Access-Control-Allow-Origin' 'https://gravitee-management.teleport.app.suncoast.systems' always;
+                add_header 'Access-Control-Allow-Credentials' 'true' always;
+                proxy_pass http://gravitee_management$request_uri;
+                proxy_set_header Host gravitee-management.teleport.app.suncoast.systems;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_set_header X-Forwarded-Port 443;
+            }
+        }
+    }
+---
 # Gravitee Teleport Proxy Deployment
 apiVersion: apps/v1
 kind: Deployment
@@ -186,6 +261,61 @@ spec:
         configMap:
           name: gravitee-teleport-proxy
 ---
+# Gravitee Management Proxy Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gravitee-management-proxy
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gravitee-management-proxy
+  template:
+    metadata:
+      labels:
+        app: gravitee-management-proxy
+      annotations:
+        linkerd.io/inject: "disabled"
+    spec:
+      serviceAccountName: gravitee
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: proxy-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+      volumes:
+      - name: proxy-config
+        configMap:
+          name: gravitee-management-proxy
+---
 # OAuth2 Proxy in front of the management console (GitHub-gated)
 apiVersion: apps/v1
 kind: Deployment
@@ -215,7 +345,7 @@ spec:
           - --http-address=0.0.0.0:4180
           - --redirect-url=https://gravitee-management.teleport.app.suncoast.systems/oauth2/callback
           - --email-domain=*
-          - --upstream=http://gravitee-teleport-proxy.k8s-api-gateway.svc.cluster.local:8080/
+          - --upstream=http://gravitee-management-proxy.k8s-api-gateway.svc.cluster.local:8080/
           - --cookie-secure=true
           - --cookie-httponly=true
           - --cookie-samesite=lax
@@ -290,6 +420,22 @@ spec:
     name: http
   selector:
     app: gravitee-oauth2-proxy
+---
+# Gravitee Management Proxy Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: gravitee-management-proxy
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: gravitee-management-proxy
 ---
 # Gravitee Teleport Proxy Service (exposed via Teleport)
 apiVersion: v1

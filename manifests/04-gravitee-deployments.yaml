@@ -1355,6 +1355,7 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: Replace=true
     linkerd.io/inject: "disabled"
 spec:
   ttlSecondsAfterFinished: 300
