@@ -5,6 +5,7 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-options: PruneLast=true
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -13,14 +14,23 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-options: PruneLast=true
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: gravitee-annotation-sync
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 rules:
   - apiGroups: [""]
     resources: ["services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "patch", "delete"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["gravitee.io"]
     resources: ["apiv4definitions"]
@@ -30,15 +40,22 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: gravitee-annotation-cleanup
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 rules:
   - apiGroups: ["gravitee.io"]
     resources: ["apiv4definitions"]
     verbs: ["get", "list", "delete"]
+  - apiGroups: ["gravitee.io"]
+    resources: ["managementcontexts"]
+    verbs: ["get", "list", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: gravitee-annotation-sync
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -52,6 +69,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: gravitee-annotation-cleanup
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -66,17 +85,27 @@ kind: Role
 metadata:
   name: gravitee-annotation-cleanup
   namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     resourceNames: ["gravitee-annotation-sync"]
     verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "patch", "delete"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    verbs: ["get", "list", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: gravitee-annotation-cleanup
   namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-options: PruneLast=true
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -92,7 +121,8 @@ metadata:
   name: gravitee-default
   namespace: k8s-api-gateway
   annotations:
-    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: PruneLast=true
 spec:
   baseUrl: http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083
   environmentId: DEFAULT
@@ -123,7 +153,19 @@ spec:
             - |
               set -e
               kubectl -n k8s-api-gateway scale deployment gravitee-annotation-sync --replicas=0 || true
-              kubectl delete apiv4definitions.gravitee.io -A -l gravitee.io/managed-by=annotation-sync --ignore-not-found
+              kubectl -n k8s-api-gateway delete externalsecret gravitee-admin-credentials --ignore-not-found || true
+              kubectl get apiv4definitions.gravitee.io -A \
+                -o jsonpath='{range .items[?(@.spec.contextRef.name=="gravitee-default")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+                | while read -r ns name; do
+                    [ -n "$ns" ] && [ -n "$name" ] || continue
+                    kubectl delete apiv4definitions.gravitee.io -n "$ns" "$name" --ignore-not-found
+                  done
+              kubectl -n k8s-api-gateway patch managementcontext gravitee-default \
+                --type=merge -p '{"metadata":{"finalizers":[]}}' || true
+              kubectl -n k8s-api-gateway delete managementcontext gravitee-default --ignore-not-found || true
+              kubectl -n k8s-api-gateway patch secret gravitee-admin-credentials \
+                --type=merge -p '{"metadata":{"finalizers":[]}}' || true
+              kubectl -n k8s-api-gateway delete secret gravitee-admin-credentials --ignore-not-found || true
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -153,6 +195,9 @@ data:
     SYNC_INTERVAL = int(os.environ.get("SYNC_INTERVAL", "60"))
     CONTEXT_NAME = os.environ.get("GRAVITEE_CONTEXT_NAME", "gravitee-default")
     CONTEXT_NAMESPACE = os.environ.get("GRAVITEE_CONTEXT_NAMESPACE", "k8s-api-gateway")
+    ARGOCD_APP_NAME = os.environ.get("ARGOCD_APP_NAME", "").strip()
+    ARGOCD_TRACKING = os.environ.get("ARGOCD_TRACKING_ENABLED", "true").lower() in ("1", "true", "yes")
+    ARGOCD_SYNC_WAVE = os.environ.get("ARGOCD_SYNC_WAVE", "2")
     DEFAULT_VISIBILITY = os.environ.get("DEFAULT_VISIBILITY", "PRIVATE")
     DEFAULT_STATE = os.environ.get("DEFAULT_STATE", "STARTED")
     DEFAULT_LIFECYCLE = os.environ.get("DEFAULT_LIFECYCLE_STATE", "PUBLISHED")
@@ -162,6 +207,8 @@ data:
     GRAVITEE_ENV = os.environ.get("GRAVITEE_ENV", "DEFAULT")
     GRAVITEE_ADMIN_USERNAME = os.environ.get("GRAVITEE_ADMIN_USERNAME")
     GRAVITEE_ADMIN_PASSWORD = os.environ.get("GRAVITEE_ADMIN_PASSWORD")
+    ADMIN_SECRET_NAME = os.environ.get("GRAVITEE_ADMIN_SECRET", "gravitee-admin-credentials")
+    ADMIN_EXTERNAL_SECRET = os.environ.get("GRAVITEE_ADMIN_EXTERNAL_SECRET", "gravitee-admin-credentials")
     AUTO_CREATE_GROUPS = os.environ.get("AUTO_CREATE_GROUPS", "true").strip().lower() == "true"
     AUTO_CREATE_CATEGORIES = os.environ.get("AUTO_CREATE_CATEGORIES", "true").strip().lower() == "true"
 
@@ -201,6 +248,45 @@ data:
             data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(f"{GRAVITEE_MANAGEMENT_API}{path}", data=data, headers=headers, method=method)
         return urllib.request.urlopen(req, timeout=10)
+
+    def cleanup_admin_secret():
+        ns = CONTEXT_NAMESPACE
+        secret_path = f"/api/v1/namespaces/{ns}/secrets/{ADMIN_SECRET_NAME}"
+        external_path = f"/apis/external-secrets.io/v1/namespaces/{ns}/externalsecrets/{ADMIN_EXTERNAL_SECRET}"
+        try:
+            with kube_request("GET", secret_path) as resp:
+                secret = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return
+            raise
+
+        deleting = "deletionTimestamp" in secret.get("metadata", {})
+        finalizers = secret.get("metadata", {}).get("finalizers", [])
+
+        external_exists = True
+        try:
+            kube_request("GET", external_path).close()
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                external_exists = False
+            else:
+                raise
+
+        if deleting or not external_exists:
+            if finalizers:
+                patch_body = {"metadata": {"finalizers": []}}
+                try:
+                    kube_request("PATCH", secret_path, patch_body, content_type="application/merge-patch+json").close()
+                    log(f"Removed finalizers from {ns}/{ADMIN_SECRET_NAME}")
+                except urllib.error.HTTPError as exc:
+                    log(f"finalizer patch error {exc.code} for {ns}/{ADMIN_SECRET_NAME}: {exc.read().decode('utf-8', errors='replace')}")
+            if not external_exists:
+                try:
+                    kube_request("DELETE", secret_path).close()
+                    log(f"Deleted orphaned secret {ns}/{ADMIN_SECRET_NAME}")
+                except urllib.error.HTTPError as exc:
+                    log(f"secret delete error {exc.code} for {ns}/{ADMIN_SECRET_NAME}: {exc.read().decode('utf-8', errors='replace')}")
 
     def parse_csv(value):
         if not value:
@@ -572,19 +658,27 @@ data:
             set_if(responses_json, "responseTemplates")
         set_if(pages_json, "pages")
 
+        labels = {
+            "gravitee.io/managed-by": "annotation-sync",
+        }
+        annotations_out = {
+            "gravitee.io/source-service": svc_name,
+            "gravitee.io/source-namespace": svc_ns,
+        }
+        if ARGOCD_TRACKING and ARGOCD_APP_NAME:
+            tracking_id = f"{ARGOCD_APP_NAME}:gravitee.io/ApiV4Definition:{svc_ns}/{svc_name}"
+            annotations_out["argocd.argoproj.io/tracking-id"] = tracking_id
+            annotations_out["argocd.argoproj.io/sync-wave"] = ARGOCD_SYNC_WAVE
+            labels["argocd.argoproj.io/instance"] = ARGOCD_APP_NAME
+
         body = {
             "apiVersion": "gravitee.io/v1alpha1",
             "kind": "ApiV4Definition",
             "metadata": {
                 "name": svc_name,
                 "namespace": svc_ns,
-                "labels": {
-                    "gravitee.io/managed-by": "annotation-sync",
-                },
-                "annotations": {
-                    "gravitee.io/source-service": svc_name,
-                    "gravitee.io/source-namespace": svc_ns,
-                },
+                "labels": labels,
+                "annotations": annotations_out,
                 "ownerReferences": [
                     {
                         "apiVersion": "v1",
@@ -647,6 +741,7 @@ data:
             raise
 
     def run_once():
+        cleanup_admin_secret()
         services = list_services()
         desired_groups = set()
         desired_categories = set()
@@ -725,6 +820,10 @@ spec:
               value: "gravitee-default"
             - name: GRAVITEE_CONTEXT_NAMESPACE
               value: "k8s-api-gateway"
+            - name: GRAVITEE_ADMIN_SECRET
+              value: "gravitee-admin-credentials"
+            - name: GRAVITEE_ADMIN_EXTERNAL_SECRET
+              value: "gravitee-admin-credentials"
             - name: DEFAULT_VISIBILITY
               value: "PRIVATE"
             - name: DEFAULT_STATE
@@ -733,6 +832,12 @@ spec:
               value: "PUBLISHED"
             - name: TAGS_MODE
               value: "ignore"
+            - name: ARGOCD_APP_NAME
+              value: "k8s-api-gateway"
+            - name: ARGOCD_TRACKING_ENABLED
+              value: "true"
+            - name: ARGOCD_SYNC_WAVE
+              value: "2"
             - name: GRAVITEE_MANAGEMENT_API
               value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management"
             - name: GRAVITEE_ORG
