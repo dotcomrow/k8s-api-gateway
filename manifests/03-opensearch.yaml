@@ -117,9 +117,13 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    linkerd.io/inject: "disabled"
 spec:
   backoffLimit: 3
   template:
+    metadata:
+      annotations:
+        linkerd.io/inject: "disabled"
     spec:
       restartPolicy: OnFailure
       containers:
