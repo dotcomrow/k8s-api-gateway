@@ -109,3 +109,42 @@ spec:
         resources:
           requests:
             storage: 10Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gravitee-opensearch-init
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init-index
+          image: curlimages/curl:8.5.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              OS_URL="http://gravitee-opensearch.k8s-api-gateway.svc.cluster.local:9200"
+              echo "Waiting for OpenSearch..."
+              for _ in $(seq 1 60); do
+                if curl -fsS "$OS_URL/_cluster/health" >/dev/null; then
+                  echo "OpenSearch is ready."
+                  break
+                fi
+                sleep 2
+              done
+
+              STATUS="$(curl -s -o /dev/null -w "%{http_code}" "$OS_URL/gravitee")"
+              if [ "$STATUS" = "404" ]; then
+                echo "Creating gravitee index..."
+                curl -fsS -X PUT "$OS_URL/gravitee" >/dev/null
+              else
+                echo "gravitee index already exists (status $STATUS)."
+              fi

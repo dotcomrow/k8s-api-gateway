@@ -752,7 +752,7 @@ spec:
         - name: RATELIMIT_JDBC_POOL_REGISTER_MBEANS
           value: "false"
         - name: REPORTERS_ELASTIC_ENABLED
-          value: "false"
+          value: "true"
         - name: SERVICES_CACHE_ENABLED
           value: "false"
         - name: SERVICES_HEARTBEAT_ENABLED
@@ -1489,6 +1489,15 @@ data:
     
     # Reporters - send metrics to multiple systems
     reporters:
+      # Elasticsearch/OpenSearch reporter for API analytics
+      elasticsearch:
+        enabled: true
+        endpoints:
+          - http://gravitee-opensearch.k8s-api-gateway.svc.cluster.local:9200
+        index: ${ANALYTICS_ES_INDEX:gravitee}
+        bulk:
+          actions: 1000
+          flush_interval: 1
       # File reporter for debugging
       file:
         enabled: true
