@@ -145,10 +145,18 @@ spec:
                 sleep 2
               done
 
-              STATUS="$(curl -s -o /dev/null -w "%{http_code}" "$OS_URL/gravitee")"
-              if [ "$STATUS" = "404" ]; then
-                echo "Creating gravitee index..."
-                curl -fsS -X PUT "$OS_URL/gravitee" >/dev/null
-              else
-                echo "gravitee index already exists (status $STATUS)."
-              fi
+              DATE="$(date -u +%Y.%m.%d)"
+              INDICES="gravitee gravitee-log-$DATE gravitee-request-$DATE \
+                gravitee-v4-log-$DATE gravitee-v4-metrics-$DATE \
+                gravitee-v4-message-log-$DATE gravitee-v4-message-metrics-$DATE \
+                gravitee-health-$DATE gravitee-monitor-$DATE"
+
+              for IDX in $INDICES; do
+                STATUS="$(curl -s -o /dev/null -w "%{http_code}" "$OS_URL/$IDX")"
+                if [ "$STATUS" = "404" ]; then
+                  echo "Creating index $IDX..."
+                  curl -fsS -X PUT "$OS_URL/$IDX" >/dev/null
+                else
+                  echo "Index $IDX already exists (status $STATUS)."
+                fi
+              done
