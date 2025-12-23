@@ -1525,702 +1525,707 @@ data:
 ---
 # Configure GitHub identity provider and portal settings
 apiVersion: batch/v1
-kind: Job
+kind: CronJob
 metadata:
   name: configure-gravitee-github
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "3"
-    argocd.argoproj.io/sync-options: Replace=true
     linkerd.io/inject: "disabled"
 spec:
-  ttlSecondsAfterFinished: 300
-  template:
-    metadata:
-      annotations:
-        linkerd.io/inject: "disabled"
-        vault.hashicorp.com/agent-inject: "true"
-        vault.hashicorp.com/agent-pre-populate-only: "true"
-        vault.hashicorp.com/role: "gravitee"
-        vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
-        vault.hashicorp.com/agent-inject-template-db-creds: |
-          {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
-          export YUGABYTE_USER="gravitee_app"
-          export YUGABYTE_PASSWORD="{{ .Data.password }}"
-          {{- end }}
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
     spec:
-      serviceAccountName: gravitee
-      restartPolicy: OnFailure
-      initContainers:
-      - name: wait-management
-        image: curlimages/curl:8.11.1
-        env:
-        - name: MANAGEMENT_HEALTH_URL
-          value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management/platform"
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          set -e
-          echo "🔍 Waiting for Gravitee Management API before applying configuration..."
-          while true; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
-              echo "✅ Management API responded with HTTP $STATUS, continuing."
-              break
-            fi
-            echo "⏳ Management API not ready yet (status $STATUS), retrying in 5s..."
-            sleep 5
-          done
-      containers:
-      - name: configure
-        image: alpine/k8s:1.31.4
-        env:
-        - name: MGMT_API_URL
-          value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
-        - name: ADMIN_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: gravitee-admin-credentials
-              key: username
-        - name: ADMIN_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: gravitee-admin-credentials
-              key: password
-        - name: GITHUB_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: api-gateway-github-oauth
-              key: client-id
-        - name: GITHUB_CLIENT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: api-gateway-github-oauth
-              key: client-secret
-        - name: GITHUB_CONSOLE_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: gravitee-management-github-oauth
-              key: client-id
-        - name: GITHUB_CONSOLE_CLIENT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: gravitee-management-github-oauth
-              key: client-secret
-        - name: GITHUB_SERVER_URL
-          value: "https://github.com/login/oauth"
-        - name: GITHUB_USERINFO_ENDPOINT
-          value: "http://gravitee-github-email-proxy.k8s-api-gateway.svc.cluster.local:8080/userinfo"
-        - name: FORCE_BASIC_AUTH
-          value: "true"
-        - name: YUGABYTE_HOST
-          value: "yb-tserver-service.yugabyte.svc.cluster.local"
-        - name: YUGABYTE_PORT
-          value: "5433"
-        - name: YUGABYTE_DATABASE
-          value: "gravitee"
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          set -e
-          apk add --no-cache curl jq postgresql15-client >/dev/null
+      ttlSecondsAfterFinished: 300
+      template:
+        metadata:
+          annotations:
+            linkerd.io/inject: "disabled"
+            vault.hashicorp.com/agent-inject: "true"
+            vault.hashicorp.com/agent-pre-populate-only: "true"
+            vault.hashicorp.com/role: "gravitee"
+            vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
+            vault.hashicorp.com/agent-inject-template-db-creds: |
+              {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
+              export YUGABYTE_USER="gravitee_app"
+              export YUGABYTE_PASSWORD="{{ .Data.password }}"
+              {{- end }}
+        spec:
+          serviceAccountName: gravitee
+          restartPolicy: OnFailure
+          initContainers:
+          - name: wait-management
+            image: curlimages/curl:8.11.1
+            env:
+            - name: MANAGEMENT_HEALTH_URL
+              value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management/platform"
+            command: ["/bin/sh", "-c"]
+            args:
+            - |
+              set -e
+              echo "🔍 Waiting for Gravitee Management API before applying configuration..."
+              while true; do
+                STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
+                if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
+                  echo "✅ Management API responded with HTTP $STATUS, continuing."
+                  break
+                fi
+                echo "⏳ Management API not ready yet (status $STATUS), retrying in 5s..."
+                sleep 5
+              done
+          containers:
+          - name: configure
+            image: alpine/k8s:1.31.4
+            env:
+            - name: MGMT_API_URL
+              value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
+            - name: ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: gravitee-admin-credentials
+                  key: username
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gravitee-admin-credentials
+                  key: password
+            - name: GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: api-gateway-github-oauth
+                  key: client-id
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: api-gateway-github-oauth
+                  key: client-secret
+            - name: GITHUB_CONSOLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: gravitee-management-github-oauth
+                  key: client-id
+            - name: GITHUB_CONSOLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: gravitee-management-github-oauth
+                  key: client-secret
+            - name: GITHUB_SERVER_URL
+              value: "https://github.com/login/oauth"
+            - name: GITHUB_USERINFO_ENDPOINT
+              value: "http://gravitee-github-email-proxy.k8s-api-gateway.svc.cluster.local:8080/userinfo"
+            - name: FORCE_BASIC_AUTH
+              value: "true"
+            - name: YUGABYTE_HOST
+              value: "yb-tserver-service.yugabyte.svc.cluster.local"
+            - name: YUGABYTE_PORT
+              value: "5433"
+            - name: YUGABYTE_DATABASE
+              value: "gravitee"
+            command: ["/bin/sh", "-c"]
+            args:
+            - |
+              set -e
+              apk add --no-cache curl jq postgresql15-client >/dev/null
 
-          retry() {
-            attempts="$1"
-            sleep_seconds="$2"
-            shift 2
-            n=1
-            while [ "$n" -le "$attempts" ]; do
-              if "$@"; then
-                return 0
-              fi
-              echo "⏳ Retry ${n}/${attempts} failed, sleeping ${sleep_seconds}s..."
-              sleep "$sleep_seconds"
-              n=$((n+1))
-            done
-            return 1
-          }
-
-          sql_escape_literal() {
-            # Escape single quotes for SQL string literals.
-            printf "%s" "$1" | sed "s/'/''/g"
-          }
-
-          JQ_BIN="/usr/bin/jq"
-
-          if [ -f "/vault/secrets/db-creds" ]; then
-            . /vault/secrets/db-creds
-          fi
-          if [ -z "${YUGABYTE_USER:-}" ] || [ -z "${YUGABYTE_PASSWORD:-}" ]; then
-            echo "❌ Database credentials not available from Vault."
-            exit 1
-          fi
-
-          PGCRYPTO_AVAILABLE=0
-          ADMIN_BCRYPT_HASH=""
-
-          prepare_admin_hash() {
-            echo "🔧 Checking for pgcrypto and preparing bcrypt hash..."
-            if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" --set ON_ERROR_STOP=on -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" >/tmp/pgcrypto.log 2>&1; then
-              PGCRYPTO_AVAILABLE=1
-              ADMIN_PASSWORD_SQL="$(sql_escape_literal "$ADMIN_PASSWORD")"
-              if ! ADMIN_BCRYPT_HASH=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc "SELECT crypt('${ADMIN_PASSWORD_SQL}', gen_salt('bf'));"); then
-                echo "❌ Failed to compute bcrypt hash via pgcrypto."
+              retry() {
+                attempts="$1"
+                sleep_seconds="$2"
+                shift 2
+                n=1
+                while [ "$n" -le "$attempts" ]; do
+                  if "$@"; then
+                    return 0
+                  fi
+                  echo "⏳ Retry ${n}/${attempts} failed, sleeping ${sleep_seconds}s..."
+                  sleep "$sleep_seconds"
+                  n=$((n+1))
+                done
                 return 1
+              }
+
+              sql_escape_literal() {
+                # Escape single quotes for SQL string literals.
+                printf "%s" "$1" | sed "s/'/''/g"
+              }
+
+              JQ_BIN="/usr/bin/jq"
+
+              if [ -f "/vault/secrets/db-creds" ]; then
+                . /vault/secrets/db-creds
               fi
-              echo "✅ Using pgcrypto for password hashing."
-            else
-              echo "⚠️ pgcrypto unavailable (see /tmp/pgcrypto.log). Falling back to local bcrypt generation."
-              if ! apk add --no-cache python3 py3-bcrypt >/dev/null; then
-                echo "❌ Failed to install python3/py3-bcrypt for local hashing."
-                return 1
+              if [ -z "${YUGABYTE_USER:-}" ] || [ -z "${YUGABYTE_PASSWORD:-}" ]; then
+                echo "❌ Database credentials not available from Vault."
+                exit 1
               fi
 
-              if ! ADMIN_BCRYPT_HASH=$(python3 -c "import bcrypt, os, sys; pw=os.environ.get('ADMIN_PASSWORD','').encode('utf-8');\nif not pw: sys.exit('ADMIN_PASSWORD is empty; cannot hash'); print(bcrypt.hashpw(pw, bcrypt.gensalt()).decode())"); then
-                echo "❌ Failed to compute bcrypt hash locally."
-                return 1
-              fi
-            fi
+              PGCRYPTO_AVAILABLE=0
+              ADMIN_BCRYPT_HASH=""
 
-            if [ -z "$ADMIN_BCRYPT_HASH" ] || [ "$ADMIN_BCRYPT_HASH" = "null" ]; then
-              echo "❌ Failed to generate bcrypt hash for admin password."
-              return 1
-            fi
-            return 0
-          }
+              prepare_admin_hash() {
+                echo "🔧 Checking for pgcrypto and preparing bcrypt hash..."
+                if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" --set ON_ERROR_STOP=on -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" >/tmp/pgcrypto.log 2>&1; then
+                  PGCRYPTO_AVAILABLE=1
+                  ADMIN_PASSWORD_SQL="$(sql_escape_literal "$ADMIN_PASSWORD")"
+                  if ! ADMIN_BCRYPT_HASH=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc "SELECT crypt('${ADMIN_PASSWORD_SQL}', gen_salt('bf'));"); then
+                    echo "❌ Failed to compute bcrypt hash via pgcrypto."
+                    return 1
+                  fi
+                  echo "✅ Using pgcrypto for password hashing."
+                else
+                  echo "⚠️ pgcrypto unavailable (see /tmp/pgcrypto.log). Falling back to local bcrypt generation."
+                  if ! apk add --no-cache python3 py3-bcrypt >/dev/null; then
+                    echo "❌ Failed to install python3/py3-bcrypt for local hashing."
+                    return 1
+                  fi
 
-          ensure_admin_user() {
-            echo "🔧 Ensuring admin user exists directly in database (pgcrypto_available=${PGCRYPTO_AVAILABLE})..."
-            HASH_MODE_LABEL="pgcrypto"
-            if [ "$PGCRYPTO_AVAILABLE" != "1" ]; then
-              HASH_MODE_LABEL="local-bcrypt"
-            fi
+                  if ! ADMIN_BCRYPT_HASH=$(python3 -c "import bcrypt, os, sys; pw=os.environ.get('ADMIN_PASSWORD','').encode('utf-8');\nif not pw: sys.exit('ADMIN_PASSWORD is empty; cannot hash'); print(bcrypt.hashpw(pw, bcrypt.gensalt()).decode())"); then
+                    echo "❌ Failed to compute bcrypt hash locally."
+                    return 1
+                  fi
+                fi
 
-            ADMIN_BCRYPT_HASH_SQL="$(sql_escape_literal "$ADMIN_BCRYPT_HASH")"
-            sql="DO \$\$
-              DECLARE admin_id varchar(64);
-              DECLARE has_username_column boolean;
-              DECLARE bcrypt_hash text;
-              BEGIN
-                SELECT EXISTS (
-                  SELECT 1
-                    FROM information_schema.columns
-                  WHERE table_schema = 'gravitee'
-                    AND table_name   = 'users'
-                    AND column_name  = 'username'
-                ) INTO has_username_column;
-
-                bcrypt_hash := '${ADMIN_BCRYPT_HASH_SQL}';
-
-                SELECT id INTO admin_id FROM gravitee.users WHERE source = 'gravitee' AND source_id = '${ADMIN_USERNAME}';
-                IF admin_id IS NULL THEN
-                  admin_id := '${ADMIN_USERNAME}';
-                  IF has_username_column THEN
-                    INSERT INTO gravitee.users (id, source, source_id, username, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
-                    VALUES (
-                      admin_id,
-                      'gravitee',
-                      '${ADMIN_USERNAME}',
-                      '${ADMIN_USERNAME}',
-                      '${ADMIN_USERNAME}@example.com',
-                      bcrypt_hash,
-                      'Portal',
-                      'Admin',
-                      now(),
-                      now(),
-                      'DEFAULT',
-                      'ACTIVE',
-                      0
-                    );
-                  ELSE
-                    INSERT INTO gravitee.users (id, source, source_id, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
-                    VALUES (
-                      admin_id,
-                      'gravitee',
-                      '${ADMIN_USERNAME}',
-                      '${ADMIN_USERNAME}@example.com',
-                      bcrypt_hash,
-                      'Portal',
-                      'Admin',
-                      now(),
-                      now(),
-                      'DEFAULT',
-                      'ACTIVE',
-                      0
-                    );
-                  END IF;
-                ELSE
-                  UPDATE gravitee.users
-                    SET password = bcrypt_hash,
-                        status = 'ACTIVE',
-                        updated_at = now()
-                  WHERE id = admin_id;
-
-                  IF has_username_column THEN
-                    UPDATE gravitee.users
-                      SET username = '${ADMIN_USERNAME}',
-                          email    = '${ADMIN_USERNAME}@example.com'
-                    WHERE id = admin_id;
-                  END IF;
-                END IF;
-
-                IF NOT EXISTS (
-                  SELECT 1 FROM gravitee.memberships
-                            WHERE member_id = admin_id
-                              AND reference_type = 'ORGANIZATION'
-                              AND reference_id = 'DEFAULT'
-                          ) THEN
-                  INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
-                  VALUES (
-                    admin_id || '-membership',
-                    'ORGANIZATION',
-                    'DEFAULT',
-                    'USER',
-                    admin_id,
-                    (SELECT id
-                      FROM gravitee.roles
-                      WHERE scope = 'ORGANIZATION'
-                        AND reference_id = 'DEFAULT'
-                        AND name = 'ADMIN'
-                      ORDER BY created_at
-                      LIMIT 1),
-                    now(),
-                    now()
-                  );
-                END IF;
-
-                IF NOT EXISTS (
-                  SELECT 1 FROM gravitee.memberships
-                            WHERE member_id = admin_id
-                              AND reference_type = 'ENVIRONMENT'
-                              AND reference_id = 'DEFAULT'
-                          ) THEN
-                  INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
-                  VALUES (
-                    admin_id || '-env-membership',
-                    'ENVIRONMENT',
-                    'DEFAULT',
-                    'USER',
-                    admin_id,
-                    (SELECT id
-                      FROM gravitee.roles
-                      WHERE scope = 'ENVIRONMENT'
-                        AND reference_id = 'DEFAULT'
-                        AND name = 'ADMIN'
-                      ORDER BY created_at
-                      LIMIT 1),
-                    now(),
-                    now()
-                  );
-                END IF;
-              END \$\$;"
-
-            if ! printf "%s\n" "$sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" --set ON_ERROR_STOP=on >/tmp/ensure-admin.log 2>&1; then
-              echo "❌ Failed to ensure admin user (${HASH_MODE_LABEL} mode). See /tmp/ensure-admin.log"
-              return 1
-            fi
-
-            echo "✅ Admin user ensured (${HASH_MODE_LABEL} mode)."
-            return 0
-          }
-
-          retry 5 5 prepare_admin_hash
-          retry 5 5 ensure_admin_user
-
-          echo "🔍 Inspecting admin credentials as stored in database..."
-          ADMIN_BCRYPT_HASH_SQL="$(sql_escape_literal "$ADMIN_BCRYPT_HASH")"
-          verify_sql="WITH u AS (
-            SELECT source_id AS username, source_id, status, password,
-                  password AS stored_hash
-              FROM gravitee.users
-            WHERE source = 'gravitee'
-              AND source_id = '${ADMIN_USERNAME}'
-          )
-          SELECT username, source_id, status,
-                left(password, 12) || '...' AS password_prefix,
-                stored_hash = '${ADMIN_BCRYPT_HASH_SQL}' AS password_matches
-            FROM u;"
-          printf "%s\n" "$verify_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
-
-          echo "🔓 Temporarily ensuring admin user is ACTIVE for API configuration..."
-          activate_sql="UPDATE gravitee.users
-             SET status = 'ACTIVE',
-                 updated_at = now()
-           WHERE source = 'gravitee'
-             AND source_id = '${ADMIN_USERNAME}'
-             AND status <> 'ACTIVE';"
-          printf "%s\n" "$activate_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
-
-          MGMT_API_URL="${MGMT_API_URL:-}"
-          ADMIN_USERNAME="${ADMIN_USERNAME:-}"
-          ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
-          GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:-}"
-          GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}"
-          GITHUB_CONSOLE_CLIENT_ID="${GITHUB_CONSOLE_CLIENT_ID:-}"
-          GITHUB_CONSOLE_CLIENT_SECRET="${GITHUB_CONSOLE_CLIENT_SECRET:-}"
-          GITHUB_SERVER_URL="${GITHUB_SERVER_URL:-}"
-          FORCE_BASIC_AUTH="${FORCE_BASIC_AUTH:-true}"
-
-          USERS_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users"
-
-          echo "🔧 Config context:"
-          echo "  MGMT_API_URL      = $MGMT_API_URL"
-          echo "  ADMIN_USERNAME    = $ADMIN_USERNAME"
-          echo "  GITHUB_SERVER_URL = $GITHUB_SERVER_URL"
-
-          echo "🧹 Clearing stale GitHub Console activations before applying IDPs..."
-          cleanup_idp_sql="DELETE FROM gravitee.identity_provider_activations
-          WHERE identity_provider_id = 'github-console'
-            AND reference_type = 'ORGANIZATION'
-            AND reference_id = 'DEFAULT';"
-          printf "%s\n" "$cleanup_idp_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
-
-          BASE_URL="${GITHUB_SERVER_URL%/}"
-          AUTH_ENDPOINT="${BASE_URL}/authorize"
-          TOKEN_ENDPOINT="${BASE_URL}/access_token"
-          USERINFO_ENDPOINT="${GITHUB_USERINFO_ENDPOINT:-https://api.github.com/user}"
-
-          attempt_login() {
-            endpoint="$1"
-            echo "🔐 Trying login endpoint: ${endpoint}"
-            LOGIN_STATUS=$(curl -s -w "%{http_code}" -o /tmp/login-body \
-              -H "Content-Type: application/json" \
-              -X POST "$endpoint" \
-              --data "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}" || echo "000")
-            echo "ℹ️ Login status @ ${endpoint}: '${LOGIN_STATUS}'"
-            echo "ℹ️ Login response body:"
-            cat /tmp/login-body || true
-
-            if [ "$LOGIN_STATUS" = "200" ]; then
-              TOKEN_VALUE=$(jq -r '.token // .id_token // .access_token // empty' /tmp/login-body)
-              if [ -n "$TOKEN_VALUE" ] && [ "$TOKEN_VALUE" != "null" ]; then
-                echo "✅ Got bearer token from ${endpoint}"
-                TOKEN="$TOKEN_VALUE"
-                AUTH_MODE="bearer"
+                if [ -z "$ADMIN_BCRYPT_HASH" ] || [ "$ADMIN_BCRYPT_HASH" = "null" ]; then
+                  echo "❌ Failed to generate bcrypt hash for admin password."
+                  return 1
+                fi
                 return 0
-              fi
-            fi
-            echo "⚠️ Login failed for ${endpoint} (status ${LOGIN_STATUS})."
-            return 1
-          }
+              }
 
-          try_login_endpoints() {
-            for endpoint in \
-              "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/auth/login" \
-              "$MGMT_API_URL/management/auth/login" \
-              "$MGMT_API_URL/management/organizations/DEFAULT/auth/login"
-            do
-              if retry 3 5 attempt_login "$endpoint"; then
+              ensure_admin_user() {
+                echo "🔧 Ensuring admin user exists directly in database (pgcrypto_available=${PGCRYPTO_AVAILABLE})..."
+                HASH_MODE_LABEL="pgcrypto"
+                if [ "$PGCRYPTO_AVAILABLE" != "1" ]; then
+                  HASH_MODE_LABEL="local-bcrypt"
+                fi
+
+                ADMIN_BCRYPT_HASH_SQL="$(sql_escape_literal "$ADMIN_BCRYPT_HASH")"
+                sql="DO \$\$
+                  DECLARE admin_id varchar(64);
+                  DECLARE has_username_column boolean;
+                  DECLARE bcrypt_hash text;
+                  BEGIN
+                    SELECT EXISTS (
+                      SELECT 1
+                        FROM information_schema.columns
+                      WHERE table_schema = 'gravitee'
+                        AND table_name   = 'users'
+                        AND column_name  = 'username'
+                    ) INTO has_username_column;
+
+                    bcrypt_hash := '${ADMIN_BCRYPT_HASH_SQL}';
+
+                    SELECT id INTO admin_id FROM gravitee.users WHERE source = 'gravitee' AND source_id = '${ADMIN_USERNAME}';
+                    IF admin_id IS NULL THEN
+                      admin_id := '${ADMIN_USERNAME}';
+                      IF has_username_column THEN
+                        INSERT INTO gravitee.users (id, source, source_id, username, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
+                        VALUES (
+                          admin_id,
+                          'gravitee',
+                          '${ADMIN_USERNAME}',
+                          '${ADMIN_USERNAME}',
+                          '${ADMIN_USERNAME}@example.com',
+                          bcrypt_hash,
+                          'Portal',
+                          'Admin',
+                          now(),
+                          now(),
+                          'DEFAULT',
+                          'ACTIVE',
+                          0
+                        );
+                      ELSE
+                        INSERT INTO gravitee.users (id, source, source_id, email, password, firstname, lastname, created_at, updated_at, organization_id, status, login_count)
+                        VALUES (
+                          admin_id,
+                          'gravitee',
+                          '${ADMIN_USERNAME}',
+                          '${ADMIN_USERNAME}@example.com',
+                          bcrypt_hash,
+                          'Portal',
+                          'Admin',
+                          now(),
+                          now(),
+                          'DEFAULT',
+                          'ACTIVE',
+                          0
+                        );
+                      END IF;
+                    ELSE
+                      UPDATE gravitee.users
+                        SET password = bcrypt_hash,
+                            status = 'ACTIVE',
+                            updated_at = now()
+                      WHERE id = admin_id;
+
+                      IF has_username_column THEN
+                        UPDATE gravitee.users
+                          SET username = '${ADMIN_USERNAME}',
+                              email    = '${ADMIN_USERNAME}@example.com'
+                        WHERE id = admin_id;
+                      END IF;
+                    END IF;
+
+                    IF NOT EXISTS (
+                      SELECT 1 FROM gravitee.memberships
+                                WHERE member_id = admin_id
+                                  AND reference_type = 'ORGANIZATION'
+                                  AND reference_id = 'DEFAULT'
+                              ) THEN
+                      INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
+                      VALUES (
+                        admin_id || '-membership',
+                        'ORGANIZATION',
+                        'DEFAULT',
+                        'USER',
+                        admin_id,
+                        (SELECT id
+                          FROM gravitee.roles
+                          WHERE scope = 'ORGANIZATION'
+                            AND reference_id = 'DEFAULT'
+                            AND name = 'ADMIN'
+                          ORDER BY created_at
+                          LIMIT 1),
+                        now(),
+                        now()
+                      );
+                    END IF;
+
+                    IF NOT EXISTS (
+                      SELECT 1 FROM gravitee.memberships
+                                WHERE member_id = admin_id
+                                  AND reference_type = 'ENVIRONMENT'
+                                  AND reference_id = 'DEFAULT'
+                              ) THEN
+                      INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
+                      VALUES (
+                        admin_id || '-env-membership',
+                        'ENVIRONMENT',
+                        'DEFAULT',
+                        'USER',
+                        admin_id,
+                        (SELECT id
+                          FROM gravitee.roles
+                          WHERE scope = 'ENVIRONMENT'
+                            AND reference_id = 'DEFAULT'
+                            AND name = 'ADMIN'
+                          ORDER BY created_at
+                          LIMIT 1),
+                        now(),
+                        now()
+                      );
+                    END IF;
+                  END \$\$;"
+
+                if ! printf "%s\n" "$sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" --set ON_ERROR_STOP=on >/tmp/ensure-admin.log 2>&1; then
+                  echo "❌ Failed to ensure admin user (${HASH_MODE_LABEL} mode). See /tmp/ensure-admin.log"
+                  return 1
+                fi
+
+                echo "✅ Admin user ensured (${HASH_MODE_LABEL} mode)."
                 return 0
-              fi
-              echo "↻ Re-seeding admin user before trying next login endpoint..."
-              ensure_admin_user || true
-            done
-            return 1
-          }
+              }
 
-          AUTH_MODE=""
-          TOKEN=""
-          if [ "$FORCE_BASIC_AUTH" = "true" ]; then
-            AUTH_MODE="basic"
-            echo "ℹ️ Skipping bearer login; using basic auth with user '${ADMIN_USERNAME}'."
-          else
-            try_login_endpoints || true
-            if [ -z "$AUTH_MODE" ]; then
-              AUTH_MODE="basic"
-              echo "⚠️ Falling back to basic auth with user '${ADMIN_USERNAME}'."
-            else
-              echo "🔐 Using bearer auth for subsequent Management API calls."
-            fi
-          fi
+              retry 5 5 prepare_admin_hash
+              retry 5 5 ensure_admin_user
 
-          verify_users_call() {
-            echo "🧪 Verifying authenticated /users call..."
-            if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
-              curl -s -H "Authorization: Bearer ${TOKEN}" "$USERS_URL?page=1&size=1" \
-                -o /tmp/users-auth-body \
-                -w "%{http_code}" > /tmp/users-auth-status || true
-            else
-              curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" "$USERS_URL?page=1&size=1" \
-                -o /tmp/users-auth-body \
-                -w "%{http_code}" > /tmp/users-auth-status || true
-            fi
-            USERS_AUTH_STATUS="$(cat /tmp/users-auth-status 2>/dev/null || echo "")"
-            echo "ℹ️ /users HTTP status (with auth): '${USERS_AUTH_STATUS}'"
-            echo "ℹ️ /users response body (with auth):"
-            cat /tmp/users-auth-body || true
+              echo "🔍 Inspecting admin credentials as stored in database..."
+              ADMIN_BCRYPT_HASH_SQL="$(sql_escape_literal "$ADMIN_BCRYPT_HASH")"
+              verify_sql="WITH u AS (
+                SELECT source_id AS username, source_id, status, password,
+                      password AS stored_hash
+                  FROM gravitee.users
+                WHERE source = 'gravitee'
+                  AND source_id = '${ADMIN_USERNAME}'
+              )
+              SELECT username, source_id, status,
+                    left(password, 12) || '...' AS password_prefix,
+                    stored_hash = '${ADMIN_BCRYPT_HASH_SQL}' AS password_matches
+                FROM u;"
+              printf "%s\n" "$verify_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
 
-            if [ "$USERS_AUTH_STATUS" != "200" ]; then
-              echo "↻ Authenticated /users call failed (status=${USERS_AUTH_STATUS}); re-ensuring admin user before retry..."
-              ensure_admin_user || true
-              return 1
-            fi
-            return 0
-          }
+              echo "🔓 Temporarily ensuring admin user is ACTIVE for API configuration..."
+              activate_sql="UPDATE gravitee.users
+                 SET status = 'ACTIVE',
+                     updated_at = now()
+               WHERE source = 'gravitee'
+                 AND source_id = '${ADMIN_USERNAME}'
+                 AND status <> 'ACTIVE';"
+              printf "%s\n" "$activate_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
 
-          if ! retry 3 5 verify_users_call; then
-            echo "❌ Authenticated /users call still failing (status=${USERS_AUTH_STATUS})."
-            echo "   Check that gravitee-admin-credentials matches the Management API admin account."
-            exit 1
-          fi
+              MGMT_API_URL="${MGMT_API_URL:-}"
+              ADMIN_USERNAME="${ADMIN_USERNAME:-}"
+              ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+              GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:-}"
+              GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}"
+              GITHUB_CONSOLE_CLIENT_ID="${GITHUB_CONSOLE_CLIENT_ID:-}"
+              GITHUB_CONSOLE_CLIENT_SECRET="${GITHUB_CONSOLE_CLIENT_SECRET:-}"
+              GITHUB_SERVER_URL="${GITHUB_SERVER_URL:-}"
+              FORCE_BASIC_AUTH="${FORCE_BASIC_AUTH:-true}"
 
-          echo "🧩 Building GitHub identity provider JSON..."
-          echo "  Using AUTH_ENDPOINT  = ${AUTH_ENDPOINT}"
-          echo "  Using TOKEN_ENDPOINT = ${TOKEN_ENDPOINT}"
+              USERS_URL="$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/users"
 
-          build_github_idp() {
-            idp_id="$1"
-            idp_name="$2"
-            target_json="$3"
-            client_id="$4"
-            client_secret="$5"
-            userinfo_endpoint="$6"
-            outfile="$7"
+              echo "🔧 Config context:"
+              echo "  MGMT_API_URL      = $MGMT_API_URL"
+              echo "  ADMIN_USERNAME    = $ADMIN_USERNAME"
+              echo "  GITHUB_SERVER_URL = $GITHUB_SERVER_URL"
 
-            "$JQ_BIN" -n \
-              --arg id "$idp_id" \
-              --arg name "$idp_name" \
-              --argjson target "$target_json" \
-              --arg clientId "$client_id" \
-              --arg clientSecret "$client_secret" \
-              --arg authEndpoint "$AUTH_ENDPOINT" \
-              --arg tokenEndpoint "$TOKEN_ENDPOINT" \
-              --arg userInfoEndpoint "$userinfo_endpoint" \
-              '{
-                id: $id,
-                name: $name,
-                type: "GITHUB",
-                enabled: true,
-                target: $target,
-                color: "#24292F",
-                syncMappings: true,
-                scopes: ["read:user","read:org","user:email"],
-                configuration: {
-                  clientId: $clientId,
-                  clientSecret: $clientSecret,
-                  authorizationEndpoint: $authEndpoint,
-                  tokenEndpoint: $tokenEndpoint,
-                  userInfoEndpoint: $userInfoEndpoint,
-                  useSystemProxy: false
-                },
-                userProfileMapping: {
-                  id: "id",
-                  firstname: "name",
-                  lastname: "name",
-                  email: "email",
-                  picture: "avatar_url"
-                }
-              }' > "$outfile"
-          }
+              echo "🧹 Clearing stale GitHub Console activations before applying IDPs..."
+              cleanup_idp_sql="DELETE FROM gravitee.identity_provider_activations
+              WHERE identity_provider_id = 'github-console'
+                AND reference_type = 'ORGANIZATION'
+                AND reference_id = 'DEFAULT';"
+              printf "%s\n" "$cleanup_idp_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
 
-          build_github_idp "github" "GitHub" '["PORTAL"]' \
-            "$GITHUB_CLIENT_ID" "$GITHUB_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-portal-idp.json
-          build_github_idp "github-console" "GitHub Console" '["CONSOLE"]' \
-            "$GITHUB_CONSOLE_CLIENT_ID" "$GITHUB_CONSOLE_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-console-idp.json
+              BASE_URL="${GITHUB_SERVER_URL%/}"
+              AUTH_ENDPOINT="${BASE_URL}/authorize"
+              TOKEN_ENDPOINT="${BASE_URL}/access_token"
+              USERINFO_ENDPOINT="${GITHUB_USERINFO_ENDPOINT:-https://api.github.com/user}"
 
-          echo "📤 IDP payloads:"
-          echo "  - /tmp/github-portal-idp.json"
-          cat /tmp/github-portal-idp.json || true
-          echo "  - /tmp/github-console-idp.json"
-          cat /tmp/github-console-idp.json || true
+              attempt_login() {
+                endpoint="$1"
+                echo "🔐 Trying login endpoint: ${endpoint}"
+                LOGIN_STATUS=$(curl -s -w "%{http_code}" -o /tmp/login-body \
+                  -H "Content-Type: application/json" \
+                  -X POST "$endpoint" \
+                  --data "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}" || echo "000")
+                echo "ℹ️ Login status @ ${endpoint}: '${LOGIN_STATUS}'"
+                echo "ℹ️ Login response body:"
+                cat /tmp/login-body || true
 
-          apply_github_idp() {
-            idp_file="$1"
-            scope_label="$2"
-            base_url="$3"
-            config_url="$base_url/configuration/identities"
-            idp_id="$("$JQ_BIN" -r '.id' "$idp_file")"
+                if [ "$LOGIN_STATUS" = "200" ]; then
+                  TOKEN_VALUE=$(jq -r '.token // .id_token // .access_token // empty' /tmp/login-body)
+                  if [ -n "$TOKEN_VALUE" ] && [ "$TOKEN_VALUE" != "null" ]; then
+                    echo "✅ Got bearer token from ${endpoint}"
+                    TOKEN="$TOKEN_VALUE"
+                    AUTH_MODE="bearer"
+                    return 0
+                  fi
+                fi
+                echo "⚠️ Login failed for ${endpoint} (status ${LOGIN_STATUS})."
+                return 1
+              }
 
-            echo "🔧 Applying GitHub identity provider '${idp_id}' for ${scope_label} scope..."
-            if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
-              IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
-                -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-                -X PUT "$config_url/${idp_id}" \
-                --data-binary @"$idp_file" || echo "000")
-            else
-              IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
-                -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
-                -X PUT "$config_url/${idp_id}" \
-                --data-binary @"$idp_file" || echo "000")
-            fi
+              try_login_endpoints() {
+                for endpoint in \
+                  "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT/auth/login" \
+                  "$MGMT_API_URL/management/auth/login" \
+                  "$MGMT_API_URL/management/organizations/DEFAULT/auth/login"
+                do
+                  if retry 3 5 attempt_login "$endpoint"; then
+                    return 0
+                  fi
+                  echo "↻ Re-seeding admin user before trying next login endpoint..."
+                  ensure_admin_user || true
+                done
+                return 1
+              }
 
-            echo "ℹ️ PUT /identities/${idp_id} (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
-            echo "ℹ️ PUT response body:"
-            cat /tmp/idp-response || true
-
-            if [ "$IDP_HTTP_STATUS" != "200" ]; then
-              echo "⚠️ PUT returned HTTP ${IDP_HTTP_STATUS}, attempting POST for ${scope_label}..."
-              if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
-                IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
-                  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-                  -X POST "$config_url" \
-                  --data-binary @"$idp_file" || echo "000")
+              AUTH_MODE=""
+              TOKEN=""
+              if [ "$FORCE_BASIC_AUTH" = "true" ]; then
+                AUTH_MODE="basic"
+                echo "ℹ️ Skipping bearer login; using basic auth with user '${ADMIN_USERNAME}'."
               else
-                IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
-                  -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
-                  -X POST "$config_url" \
-                  --data-binary @"$idp_file" || echo "000")
+                try_login_endpoints || true
+                if [ -z "$AUTH_MODE" ]; then
+                  AUTH_MODE="basic"
+                  echo "⚠️ Falling back to basic auth with user '${ADMIN_USERNAME}'."
+                else
+                  echo "🔐 Using bearer auth for subsequent Management API calls."
+                fi
               fi
 
-              echo "ℹ️ POST /identities (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
-              echo "ℹ️ POST response body:"
-              cat /tmp/idp-response || true
+              verify_users_call() {
+                echo "🧪 Verifying authenticated /users call..."
+                if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
+                  curl -s -H "Authorization: Bearer ${TOKEN}" "$USERS_URL?page=1&size=1" \
+                    -o /tmp/users-auth-body \
+                    -w "%{http_code}" > /tmp/users-auth-status || true
+                else
+                  curl -s -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" "$USERS_URL?page=1&size=1" \
+                    -o /tmp/users-auth-body \
+                    -w "%{http_code}" > /tmp/users-auth-status || true
+                fi
+                USERS_AUTH_STATUS="$(cat /tmp/users-auth-status 2>/dev/null || echo "")"
+                echo "ℹ️ /users HTTP status (with auth): '${USERS_AUTH_STATUS}'"
+                echo "ℹ️ /users response body (with auth):"
+                cat /tmp/users-auth-body || true
 
-              if [ "$IDP_HTTP_STATUS" != "201" ] && [ "$IDP_HTTP_STATUS" != "200" ]; then
-                echo "❌ Failed to configure GitHub identity provider for ${scope_label} (status ${IDP_HTTP_STATUS})"
-                return 1
+                if [ "$USERS_AUTH_STATUS" != "200" ]; then
+                  echo "↻ Authenticated /users call failed (status=${USERS_AUTH_STATUS}); re-ensuring admin user before retry..."
+                  ensure_admin_user || true
+                  return 1
+                fi
+                return 0
+              }
+
+              if ! retry 3 5 verify_users_call; then
+                echo "❌ Authenticated /users call still failing (status=${USERS_AUTH_STATUS})."
+                echo "   Check that gravitee-admin-credentials matches the Management API admin account."
+                exit 1
               fi
-            fi
 
-            echo "ℹ️ Skipping identity enable/activation calls for ${scope_label}; not supported on this version."
-            return 0
-          }
+              echo "🧩 Building GitHub identity provider JSON..."
+              echo "  Using AUTH_ENDPOINT  = ${AUTH_ENDPOINT}"
+              echo "  Using TOKEN_ENDPOINT = ${TOKEN_ENDPOINT}"
 
-          if ! retry 3 5 apply_github_idp /tmp/github-portal-idp.json "environment" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT"; then
-            echo "❌ Failed to configure GitHub identity provider after retries for environment scope."
-            exit 1
-          fi
-          if ! retry 3 5 apply_github_idp /tmp/github-console-idp.json "organization" "$MGMT_API_URL/management/organizations/DEFAULT"; then
-            echo "❌ Failed to configure GitHub identity provider after retries for organization scope."
-            exit 1
-          fi
+              build_github_idp() {
+                idp_id="$1"
+                idp_name="$2"
+                target_json="$3"
+                client_id="$4"
+                client_secret="$5"
+                userinfo_endpoint="$6"
+                outfile="$7"
 
-          # Provider scoping is controlled by the target and the endpoint we apply to.
+                "$JQ_BIN" -n \
+                  --arg id "$idp_id" \
+                  --arg name "$idp_name" \
+                  --argjson target "$target_json" \
+                  --arg clientId "$client_id" \
+                  --arg clientSecret "$client_secret" \
+                  --arg authEndpoint "$AUTH_ENDPOINT" \
+                  --arg tokenEndpoint "$TOKEN_ENDPOINT" \
+                  --arg userInfoEndpoint "$userinfo_endpoint" \
+                  '{
+                    id: $id,
+                    name: $name,
+                    type: "GITHUB",
+                    enabled: true,
+                    target: $target,
+                    color: "#24292F",
+                    syncMappings: true,
+                    scopes: ["read:user","read:org","user:email"],
+                    configuration: {
+                      clientId: $clientId,
+                      clientSecret: $clientSecret,
+                      authorizationEndpoint: $authEndpoint,
+                      tokenEndpoint: $tokenEndpoint,
+                      userInfoEndpoint: $userInfoEndpoint,
+                      useSystemProxy: false
+                    },
+                    userProfileMapping: {
+                      id: "id",
+                      firstname: "name",
+                      lastname: "name",
+                      email: "email",
+                      picture: "avatar_url"
+                    }
+                  }' > "$outfile"
+              }
 
-          echo "🔧 Forcing portal user self-signup flags directly in database..."
-          portal_sql="INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.enabled', 'false')
-          ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
+              build_github_idp "github" "GitHub" '["PORTAL"]' \
+                "$GITHUB_CLIENT_ID" "$GITHUB_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-portal-idp.json
+              build_github_idp "github-console" "GitHub Console" '["CONSOLE"]' \
+                "$GITHUB_CONSOLE_CLIENT_ID" "$GITHUB_CONSOLE_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-console-idp.json
 
-          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.automaticValidation', 'false')
-          ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
+              echo "📤 IDP payloads:"
+              echo "  - /tmp/github-portal-idp.json"
+              cat /tmp/github-portal-idp.json || true
+              echo "  - /tmp/github-console-idp.json"
+              cat /tmp/github-console-idp.json || true
 
-          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.localLogin.enabled', 'false')
-          ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
+              apply_github_idp() {
+                idp_file="$1"
+                scope_label="$2"
+                base_url="$3"
+                config_url="$base_url/configuration/identities"
+                idp_id="$("$JQ_BIN" -r '.id' "$idp_file")"
 
-          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'true')
-          ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
+                echo "🔧 Applying GitHub identity provider '${idp_id}' for ${scope_label} scope..."
+                if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
+                  IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+                    -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+                    -X PUT "$config_url/${idp_id}" \
+                    --data-binary @"$idp_file" || echo "000")
+                else
+                  IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+                    -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
+                    -X PUT "$config_url/${idp_id}" \
+                    --data-binary @"$idp_file" || echo "000")
+                fi
 
-          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ORGANIZATION', 'DEFAULT', 'console.authentication.localLogin.enabled', 'false')
-          ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
+                echo "ℹ️ PUT /identities/${idp_id} (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
+                echo "ℹ️ PUT response body:"
+                cat /tmp/idp-response || true
 
-          INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
-          VALUES ('ORGANIZATION', 'DEFAULT', 'console.authentication.forceLogin.enabled', 'true')
-          ON CONFLICT (reference_type, reference_id, key)
-          DO UPDATE SET value = EXCLUDED.value;
+                if [ "$IDP_HTTP_STATUS" != "200" ]; then
+                  echo "⚠️ PUT returned HTTP ${IDP_HTTP_STATUS}, attempting POST for ${scope_label}..."
+                  if [ "$AUTH_MODE" = "bearer" ] && [ -n "$TOKEN" ]; then
+                    IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+                      -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+                      -X POST "$config_url" \
+                      --data-binary @"$idp_file" || echo "000")
+                  else
+                    IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
+                      -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
+                      -X POST "$config_url" \
+                      --data-binary @"$idp_file" || echo "000")
+                  fi
 
-          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
-          VALUES ('github', 'ENVIRONMENT', 'DEFAULT', now())
-          ON CONFLICT (identity_provider_id, reference_type, reference_id)
-          DO NOTHING;
+                  echo "ℹ️ POST /identities (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
+                  echo "ℹ️ POST response body:"
+                  cat /tmp/idp-response || true
 
-          INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
-          VALUES ('github-console', 'ORGANIZATION', 'DEFAULT', now())
-          ON CONFLICT (identity_provider_id, reference_type, reference_id)
-          DO NOTHING;
+                  if [ "$IDP_HTTP_STATUS" != "201" ] && [ "$IDP_HTTP_STATUS" != "200" ]; then
+                    echo "❌ Failed to configure GitHub identity provider for ${scope_label} (status ${IDP_HTTP_STATUS})"
+                    return 1
+                  fi
+                fi
 
-          DELETE FROM gravitee.identity_provider_activations
-          WHERE identity_provider_id = 'github'
-            AND reference_type = 'ORGANIZATION'
-            AND reference_id = 'DEFAULT';
+                echo "ℹ️ Skipping identity enable/activation calls for ${scope_label}; not supported on this version."
+                return 0
+              }
 
-          DELETE FROM gravitee.identity_provider_activations
-          WHERE identity_provider_id = 'github-console'
-            AND reference_type = 'ENVIRONMENT'
-            AND reference_id = 'DEFAULT';"
-          printf "%s\n" "$portal_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
-          echo "✅ Portal user creation disabled via database parameters."
+              if ! retry 3 5 apply_github_idp /tmp/github-portal-idp.json "environment" "$MGMT_API_URL/management/organizations/DEFAULT/environments/DEFAULT"; then
+                echo "❌ Failed to configure GitHub identity provider after retries for environment scope."
+                exit 1
+              fi
+              if ! retry 3 5 apply_github_idp /tmp/github-console-idp.json "organization" "$MGMT_API_URL/management/organizations/DEFAULT"; then
+                echo "❌ Failed to configure GitHub identity provider after retries for organization scope."
+                exit 1
+              fi
 
-          echo "🔧 Promoting github-console users to ADMIN roles (organization + environment)..."
-          role_sql="DO \$\$
-          DECLARE
-            org_role_id TEXT;
-            env_role_id TEXT;
-          BEGIN
-            SELECT id INTO org_role_id
-              FROM gravitee.roles
-             WHERE scope = 'ORGANIZATION'
-               AND reference_id = 'DEFAULT'
-               AND name = 'ADMIN'
-             ORDER BY created_at
-             LIMIT 1;
+              # Provider scoping is controlled by the target and the endpoint we apply to.
 
-            SELECT id INTO env_role_id
-              FROM gravitee.roles
-             WHERE scope = 'ENVIRONMENT'
-               AND reference_id = 'DEFAULT'
-               AND name = 'ADMIN'
-             ORDER BY created_at
-             LIMIT 1;
+              echo "🔧 Forcing portal user self-signup flags directly in database..."
+              portal_sql="INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
+              VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.enabled', 'false')
+              ON CONFLICT (reference_type, reference_id, key)
+              DO UPDATE SET value = EXCLUDED.value;
 
-            UPDATE gravitee.memberships m
-               SET role_id = org_role_id,
-                   updated_at = now()
-              FROM gravitee.users u
-             WHERE u.source = 'github-console'
-               AND m.member_id = u.id
-               AND m.reference_type = 'ORGANIZATION'
-               AND m.reference_id = 'DEFAULT';
+              INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
+              VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.userCreation.automaticValidation', 'false')
+              ON CONFLICT (reference_type, reference_id, key)
+              DO UPDATE SET value = EXCLUDED.value;
 
-            UPDATE gravitee.memberships m
-               SET role_id = env_role_id,
-                   updated_at = now()
-              FROM gravitee.users u
-             WHERE u.source = 'github-console'
-               AND m.member_id = u.id
-               AND m.reference_type = 'ENVIRONMENT'
-               AND m.reference_id = 'DEFAULT';
+              INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
+              VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.localLogin.enabled', 'false')
+              ON CONFLICT (reference_type, reference_id, key)
+              DO UPDATE SET value = EXCLUDED.value;
 
-            INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
-            SELECT u.id || '-org-admin',
-                   'ORGANIZATION',
-                   'DEFAULT',
-                   'USER',
-                   u.id,
-                   org_role_id,
-                   now(),
-                   now()
-              FROM gravitee.users u
-             WHERE u.source = 'github-console'
-               AND NOT EXISTS (
-                 SELECT 1 FROM gravitee.memberships m
-                  WHERE m.member_id = u.id
-                    AND m.reference_type = 'ORGANIZATION'
-                    AND m.reference_id = 'DEFAULT'
-               );
+              INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
+              VALUES ('ENVIRONMENT', 'DEFAULT', 'portal.authentication.forceLogin.enabled', 'true')
+              ON CONFLICT (reference_type, reference_id, key)
+              DO UPDATE SET value = EXCLUDED.value;
 
-            INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
-            SELECT u.id || '-env-admin',
-                   'ENVIRONMENT',
-                   'DEFAULT',
-                   'USER',
-                   u.id,
-                   env_role_id,
-                   now(),
-                   now()
-              FROM gravitee.users u
-             WHERE u.source = 'github-console'
-               AND NOT EXISTS (
-                 SELECT 1 FROM gravitee.memberships m
-                  WHERE m.member_id = u.id
-                    AND m.reference_type = 'ENVIRONMENT'
-                    AND m.reference_id = 'DEFAULT'
-               );
-          END \$\$;"
-          printf "%s\n" "$role_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+              INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
+              VALUES ('ORGANIZATION', 'DEFAULT', 'console.authentication.localLogin.enabled', 'false')
+              ON CONFLICT (reference_type, reference_id, key)
+              DO UPDATE SET value = EXCLUDED.value;
 
-          echo "🔧 Config context:"
-          echo "  MGMT_API_URL      = ${MGMT_API_URL:-}"
-          echo "  ADMIN_USERNAME    = ${ADMIN_USERNAME:-}"
-          echo "  GITHUB_SERVER_URL = ${GITHUB_SERVER_URL:-}"
+              INSERT INTO gravitee.parameters (reference_type, reference_id, key, value)
+              VALUES ('ORGANIZATION', 'DEFAULT', 'console.authentication.forceLogin.enabled', 'true')
+              ON CONFLICT (reference_type, reference_id, key)
+              DO UPDATE SET value = EXCLUDED.value;
 
-          echo "✅ Gravitee GitHub configuration complete."
+              INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
+              VALUES ('github', 'ENVIRONMENT', 'DEFAULT', now())
+              ON CONFLICT (identity_provider_id, reference_type, reference_id)
+              DO NOTHING;
+
+              INSERT INTO gravitee.identity_provider_activations (identity_provider_id, reference_type, reference_id, created_at)
+              VALUES ('github-console', 'ORGANIZATION', 'DEFAULT', now())
+              ON CONFLICT (identity_provider_id, reference_type, reference_id)
+              DO NOTHING;
+
+              DELETE FROM gravitee.identity_provider_activations
+              WHERE identity_provider_id = 'github'
+                AND reference_type = 'ORGANIZATION'
+                AND reference_id = 'DEFAULT';
+
+              DELETE FROM gravitee.identity_provider_activations
+              WHERE identity_provider_id = 'github-console'
+                AND reference_type = 'ENVIRONMENT'
+                AND reference_id = 'DEFAULT';"
+              printf "%s\n" "$portal_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+              echo "✅ Portal user creation disabled via database parameters."
+
+              echo "🔧 Promoting github-console users to ADMIN roles (organization + environment)..."
+              role_sql="DO \$\$
+              DECLARE
+                org_role_id TEXT;
+                env_role_id TEXT;
+              BEGIN
+                SELECT id INTO org_role_id
+                  FROM gravitee.roles
+                 WHERE scope = 'ORGANIZATION'
+                   AND reference_id = 'DEFAULT'
+                   AND name = 'ADMIN'
+                 ORDER BY created_at
+                 LIMIT 1;
+
+                SELECT id INTO env_role_id
+                  FROM gravitee.roles
+                 WHERE scope = 'ENVIRONMENT'
+                   AND reference_id = 'DEFAULT'
+                   AND name = 'ADMIN'
+                 ORDER BY created_at
+                 LIMIT 1;
+
+                UPDATE gravitee.memberships m
+                   SET role_id = org_role_id,
+                       updated_at = now()
+                  FROM gravitee.users u
+                 WHERE u.source = 'github-console'
+                   AND m.member_id = u.id
+                   AND m.reference_type = 'ORGANIZATION'
+                   AND m.reference_id = 'DEFAULT';
+
+                UPDATE gravitee.memberships m
+                   SET role_id = env_role_id,
+                       updated_at = now()
+                  FROM gravitee.users u
+                 WHERE u.source = 'github-console'
+                   AND m.member_id = u.id
+                   AND m.reference_type = 'ENVIRONMENT'
+                   AND m.reference_id = 'DEFAULT';
+
+                INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
+                SELECT u.id || '-org-admin',
+                       'ORGANIZATION',
+                       'DEFAULT',
+                       'USER',
+                       u.id,
+                       org_role_id,
+                       now(),
+                       now()
+                  FROM gravitee.users u
+                 WHERE u.source = 'github-console'
+                   AND NOT EXISTS (
+                     SELECT 1 FROM gravitee.memberships m
+                      WHERE m.member_id = u.id
+                        AND m.reference_type = 'ORGANIZATION'
+                        AND m.reference_id = 'DEFAULT'
+                   );
+
+                INSERT INTO gravitee.memberships (id, reference_type, reference_id, member_type, member_id, role_id, created_at, updated_at)
+                SELECT u.id || '-env-admin',
+                       'ENVIRONMENT',
+                       'DEFAULT',
+                       'USER',
+                       u.id,
+                       env_role_id,
+                       now(),
+                       now()
+                  FROM gravitee.users u
+                 WHERE u.source = 'github-console'
+                   AND NOT EXISTS (
+                     SELECT 1 FROM gravitee.memberships m
+                      WHERE m.member_id = u.id
+                        AND m.reference_type = 'ENVIRONMENT'
+                        AND m.reference_id = 'DEFAULT'
+                   );
+              END \$\$;"
+              printf "%s\n" "$role_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE"
+
+              echo "🔧 Config context:"
+              echo "  MGMT_API_URL      = ${MGMT_API_URL:-}"
+              echo "  ADMIN_USERNAME    = ${ADMIN_USERNAME:-}"
+              echo "  GITHUB_SERVER_URL = ${GITHUB_SERVER_URL:-}"
+
+              echo "✅ Gravitee GitHub configuration complete."
