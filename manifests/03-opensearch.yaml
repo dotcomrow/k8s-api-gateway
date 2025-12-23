@@ -145,6 +145,15 @@ spec:
                 sleep 2
               done
 
+              echo "Waiting for Gravitee index templates..."
+              for _ in $(seq 1 60); do
+                if curl -fsS "$OS_URL/_template/gravitee-v4-metrics" >/dev/null; then
+                  echo "Templates are ready."
+                  break
+                fi
+                sleep 2
+              done
+
               DATE="$(date -u +%Y.%m.%d)"
               INDICES="gravitee gravitee-log-$DATE gravitee-request-$DATE \
                 gravitee-v4-log-$DATE gravitee-v4-metrics-$DATE \
@@ -153,10 +162,18 @@ spec:
 
               for IDX in $INDICES; do
                 STATUS="$(curl -s -o /dev/null -w "%{http_code}" "$OS_URL/$IDX")"
+                if [ "$STATUS" = "200" ]; then
+                  if ! curl -s "$OS_URL/$IDX/_mapping" | grep -q '"@timestamp"'; then
+                    echo "Index $IDX missing @timestamp mapping; recreating..."
+                    curl -fsS -X DELETE "$OS_URL/$IDX" >/dev/null
+                    STATUS="404"
+                  else
+                    echo "Index $IDX already exists with mappings."
+                  fi
+                fi
+
                 if [ "$STATUS" = "404" ]; then
                   echo "Creating index $IDX..."
                   curl -fsS -X PUT "$OS_URL/$IDX" >/dev/null
-                else
-                  echo "Index $IDX already exists (status $STATUS)."
                 fi
               done
