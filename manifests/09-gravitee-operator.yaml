@@ -18,6 +18,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/operator.version: 4.9.10-rc
   name: apidefinitions.gravitee.io
@@ -1890,6 +1891,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/operator.version: 4.9.10-rc
   name: apiresources.gravitee.io
@@ -1962,6 +1964,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/operator.version: 4.9.10-rc
   name: apiv4definitions.gravitee.io
@@ -3718,6 +3721,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/operator.version: 4.9.10-rc
   name: applications.gravitee.io
@@ -4042,6 +4046,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/extends: gateway.networking.k8s.io
     gravitee.io/operator.version: 4.9.10-rc
@@ -10769,6 +10774,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/operator.version: 4.9.10-rc
   name: groups.gravitee.io
@@ -10972,6 +10978,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/extends: gateway.networking.k8s.io
     gravitee.io/operator.version: 4.9.10-rc
@@ -11453,6 +11460,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/operator.version: 4.9.10-rc
   name: managementcontexts.gravitee.io
@@ -11652,6 +11660,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/operator.version: 4.9.10-rc
   name: notifications.gravitee.io
@@ -11859,6 +11868,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/operator.version: 4.9.10-rc
   name: sharedpolicygroups.gravitee.io
@@ -12105,6 +12115,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     controller-gen.kubebuilder.io/version: v0.18.0
     gravitee.io/operator.version: 4.9.10-rc
   name: subscriptions.gravitee.io
@@ -12256,6 +12267,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     api-approved.kubernetes.io: https://github.com/kubernetes-sigs/gateway-api/pull/3328
     gateway.networking.k8s.io/bundle-version: v1.3.0
     gateway.networking.k8s.io/channel: standard
@@ -12737,6 +12749,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     api-approved.kubernetes.io: https://github.com/kubernetes-sigs/gateway-api/pull/3328
     gateway.networking.k8s.io/bundle-version: v1.3.0
     gateway.networking.k8s.io/channel: standard
@@ -14980,6 +14993,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     api-approved.kubernetes.io: https://github.com/kubernetes-sigs/gateway-api/pull/3328
     gateway.networking.k8s.io/bundle-version: v1.3.0
     gateway.networking.k8s.io/channel: standard
@@ -17034,6 +17048,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     api-approved.kubernetes.io: https://github.com/kubernetes-sigs/gateway-api/pull/3328
     gateway.networking.k8s.io/bundle-version: v1.3.0
     gateway.networking.k8s.io/channel: standard
@@ -22653,6 +22668,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    argocd.argoproj.io/sync-wave: "-5"
     api-approved.kubernetes.io: https://github.com/kubernetes-sigs/gateway-api/pull/3328
     gateway.networking.k8s.io/bundle-version: v1.3.0
     gateway.networking.k8s.io/channel: standard
