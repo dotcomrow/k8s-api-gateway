@@ -153,6 +153,43 @@ spec:
                 fi
                 sleep 2
               done
+              
+              echo "Ensuring gravitee-health template includes @timestamp..."
+              if ! curl -fsS "$OS_URL/_template/gravitee-health" | grep -q '"@timestamp"'; then
+                cat <<'EOF' >/tmp/gravitee-health-template.json
+              {
+                "index_patterns": ["gravitee-health*"],
+                "settings": {
+                  "index": {
+                    "number_of_shards": "1",
+                    "number_of_replicas": "1",
+                    "refresh_interval": "5s"
+                  }
+                },
+                "mappings": {
+                  "properties": {
+                    "@timestamp": { "type": "date" },
+                    "api": { "type": "keyword" },
+                    "api-name": { "type": "keyword" },
+                    "available": { "type": "boolean", "index": false },
+                    "endpoint": { "type": "keyword" },
+                    "gateway": { "type": "keyword" },
+                    "response-time": { "type": "integer" },
+                    "state": { "type": "integer", "index": false },
+                    "steps": { "type": "object", "enabled": false },
+                    "success": { "type": "boolean", "index": true },
+                    "transition": { "type": "boolean" }
+                  }
+                },
+                "aliases": {}
+              }
+              EOF
+              
+                curl -fsS -X PUT "$OS_URL/_template/gravitee-health" \
+                  -H "Content-Type: application/json" \
+                  --data-binary @/tmp/gravitee-health-template.json >/dev/null
+                echo "Updated gravitee-health template."
+              fi
 
               DATE="$(date -u +%Y.%m.%d)"
               INDICES="gravitee gravitee-log-$DATE gravitee-request-$DATE \
