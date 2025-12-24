@@ -231,6 +231,7 @@ spec:
                 }
               }
               EOF
+              
                 curl -fsS -X PUT "$OS_URL/_plugins/_ism/policies/$POLICY_NAME" \
                   -H "Content-Type: application/json" \
                   --data-binary @/tmp/gravitee-ism-policy.json >/dev/null
