@@ -1351,6 +1351,8 @@ data:
     http:
       port: 8082
       host: 0.0.0.0
+      requestTimeout: 300000
+      requestTimeoutGraceDelay: 30
       
     # Cache configuration (use the bundled standalone cache manager / Ehcache)
     cache:
