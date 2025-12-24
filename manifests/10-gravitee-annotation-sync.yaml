@@ -433,6 +433,11 @@ data:
             return {"dynamicProperty": value["dynamicProperty"]}
         return None
 
+    def normalize_analytics(value):
+        if isinstance(value, dict):
+            return value
+        return None
+
     def slugify(value):
         text = str(value or "").strip().lower()
         text = re.sub(r"[^a-z0-9]+", "-", text)
@@ -750,12 +755,14 @@ data:
         plans_json = normalize_plans(parse_json(annotations.get("gravitee.io/definition-plans"), "definition-plans", svc_key), svc_key)
         flows_json = normalize_list(parse_json(annotations.get("gravitee.io/definition-flows"), "definition-flows", svc_key))
         responses_json = normalize_map(parse_json(annotations.get("gravitee.io/definition-response-templates"), "definition-response-templates", svc_key))
+        analytics_json = normalize_analytics(parse_json(annotations.get("gravitee.io/definition-analytics"), "definition-analytics", svc_key))
         pages_json = normalize_map(build_pages(annotations, svc_key))
 
         set_if(metadata_json, "metadata")
         set_if(properties_json, "properties")
         set_if(services_json, "services")
         set_if(resources_json, "resources")
+        set_if(analytics_json, "analytics")
         if not plans_json and desired_state == "STARTED":
             log(f"No plans for {svc_key}; forcing state STOPPED to satisfy GKO validation")
             spec["state"] = "STOPPED"
