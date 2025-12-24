@@ -429,9 +429,15 @@ data:
         return None
 
     def normalize_services(value):
-        if isinstance(value, dict) and "dynamicProperty" in value:
-            return {"dynamicProperty": value["dynamicProperty"]}
-        return None
+        if not isinstance(value, dict):
+            return None
+        normalized = dict(value)
+        # Accept legacy camelCase key from annotations and map to v4 schema.
+        if "healthCheck" in normalized and "health-check" not in normalized:
+            normalized["health-check"] = normalized.pop("healthCheck")
+        if "dynamicProperty" in normalized and "dynamic-property" not in normalized:
+            normalized["dynamic-property"] = normalized.pop("dynamicProperty")
+        return normalized
 
     def normalize_analytics(value):
         if isinstance(value, dict):
