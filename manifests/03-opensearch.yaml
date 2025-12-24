@@ -153,7 +153,7 @@ spec:
                 fi
                 sleep 2
               done
-              
+
               echo "Ensuring gravitee-health template includes @timestamp..."
               if ! curl -fsS "$OS_URL/_template/gravitee-health" | grep -q '"@timestamp"'; then
                 cat <<'EOF' >/tmp/gravitee-health-template.json
@@ -191,6 +191,52 @@ spec:
                 echo "Updated gravitee-health template."
               fi
 
+              echo "Ensuring 14-day ISM retention policy..."
+              POLICY_NAME="gravitee-14d"
+              if ! curl -fsS "$OS_URL/_plugins/_ism/policies/$POLICY_NAME" >/dev/null; then
+                cat <<'EOF' >/tmp/gravitee-ism-policy.json
+              {
+                "policy": {
+                  "description": "Delete gravitee indices after 14 days",
+                  "default_state": "hot",
+                  "states": [
+                    {
+                      "name": "hot",
+                      "actions": [],
+                      "transitions": [
+                        {
+                          "state_name": "delete",
+                          "conditions": {
+                            "min_index_age": "14d"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "name": "delete",
+                      "actions": [
+                        {
+                          "delete": {}
+                        }
+                      ],
+                      "transitions": []
+                    }
+                  ],
+                  "ism_template": [
+                    {
+                      "index_patterns": ["gravitee-*"],
+                      "priority": 100
+                    }
+                  ]
+                }
+              }
+EOF
+                curl -fsS -X PUT "$OS_URL/_plugins/_ism/policies/$POLICY_NAME" \
+                  -H "Content-Type: application/json" \
+                  --data-binary @/tmp/gravitee-ism-policy.json >/dev/null
+                echo "Created ISM policy $POLICY_NAME."
+              fi
+
               DATE="$(date -u +%Y.%m.%d)"
               INDICES="gravitee gravitee-log-$DATE gravitee-request-$DATE \
                 gravitee-v4-log-$DATE gravitee-v4-metrics-$DATE \
@@ -213,4 +259,12 @@ spec:
                   echo "Creating index $IDX..."
                   curl -fsS -X PUT "$OS_URL/$IDX" >/dev/null
                 fi
+              done
+
+              echo "Attaching ISM policy to existing gravitee indices..."
+              for IDX in $(curl -s "$OS_URL/_cat/indices/gravitee-*?h=index" | tr -d '\r'); do
+                [ -n "$IDX" ] || continue
+                curl -fsS -X POST "$OS_URL/_plugins/_ism/add/$IDX" \
+                  -H "Content-Type: application/json" \
+                  --data-binary "{\"policy_id\":\"$POLICY_NAME\"}" >/dev/null || true
               done
