@@ -428,21 +428,55 @@ data:
             return [{"key": str(key), "value": str(raw)} for key, raw in value.items()]
         return None
 
+    def normalize_service_keys(value):
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        if "health-check" in normalized and "healthCheck" not in normalized:
+            normalized["healthCheck"] = normalized.pop("health-check")
+        if "dynamic-property" in normalized and "dynamicProperty" not in normalized:
+            normalized["dynamicProperty"] = normalized.pop("dynamic-property")
+        return normalized
+
     def normalize_services(value):
         if not isinstance(value, dict):
             return None
-        normalized = dict(value)
-        # Accept legacy camelCase key from annotations and map to v4 schema.
-        if "healthCheck" in normalized and "health-check" not in normalized:
-            normalized["health-check"] = normalized.pop("healthCheck")
-        if "dynamicProperty" in normalized and "dynamic-property" not in normalized:
-            normalized["dynamic-property"] = normalized.pop("dynamicProperty")
-        return normalized
+        return normalize_service_keys(value)
+
+    def normalize_endpoint_groups(value):
+        if not isinstance(value, list):
+            return value
+        normalized_groups = []
+        for group in value:
+            if not isinstance(group, dict):
+                normalized_groups.append(group)
+                continue
+            group = dict(group)
+            if "services" in group:
+                group["services"] = normalize_service_keys(group.get("services"))
+            endpoints = group.get("endpoints")
+            if isinstance(endpoints, list):
+                normalized_endpoints = []
+                for endpoint in endpoints:
+                    if not isinstance(endpoint, dict):
+                        normalized_endpoints.append(endpoint)
+                        continue
+                    endpoint = dict(endpoint)
+                    if "services" in endpoint:
+                        endpoint["services"] = normalize_service_keys(endpoint.get("services"))
+                    normalized_endpoints.append(endpoint)
+                group["endpoints"] = normalized_endpoints
+            normalized_groups.append(group)
+        return normalized_groups
 
     def normalize_analytics(value):
-        if isinstance(value, dict):
-            return value
-        return None
+        if not isinstance(value, dict):
+            return None
+        normalized = dict(value)
+        # Ensure merge-patch clears old sampling if it's omitted in the annotation.
+        if "sampling" not in normalized:
+            normalized["sampling"] = None
+        return normalized
 
     def slugify(value):
         text = str(value or "").strip().lower()
@@ -606,7 +640,7 @@ data:
     def build_endpoint_groups(api_type, annotations, ports, svc_name, svc_ns, svc_key):
         raw_groups = parse_json(annotations.get("gravitee.io/definition-endpoint-groups"), "definition-endpoint-groups", svc_key)
         if raw_groups is not None:
-            return raw_groups
+            return normalize_endpoint_groups(raw_groups)
         endpoints = parse_json(annotations.get("gravitee.io/definition-endpoints"), "definition-endpoints", svc_key)
         port = pick_port(ports, "kafka" if api_type == "NATIVE" else "http") or pick_port(ports)
         if not port:
