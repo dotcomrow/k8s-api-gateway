@@ -238,28 +238,31 @@ spec:
                 echo "Created ISM policy $POLICY_NAME."
               fi
 
-              DATE="$(date -u +%Y.%m.%d)"
-              INDICES="gravitee gravitee-log-$DATE gravitee-request-$DATE \
-                gravitee-v4-log-$DATE gravitee-v4-metrics-$DATE \
-                gravitee-v4-message-log-$DATE gravitee-v4-message-metrics-$DATE \
-                gravitee-health-$DATE gravitee-monitor-$DATE"
+              INDEX_DAYS="${GRAVITEE_INDEX_DAYS:-14}"
+              for OFFSET in $(seq 0 $((INDEX_DAYS - 1))); do
+                DATE="$(date -u -d "-$OFFSET day" +%Y.%m.%d)"
+                INDICES="gravitee gravitee-log-$DATE gravitee-request-$DATE \
+                  gravitee-v4-log-$DATE gravitee-v4-metrics-$DATE \
+                  gravitee-v4-message-log-$DATE gravitee-v4-message-metrics-$DATE \
+                  gravitee-health-$DATE gravitee-monitor-$DATE"
 
-              for IDX in $INDICES; do
-                STATUS="$(curl -s -o /dev/null -w "%{http_code}" "$OS_URL/$IDX")"
-                if [ "$STATUS" = "200" ]; then
-                  if ! curl -s "$OS_URL/$IDX/_mapping" | grep -q '"@timestamp"'; then
-                    echo "Index $IDX missing @timestamp mapping; recreating..."
-                    curl -fsS -X DELETE "$OS_URL/$IDX" >/dev/null
-                    STATUS="404"
-                  else
-                    echo "Index $IDX already exists with mappings."
+                for IDX in $INDICES; do
+                  STATUS="$(curl -s -o /dev/null -w "%{http_code}" "$OS_URL/$IDX")"
+                  if [ "$STATUS" = "200" ]; then
+                    if ! curl -s "$OS_URL/$IDX/_mapping" | grep -q '"@timestamp"'; then
+                      echo "Index $IDX missing @timestamp mapping; recreating..."
+                      curl -fsS -X DELETE "$OS_URL/$IDX" >/dev/null
+                      STATUS="404"
+                    else
+                      echo "Index $IDX already exists with mappings."
+                    fi
                   fi
-                fi
 
-                if [ "$STATUS" = "404" ]; then
-                  echo "Creating index $IDX..."
-                  curl -fsS -X PUT "$OS_URL/$IDX" >/dev/null
-                fi
+                  if [ "$STATUS" = "404" ]; then
+                    echo "Creating index $IDX..."
+                    curl -fsS -X PUT "$OS_URL/$IDX" >/dev/null
+                  fi
+                done
               done
 
               echo "Attaching ISM policy to existing gravitee indices..."
