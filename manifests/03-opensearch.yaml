@@ -239,8 +239,10 @@ spec:
               fi
 
               INDEX_DAYS="${GRAVITEE_INDEX_DAYS:-14}"
+              NOW_EPOCH="$(date -u +%s)"
               for OFFSET in $(seq 0 $((INDEX_DAYS - 1))); do
-                DATE="$(date -u -d "-$OFFSET day" +%Y.%m.%d)"
+                TARGET_EPOCH="$((NOW_EPOCH - (OFFSET * 86400)))"
+                DATE="$(date -u -d "@${TARGET_EPOCH}" +%Y.%m.%d)"
                 INDICES="gravitee gravitee-log-$DATE gravitee-request-$DATE \
                   gravitee-v4-log-$DATE gravitee-v4-metrics-$DATE \
                   gravitee-v4-message-log-$DATE gravitee-v4-message-metrics-$DATE \
