@@ -155,8 +155,7 @@ spec:
               done
 
               echo "Ensuring gravitee-health template includes @timestamp..."
-              if ! curl -fsS "$OS_URL/_template/gravitee-health" | grep -q '"@timestamp"'; then
-                cat <<'EOF' >/tmp/gravitee-health-template.json
+              cat <<'EOF' >/tmp/gravitee-health-template.json
               {
                 "index_patterns": ["gravitee-health*"],
                 "settings": {
@@ -185,11 +184,10 @@ spec:
               }
               EOF
               
-                curl -fsS -X PUT "$OS_URL/_template/gravitee-health" \
-                  -H "Content-Type: application/json" \
-                  --data-binary @/tmp/gravitee-health-template.json >/dev/null
-                echo "Updated gravitee-health template."
-              fi
+              curl -fsS -X PUT "$OS_URL/_template/gravitee-health" \
+                -H "Content-Type: application/json" \
+                --data-binary @/tmp/gravitee-health-template.json >/dev/null
+              echo "Updated gravitee-health template."
 
               echo "Ensuring 14-day ISM retention policy..."
               POLICY_NAME="gravitee-14d"
