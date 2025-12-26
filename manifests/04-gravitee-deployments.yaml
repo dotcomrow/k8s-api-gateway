@@ -835,7 +835,7 @@ spec:
             - /bin/sh
             - -c
             - |
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/health || echo "000")
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/_node/health || echo "000")
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                 exit 0
               fi
@@ -851,7 +851,7 @@ spec:
             - /bin/sh
             - -c
             - |
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/health || echo "000")
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/_node/health || echo "000")
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                 exit 0
               fi
