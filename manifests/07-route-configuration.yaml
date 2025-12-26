@@ -32,6 +32,28 @@ data:
       echo "✅ ${label} APISIX Admin API is ready"
 
       if [ "${include_gateway}" = "true" ]; then
+        echo "Configuring OpenTelemetry global rule on ${label}..."
+        curl -X PUT "${admin_url}/apisix/admin/global_rules/1" \
+          -H "X-API-KEY: ${admin_key}" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "plugins": {
+              "opentelemetry": {
+                "sampler": {
+                  "name": "always_on"
+                },
+                "collector": {
+                  "address": "http://otel-collector.observability.svc.cluster.local:4318",
+                  "request_type": "http"
+                },
+                "resource": {
+                  "service.name": "apisix-gateway-internal",
+                  "service.namespace": "k8s-api-gateway"
+                }
+              }
+            }
+          }'
+
         echo "⚡ Creating Gravitee Gateway route on ${label}..."
         curl -X PUT "${admin_url}/apisix/admin/routes/gravitee-gateway" \
           -H "X-API-KEY: ${admin_key}" \
@@ -63,19 +85,6 @@ data:
                 "expose_headers": "X-Request-Id",
                 "allow_credential": true,
                 "max_age": 3600
-              },
-              "opentelemetry": {
-                "sampler": {
-                  "name": "always_on"
-                },
-                "collector": {
-                  "address": "http://otel-collector.observability.svc.cluster.local:4318",
-                  "request_type": "http"
-                },
-                "resource": {
-                  "service.name": "gravitee-gateway",
-                  "service.namespace": "k8s-api-gateway"
-                }
               },
               "proxy-rewrite": {
                 "regex_uri": ["^/gateway(.*)", "$1"],
