@@ -1396,6 +1396,11 @@ data:
     
     # Gateway services
     services:
+      # Node management API (port 18082) settings
+      core:
+        http:
+          authentication:
+            type: none
       # Kubernetes service discovery
       discovery:
         kubernetes:
