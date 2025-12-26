@@ -9,7 +9,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
 data:
   config.yaml: |
-    # APISIX Configuration for v3.6.0
+    # APISIX Configuration for v3.11.0
     apisix:
       node_listen:
         - 9080
@@ -47,6 +47,10 @@ data:
           prometheus-metrics: 15m
           prometheus-cache: 10m
           standalone-config: 10m
+      data_encryption:
+        keyring:
+          - ENCRYPTION_KEY_PLACEHOLDER_1
+          - ENCRYPTION_KEY_PLACEHOLDER_2
       stream:
         enable_access_log: false
         access_log: logs/access_stream.log
@@ -121,9 +125,8 @@ data:
         refresh_interval: 15
       opentelemetry:
         collector:
-          address: http://otel-collector.observability.svc.cluster.local:4318
+          address: otel-collector.observability.svc.cluster.local:4318
           request_timeout: 3
-          request_type: http
         resource:
           service.name: apisix-gateway-internal
           service.namespace: k8s-api-gateway
@@ -318,12 +321,11 @@ spec:
           echo "etcd is ready"
       containers:
         - name: apisix
-          image: ghcr.io/dotcomrow/gravitee-apisix:ts-20251116-025806
+          image: ghcr.io/dotcomrow/gravitee-apisix:ts-20251226-225105
           command: ["/bin/sh", "-c"]
           args:
             - |
               echo "🔧 Starting APISIX with robust config patching..."
-              echo "📦 Required packages already installed in image."
               # Load APISIX admin key from Vault
               if [ -f /vault/secrets/admin ]; then
                 . /vault/secrets/admin
@@ -336,18 +338,19 @@ spec:
               APISIX_ENCRYPTION_KEY_1="$(openssl rand -hex 16)"
               APISIX_ENCRYPTION_KEY_2="$(openssl rand -hex 16)"
               echo "✅ Generated encryption keys successfully: $APISIX_ENCRYPTION_KEY_1, $APISIX_ENCRYPTION_KEY_2"
-              # Patch config file using yq to /tmp/config.yaml (writable)
+              # Patch config file with placeholders to /tmp/config.yaml (writable)
               cd /usr/local/apisix/conf
-              export APISIX_ADMIN_KEY APISIX_ENCRYPTION_KEY_1 APISIX_ENCRYPTION_KEY_2
-              yq e '
-                .deployment.admin.admin_key[0].key = strenv(APISIX_ADMIN_KEY) |
-                .apisix.data_encryption.keyring = [strenv(APISIX_ENCRYPTION_KEY_1), strenv(APISIX_ENCRYPTION_KEY_2)]
-              ' config.yaml > /tmp/config.yaml
-              echo "🔐 Updated all keys in configuration using yq"
+              sed \
+                -e "s/ADMIN_KEY_PLACEHOLDER/${APISIX_ADMIN_KEY}/" \
+                -e "s/ENCRYPTION_KEY_PLACEHOLDER_1/${APISIX_ENCRYPTION_KEY_1}/" \
+                -e "s/ENCRYPTION_KEY_PLACEHOLDER_2/${APISIX_ENCRYPTION_KEY_2}/" \
+                config.yaml > /tmp/config.yaml
+              echo "🔐 Updated all keys in configuration using sed"
               echo "🔍 Verifying replaced values:"
               grep ADMIN_KEY_PLACEHOLDER /tmp/config.yaml && echo "❌ ADMIN_KEY_PLACEHOLDER not replaced" && exit 1 || echo "✅ ADMIN_KEY replaced"
+              grep ENCRYPTION_KEY_PLACEHOLDER /tmp/config.yaml && echo "❌ Encryption key placeholders not replaced" && exit 1 || echo "✅ Encryption keys replaced"
               echo "🔍 Patched keyring section:"
-              yq e '.apisix.data_encryption.keyring' /tmp/config.yaml
+              grep -n "data_encryption" -A3 /tmp/config.yaml
               echo "🚀 Initializing APISIX..."
               cd /usr/local/apisix
               # Use patched config for APISIX startup
