@@ -478,6 +478,118 @@ data:
             normalized["sampling"] = None
         return normalized
 
+    def parse_bool(value, default=False):
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        return str(value).lower() == "true"
+
+    def normalize_healthcheck_service(value, svc_key):
+        if not isinstance(value, dict):
+            return None
+        normalized = dict(value)
+        normalized["enabled"] = parse_bool(normalized.get("enabled"), True)
+        normalized["overrideConfiguration"] = parse_bool(normalized.get("overrideConfiguration"), True)
+        normalized["type"] = normalized.get("type") or "http-health-check"
+        config = normalized.get("configuration")
+        if isinstance(config, str):
+            try:
+                config = json.loads(config)
+            except json.JSONDecodeError as exc:
+                log(f"Invalid health-check configuration for {svc_key}: {exc}")
+                config = None
+        if not isinstance(config, dict):
+            config = {}
+        normalized["configuration"] = config
+        return normalized
+
+    def healthcheck_matches(current, desired):
+        if not isinstance(current, dict):
+            return False
+        for key in ("enabled", "overrideConfiguration", "type"):
+            if key in desired and current.get(key) != desired.get(key):
+                return False
+        desired_config = desired.get("configuration") or {}
+        current_config = current.get("configuration") or {}
+        if isinstance(current_config, str):
+            try:
+                current_config = json.loads(current_config)
+            except json.JSONDecodeError:
+                return False
+        if not isinstance(current_config, dict):
+            return False
+        for key, value in desired_config.items():
+            if current_config.get(key) != value:
+                return False
+        return True
+
+    def extract_healthchecks(annotations, svc_key):
+        raw_groups = parse_json(annotations.get("gravitee.io/definition-endpoint-groups"), "definition-endpoint-groups", svc_key)
+        groups = normalize_endpoint_groups(raw_groups)
+        if not isinstance(groups, list):
+            return {}
+        desired = {}
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            name = group.get("name")
+            services = group.get("services") or {}
+            health = normalize_healthcheck_service(services.get("healthCheck"), svc_key)
+            if name and health:
+                desired[name] = health
+        return desired
+
+    def get_apiv4_id(ns, name):
+        path = f"/apis/gravitee.io/v1alpha1/namespaces/{ns}/apiv4definitions/{name}"
+        try:
+            with kube_request("GET", path) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            log(f"status lookup error {exc.code} for {ns}/{name}: {exc.read().decode('utf-8', errors='replace')}")
+            return None
+        return data.get("status", {}).get("id")
+
+    def ensure_healthchecks(ns, name, checks_by_group):
+        if not checks_by_group:
+            return
+        if not gravitee_enabled():
+            log(f"Gravitee admin credentials not configured; skipping health checks for {ns}/{name}")
+            return
+        api_id = get_apiv4_id(ns, name)
+        if not api_id:
+            log(f"API id not ready for {ns}/{name}; will retry")
+            return
+        path = f"/v2/organizations/{GRAVITEE_ORG}/environments/{GRAVITEE_ENV}/apis/{api_id}"
+        try:
+            with gravitee_request("GET", path) as resp:
+                api = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            log(f"health check fetch error {exc.code} for {ns}/{name}: {exc.read().decode('utf-8', errors='replace')}")
+            return
+
+        changed = False
+        for group in api.get("endpointGroups", []) or []:
+            group_name = group.get("name")
+            if group_name not in checks_by_group:
+                continue
+            services = group.get("services") or {}
+            desired = checks_by_group[group_name]
+            if not healthcheck_matches(services.get("healthCheck"), desired):
+                services["healthCheck"] = desired
+                group["services"] = services
+                changed = True
+
+        if not changed:
+            return
+
+        try:
+            with gravitee_request("PUT", path, api) as resp:
+                resp.read()
+            log(f"updated health checks for {ns}/{name}")
+        except urllib.error.HTTPError as exc:
+            log(f"health check update error {exc.code} for {ns}/{name}: {exc.read().decode('utf-8', errors='replace')}")
+
     def slugify(value):
         text = str(value or "").strip().lower()
         text = re.sub(r"[^a-z0-9]+", "-", text)
@@ -909,6 +1021,7 @@ data:
 
         ensure_groups_and_categories(desired_groups, desired_categories)
         desired = {}
+        desired_healthchecks = {}
         for service in services:
             annotations = service.get("metadata", {}).get("annotations", {}) or {}
             if not is_true(annotations.get("gravitee.io/expose")):
@@ -918,10 +1031,14 @@ data:
                 continue
             key = (api["metadata"]["namespace"], api["metadata"]["name"])
             desired[key] = api
+            health_checks = extract_healthchecks(annotations, f"{key[0]}/{key[1]}")
+            if health_checks:
+                desired_healthchecks[key] = health_checks
 
         for key, api in desired.items():
             status = apply_api(api)
             log(f"{status}: {key[0]}/{key[1]}")
+            ensure_healthchecks(key[0], key[1], desired_healthchecks.get(key, {}))
 
         existing = list_managed_apis()
         for api in existing:
