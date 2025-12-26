@@ -1,5 +1,5 @@
 # Custom APISIX image with required packages
-FROM apache/apisix:3.6.0-debian
+FROM apache/apisix:3.11.0-debian
 
 USER root
 RUN apt-get update -qq \
