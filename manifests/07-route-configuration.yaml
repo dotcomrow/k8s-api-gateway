@@ -43,7 +43,8 @@ data:
                   "name": "always_on"
                 },
                 "collector": {
-                  "address": "otel-collector.observability.svc.cluster.local:4318"
+                  "address": "http://otel-collector.observability.svc.cluster.local:4318",
+                  "request_type": "http"
                 },
                 "resource": {
                   "service.name": "apisix-gateway-internal",

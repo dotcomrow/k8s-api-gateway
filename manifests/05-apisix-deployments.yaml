@@ -121,8 +121,9 @@ data:
         refresh_interval: 15
       opentelemetry:
         collector:
-          address: otel-collector.observability.svc.cluster.local:4318
+          address: http://otel-collector.observability.svc.cluster.local:4318
           request_timeout: 3
+          request_type: http
         resource:
           service.name: apisix-gateway-internal
           service.namespace: k8s-api-gateway
