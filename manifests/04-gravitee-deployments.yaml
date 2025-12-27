@@ -1455,6 +1455,19 @@ data:
         admin-url: ${APISIX_ADMIN_URL:http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180}
         admin-key: ${APISIX_ADMIN_KEY}
         sync-interval: ${APISIX_SYNC_INTERVAL:30000}
+
+      # OpenTelemetry tracing
+      opentelemetry:
+        enabled: true
+        verbose: false
+        extraAttributes:
+          service.name: gravitee-gateway
+          service.namespace: k8s-api-gateway
+        exporter:
+          endpoint: http://otel-collector.observability.svc.cluster.local:4318
+          protocol: http/protobuf
+          timeout: 10000
+          compression: none
     
     # Security configuration
     security:
