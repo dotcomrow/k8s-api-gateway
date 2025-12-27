@@ -476,7 +476,7 @@ spec:
           done
       containers:
       - name: gravitee-management-api
-        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20251130-012332
+        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20251227-002013
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8083
@@ -704,7 +704,7 @@ spec:
           done
       containers:
       - name: gravitee-gateway
-        image: ghcr.io/dotcomrow/gravitee-gateway:ts-20251116-025809
+        image: ghcr.io/dotcomrow/gravitee-gateway:ts-20251227-002011
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8082
@@ -792,6 +792,24 @@ spec:
           value: "true"
         - name: APISIX_ADMIN_URL
           value: "http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180"
+        - name: JAVA_TOOL_OPTIONS
+          value: "-javaagent:/opt/otel/opentelemetry-javaagent.jar"
+        - name: OTEL_SERVICE_NAME
+          value: "gravitee-gateway"
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "service.namespace=k8s-api-gateway"
+        - name: OTEL_TRACES_SAMPLER
+          value: "always_on"
+        - name: OTEL_TRACES_EXPORTER
+          value: "otlp"
+        - name: OTEL_METRICS_EXPORTER
+          value: "none"
+        - name: OTEL_LOGS_EXPORTER
+          value: "none"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.observability.svc.cluster.local:4318"
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "http/protobuf"
         - name: NODE_NAME
           valueFrom:
             fieldRef:
@@ -914,7 +932,7 @@ spec:
           done
       containers:
       - name: gravitee-portal
-        image: ghcr.io/dotcomrow/gravitee-portal:ts-20251118-005529
+        image: ghcr.io/dotcomrow/gravitee-portal:ts-20251227-002011
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
