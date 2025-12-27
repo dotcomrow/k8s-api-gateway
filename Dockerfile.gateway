@@ -1,6 +1,8 @@
 # Gravitee.io Gateway with Enhanced Monitoring
 FROM graviteeio/apim-gateway:4.6.0
 
+ARG OTEL_AGENT_VERSION=1.33.0
+
 # Switch to root for package installations  
 USER root
 
@@ -13,6 +15,11 @@ RUN apk add --no-cache \
 
 RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar \
     -O /usr/local/lib/postgresql-42.7.4.jar
+# Install OpenTelemetry Java agent for gateway tracing.
+RUN mkdir -p /opt/otel \
+    && wget -q https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${OTEL_AGENT_VERSION}/opentelemetry-javaagent.jar \
+      -O /opt/otel/opentelemetry-javaagent.jar \
+    && chmod 0444 /opt/otel/opentelemetry-javaagent.jar
 # Also copy the JDBC driver to the Gravitee lib directory for classpath loading
 RUN cp /usr/local/lib/postgresql-42.7.4.jar /opt/graviteeio-gateway/lib/postgresql-42.7.4.jar
 # Copy custom gateway configuration for Kubernetes and APISIX integration
