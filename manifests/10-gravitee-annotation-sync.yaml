@@ -1135,13 +1135,6 @@ spec:
             - name: sync-script
               mountPath: /app
               readOnly: true
-          resources:
-            requests:
-              cpu: "25m"
-              memory: "64Mi"
-            limits:
-              cpu: "100m"
-              memory: "128Mi"
       volumes:
         - name: sync-script
           configMap:

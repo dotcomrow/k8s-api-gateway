@@ -23687,13 +23687,6 @@ spec:
               port: 8081
             initialDelaySeconds: 5
             periodSeconds: 10
-          resources:
-            limits:
-              cpu: 500m
-              memory: 256Mi
-            requests:
-              cpu: 50m
-              memory: 128Mi
           volumeMounts:
             - mountPath: /tmp/webhook-server/certs/
               name: webhook-cert

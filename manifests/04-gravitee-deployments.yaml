@@ -617,13 +617,6 @@ spec:
             echo "❌ Gravitee Management API exited with code $EXIT_CODE. Holding pod for investigation (not restarting)..."
             while true; do sleep 3600; done
           fi
-        resources:
-          requests:
-            cpu: "200m"
-            memory: "512Mi"
-          limits:
-            cpu: "2000m"
-            memory: "2Gi"
         livenessProbe:
           tcpSocket:
             port: 8083
@@ -840,13 +833,6 @@ spec:
 
           echo "🚀 Starting Gravitee Gateway..."
           exec ./bin/gravitee
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "256Mi"
-          limits:
-            cpu: "1000m"
-            memory: "1Gi"
         livenessProbe:
           exec:
             command:
@@ -965,13 +951,6 @@ spec:
               key: client-secret
         - name: PORTAL_OAUTH_SERVER_URL
           value: "https://github.com/login/oauth"
-        resources:
-          requests:
-            cpu: "50m"
-            memory: "64Mi"
-          limits:
-            cpu: "200m"
-            memory: "128Mi"
         livenessProbe:
           httpGet:
             path: /index.html
@@ -1056,13 +1035,6 @@ spec:
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 15
-        resources:
-          requests:
-            cpu: "50m"
-            memory: "64Mi"
-          limits:
-            cpu: "200m"
-            memory: "128Mi"
       volumes:
       - name: config
         configMap:
@@ -1236,13 +1208,6 @@ spec:
             port: 8080
           initialDelaySeconds: 3
           periodSeconds: 10
-        resources:
-          requests:
-            cpu: 25m
-            memory: 64Mi
-          limits:
-            cpu: 100m
-            memory: 128Mi
       volumes:
       - name: config
         configMap:

@@ -268,13 +268,6 @@ spec:
           value: "etcd=http://apisix-etcd:2380"
         - name: ETCD_NAME
           value: "etcd"
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
-            cpu: "500m"
-            memory: "512Mi"
 ---
 # APISIX Deployment
 apiVersion: apps/v1
@@ -372,13 +365,6 @@ spec:
           env:
             - name: APISIX_STAND_ALONE
               value: "false"
-          resources:
-            requests:
-              cpu: "200m"
-              memory: "256Mi"
-            limits:
-              cpu: "1000m"
-              memory: "1Gi"
           livenessProbe:
               tcpSocket:
                 port: 9080

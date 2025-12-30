@@ -249,13 +249,6 @@ spec:
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 15
-        resources:
-          requests:
-            cpu: 50m
-            memory: 64Mi
-          limits:
-            cpu: 200m
-            memory: 128Mi
       volumes:
       - name: proxy-config
         configMap:
@@ -304,13 +297,6 @@ spec:
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 15
-        resources:
-          requests:
-            cpu: 50m
-            memory: 64Mi
-          limits:
-            cpu: 200m
-            memory: 128Mi
       volumes:
       - name: proxy-config
         configMap:
@@ -389,13 +375,6 @@ spec:
             port: 4180
           initialDelaySeconds: 5
           periodSeconds: 10
-        resources:
-          requests:
-            cpu: 50m
-            memory: 64Mi
-          limits:
-            cpu: 200m
-            memory: 128Mi
 ---
 # Gravitee Teleport Proxy Service (management console app)
 apiVersion: v1
