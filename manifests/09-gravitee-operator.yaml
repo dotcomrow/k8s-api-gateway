@@ -22887,7 +22887,7 @@ metadata:
   annotations:
     meta.helm.sh/release-name: gko
     meta.helm.sh/release-namespace: k8s-api-gateway
-    argocd.argoproj.io/sync-wave: "-3"
+    argocd.argoproj.io/sync-wave: "-4"
 ---
 # Source: gko/templates/webhook/secret.yaml
 # Copyright (C) 2015 The Gravitee team (http://gravitee.io)
