@@ -8,7 +8,6 @@ metadata:
     argocd.argoproj.io/sync-wave: "0"
     linkerd.io/inject: "enabled"
     linkerd.io/skip-outbound-ports: "8200"
-    scheduler.alpha.kubernetes.io/node-selector: "dedicated=work-node"
     field.cattle.io/projectId: "local:infrastructure"
 ---
 # Service Accounts
