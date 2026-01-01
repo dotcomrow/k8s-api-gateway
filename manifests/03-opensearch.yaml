@@ -43,6 +43,7 @@ spec:
   replicas: 1
   updateStrategy:
     type: OnDelete
+    rollingUpdate: null
   selector:
     matchLabels:
       app.kubernetes.io/name: gravitee-opensearch
