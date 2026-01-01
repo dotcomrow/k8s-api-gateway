@@ -41,6 +41,8 @@ metadata:
 spec:
   serviceName: gravitee-opensearch
   replicas: 1
+  updateStrategy:
+    type: OnDelete
   selector:
     matchLabels:
       app.kubernetes.io/name: gravitee-opensearch
