@@ -2291,13 +2291,31 @@ spec:
           value: "5433"
         - name: YUGABYTE_DATABASE
           value: "gravitee"
+        - name: MGMT_API_URL
+          value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management"
+        - name: ADMIN_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-admin-credentials
+              key: username
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: gravitee-admin-credentials
+              key: password
+        - name: GRAVITEE_ORG
+          value: "DEFAULT"
+        - name: GRAVITEE_ENV
+          value: "DEFAULT"
+        - name: OPENSEARCH_URL
+          value: "http://gravitee-opensearch.k8s-api-gateway.svc.cluster.local:9200"
         - name: STALE_NODE_HOURS
           value: "24"
         command: ["/bin/sh", "-c"]
         args:
         - |
           set -e
-          apk add --no-cache postgresql15-client >/dev/null
+          apk add --no-cache postgresql15-client curl jq >/dev/null
 
           if [ -f "/vault/secrets/db-creds" ]; then
             . /vault/secrets/db-creds
@@ -2312,6 +2330,7 @@ spec:
           fi
 
           cutoff_hours="${STALE_NODE_HOURS}"
+          cutoff_ms=$(( $(date +%s) * 1000 - cutoff_hours * 3600 * 1000 ))
 
           node_count=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc \
             "SELECT count(*) FROM (SELECT node_id FROM gravitee.node_monitoring GROUP BY node_id HAVING max(coalesce(updated_at, evaluated_at, created_at)) < (now() - interval '${cutoff_hours} hours')) AS stale_nodes;")
@@ -2319,4 +2338,35 @@ spec:
           deleted_count=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc \
             "WITH stale AS (SELECT node_id FROM gravitee.node_monitoring GROUP BY node_id HAVING max(coalesce(updated_at, evaluated_at, created_at)) < (now() - interval '${cutoff_hours} hours')), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;")
 
-          echo "Pruned stale gateway instances: ${node_count:-0} nodes, ${deleted_count:-0} rows (older than ${cutoff_hours}h)."
+          echo "Pruned stale gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (older than ${cutoff_hours}h)."
+
+          if [ -z "${MGMT_API_URL:-}" ] || [ -z "${ADMIN_USERNAME:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
+            echo "Management API credentials not available; skipping OpenSearch cleanup."
+            exit 0
+          fi
+
+          auth_token="$(printf "%s:%s" "$ADMIN_USERNAME" "$ADMIN_PASSWORD" | base64 | tr -d '\n')"
+          instances="$(curl -fsS -H "Authorization: Basic $auth_token" -H "Accept: application/json" \
+            "${MGMT_API_URL}/organizations/${GRAVITEE_ORG}/environments/${GRAVITEE_ENV}/instances" || true)"
+
+          if [ -z "$instances" ]; then
+            echo "No instance data returned; skipping OpenSearch cleanup."
+            exit 0
+          fi
+
+          stale_ids="$(printf "%s" "$instances" | jq -r --argjson cutoff "$cutoff_ms" \
+            '.content[] | select((.last_heartbeat_at // 0) > 0 and .last_heartbeat_at < $cutoff) | .id')"
+
+          if [ -z "$stale_ids" ]; then
+            echo "No stale instances found (older than ${cutoff_hours}h) in Management API."
+            exit 0
+          fi
+
+          for gateway_id in $stale_ids; do
+            if [ -n "$gateway_id" ]; then
+              curl -fsS -H "Content-Type: application/json" -X POST \
+                "${OPENSEARCH_URL}/gravitee-monitor-*/_delete_by_query" \
+                -d "{\"query\":{\"term\":{\"gateway\":\"${gateway_id}\"}}}" >/dev/null || true
+              echo "Pruned OpenSearch monitor data for gateway ${gateway_id}."
+            fi
+          done
