@@ -578,6 +578,8 @@ spec:
           value: "noreply@k8s-api-gateway.local"
         - name: EMAIL_SUBJECT
           value: "[Gravitee.io] %s"
+        - name: GRAVITEE_LOG_LEVEL
+          value: "DEBUG"
         - name: GRAVITEE_LICENSE_KEY
           valueFrom:
             secretKeyRef:
