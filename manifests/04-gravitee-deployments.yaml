@@ -2252,3 +2252,71 @@ spec:
               echo "  GITHUB_SERVER_URL = ${GITHUB_SERVER_URL:-}"
 
               echo "✅ Gravitee GitHub configuration complete."
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gravitee-gateway-instance-prune
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    linkerd.io/inject: "disabled"
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      annotations:
+        linkerd.io/inject: "disabled"
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-pre-populate-only: "true"
+        vault.hashicorp.com/role: "gravitee"
+        vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
+        vault.hashicorp.com/agent-inject-template-db-creds: |
+          {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
+          export YUGABYTE_USER="gravitee_app"
+          export YUGABYTE_PASSWORD="{{ .Data.password }}"
+          {{- end }}
+    spec:
+      serviceAccountName: gravitee
+      restartPolicy: OnFailure
+      containers:
+      - name: prune
+        image: alpine:3.20
+        env:
+        - name: YUGABYTE_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: YUGABYTE_PORT
+          value: "5433"
+        - name: YUGABYTE_DATABASE
+          value: "gravitee"
+        - name: STALE_NODE_HOURS
+          value: "24"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          apk add --no-cache postgresql15-client >/dev/null
+
+          if [ -f "/vault/secrets/db-creds" ]; then
+            . /vault/secrets/db-creds
+          fi
+          if [ -z "${YUGABYTE_USER:-}" ] || [ -z "${YUGABYTE_PASSWORD:-}" ]; then
+            echo "Database credentials not available from Vault."
+            exit 1
+          fi
+          if ! printf "%s" "${STALE_NODE_HOURS}" | grep -Eq '^[0-9]+$'; then
+            echo "STALE_NODE_HOURS must be an integer."
+            exit 1
+          fi
+
+          cutoff_hours="${STALE_NODE_HOURS}"
+
+          node_count=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc \
+            "SELECT count(*) FROM (SELECT node_id FROM gravitee.node_monitoring GROUP BY node_id HAVING max(coalesce(updated_at, evaluated_at, created_at)) < (now() - interval '${cutoff_hours} hours')) AS stale_nodes;")
+
+          deleted_count=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc \
+            "WITH stale AS (SELECT node_id FROM gravitee.node_monitoring GROUP BY node_id HAVING max(coalesce(updated_at, evaluated_at, created_at)) < (now() - interval '${cutoff_hours} hours')), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;")
+
+          echo "Pruned stale gateway instances: ${node_count:-0} nodes, ${deleted_count:-0} rows (older than ${cutoff_hours}h)."

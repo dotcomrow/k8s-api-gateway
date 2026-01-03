@@ -550,6 +550,18 @@ data:
             return None
         return data.get("status", {}).get("id")
 
+    def deploy_api(api_id, label="healthcheck-sync"):
+        if not gravitee_enabled():
+            return
+        path = f"/v2/organizations/{GRAVITEE_ORG}/environments/{GRAVITEE_ENV}/apis/{api_id}/deployments"
+        payload = {"deploymentLabel": label} if label else {}
+        try:
+            with gravitee_request("POST", path, payload) as resp:
+                resp.read()
+            log(f"requested deployment for api {api_id}")
+        except urllib.error.HTTPError as exc:
+            log(f"deployment request error {exc.code} for api {api_id}: {exc.read().decode('utf-8', errors='replace')}")
+
     def ensure_healthchecks(ns, name, checks_by_group):
         if not checks_by_group:
             return
@@ -587,6 +599,7 @@ data:
             with gravitee_request("PUT", path, api) as resp:
                 resp.read()
             log(f"updated health checks for {ns}/{name}")
+            deploy_api(api_id)
         except urllib.error.HTTPError as exc:
             log(f"health check update error {exc.code} for {ns}/{name}: {exc.read().decode('utf-8', errors='replace')}")
 
