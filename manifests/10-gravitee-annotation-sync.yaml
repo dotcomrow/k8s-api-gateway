@@ -815,6 +815,9 @@ data:
         openapi_url = annotations.get("gravitee.io/definition-openapi-url")
         if not openapi_url:
             return None
+        openapi_fetch_cron = annotations.get("gravitee.io/definition-openapi-fetch-cron")
+        if not openapi_fetch_cron:
+            openapi_fetch_cron = "0 */15 * * * *"
         return {
             "swagger": {
                 "name": "openapi",
@@ -826,6 +829,7 @@ data:
                         "url": openapi_url,
                         "useSystemProxy": False,
                         "autoFetch": True,
+                        "fetchCron": openapi_fetch_cron,
                     },
                 },
             },
