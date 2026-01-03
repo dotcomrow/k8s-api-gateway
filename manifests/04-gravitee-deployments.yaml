@@ -2378,6 +2378,9 @@ spec:
                   curl -fsS -H "Content-Type: application/json" -X POST \
                     "${OPENSEARCH_URL}/gravitee-monitor-*/_delete_by_query?conflicts=proceed" \
                     -d "{\"query\":{\"term\":{\"gateway\":\"${gateway_id}\"}}}" >/dev/null || true
-                  echo "Pruned OpenSearch monitor data for gateway ${gateway_id}."
+                  curl -fsS -H "Content-Type: application/json" -X POST \
+                    "${OPENSEARCH_URL}/gravitee-health-*/_delete_by_query?conflicts=proceed" \
+                    -d "{\"query\":{\"term\":{\"gateway\":\"${gateway_id}\"}}}" >/dev/null || true
+                  echo "Pruned OpenSearch monitor/health data for gateway ${gateway_id}."
                 fi
               done
