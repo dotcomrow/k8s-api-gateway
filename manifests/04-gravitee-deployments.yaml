@@ -658,6 +658,7 @@ spec:
       labels:
         app: gravitee-gateway
       annotations:
+        configmap.reloader.stakater.com/reload: "gravitee-gateway-config"
         linkerd.io/inject: "disabled"
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "gravitee"
