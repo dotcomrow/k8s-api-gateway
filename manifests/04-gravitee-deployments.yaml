@@ -338,6 +338,10 @@ data:
     logging:
       level:
         io.gravitee: ${GRAVITEE_LOG_LEVEL:INFO}
+        io.gravitee.apim.core.documentation: ${GRAVITEE_DOCS_LOG_LEVEL:DEBUG}
+        io.gravitee.fetcher: ${GRAVITEE_FETCHER_LOG_LEVEL:DEBUG}
+        io.gravitee.rest.api.management.rest.resource.swagger: ${GRAVITEE_SWAGGER_LOG_LEVEL:DEBUG}
+        io.gravitee.rest.api.service: ${GRAVITEE_SERVICE_LOG_LEVEL:DEBUG}
         org.springframework: ${SPRING_LOG_LEVEL:WARN}
         org.eclipse.jetty: ${JETTY_LOG_LEVEL:WARN}
 ---
