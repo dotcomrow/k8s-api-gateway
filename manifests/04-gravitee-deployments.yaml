@@ -344,6 +344,57 @@ data:
         io.gravitee.rest.api.service: ${GRAVITEE_SERVICE_LOG_LEVEL:DEBUG}
         org.springframework: ${SPRING_LOG_LEVEL:WARN}
         org.eclipse.jetty: ${JETTY_LOG_LEVEL:WARN}
+  logback.xml: |-
+    <?xml version="1.0" encoding="UTF-8" ?>
+    <configuration>
+      <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+      </appender>
+
+      <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${gravitee.home}/logs/gravitee.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+          <fileNamePattern>${gravitee.home}/logs/gravitee_%d{yyyy-MM-dd}.log</fileNamePattern>
+          <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder>
+          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+      </appender>
+
+      <appender name="FILE-UPGRADERS" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${gravitee.home}/logs/gravitee-upgraders.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+          <fileNamePattern>${gravitee.home}/logs/gravitee-upgraders_%d{yyyy-MM}.log</fileNamePattern>
+          <maxHistory>12</maxHistory>
+        </rollingPolicy>
+        <encoder>
+          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+      </appender>
+
+      <logger name="io.gravitee.rest.api.service.impl.upgrade" level="INFO">
+        <appender-ref ref="FILE-UPGRADERS" />
+      </logger>
+
+      <!-- Targeted debug for fetch + swagger import diagnostics -->
+      <logger name="io.gravitee.apim.core.documentation" level="DEBUG" />
+      <logger name="io.gravitee.fetcher" level="DEBUG" />
+      <logger name="io.gravitee.fetcher.http" level="DEBUG" />
+      <logger name="io.gravitee.rest.api.management.rest.resource.swagger" level="DEBUG" />
+      <logger name="io.gravitee.rest.api.service.impl.FetcherServiceImpl" level="DEBUG" />
+      <logger name="io.gravitee.rest.api.service.impl.swagger" level="DEBUG" />
+
+      <logger name="io.gravitee" level="INFO" />
+      <logger name="org.eclipse.jetty" level="INFO" />
+
+      <root level="WARN">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+      </root>
+    </configuration>
 ---
 # Gravitee Management API Deployment
 apiVersion: apps/v1
@@ -641,6 +692,9 @@ spec:
         - name: gravitee-management-config
           mountPath: /opt/graviteeio-management-api/config/gravitee.yml
           subPath: gravitee.yml
+        - name: gravitee-management-config
+          mountPath: /opt/graviteeio-management-api/config/logback.xml
+          subPath: logback.xml
       volumes:
       - name: gravitee-management-config
         configMap:
