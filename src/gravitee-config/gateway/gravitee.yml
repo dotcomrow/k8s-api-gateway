@@ -78,6 +78,9 @@ services:
   alert:
     enabled: false
 
+  healthcheck:
+    enabled: true
+
   # APISIX route sync service
   apisix-sync:
     enabled: ${APISIX_SYNC_ENABLED:true}

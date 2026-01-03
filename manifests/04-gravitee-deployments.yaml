@@ -1427,11 +1427,13 @@ data:
       heartbeat:
         enabled: true
     
-      alert:
-        enabled: false
+    alert:
+      enabled: false
+    healthcheck:
+      enabled: true
     
-      # APISIX route sync service
-      apisix-sync:
+    # APISIX route sync service
+    apisix-sync:
         enabled: ${APISIX_SYNC_ENABLED:true}
         admin-url: ${APISIX_ADMIN_URL:http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180}
         admin-key: ${APISIX_ADMIN_KEY}
