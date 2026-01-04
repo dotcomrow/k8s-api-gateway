@@ -1092,7 +1092,7 @@ spec:
       serviceAccountName: gravitee
       containers:
       - name: gravitee-management-ui
-        image: graviteeio/apim-management-ui:4.6.0
+        image: graviteeio/apim-management-ui:4.9.10
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080

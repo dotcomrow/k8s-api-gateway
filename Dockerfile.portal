@@ -1,5 +1,5 @@
 # Gravitee.io Portal UI with Custom Configuration
-FROM graviteeio/apim-portal-ui:4.6.0
+FROM graviteeio/apim-portal-ui:4.9.10
 
 # Switch to root for package installations
 USER root

@@ -1,5 +1,5 @@
 # Gravitee.io Management API with YugabyteDB Support
-FROM graviteeio/apim-management-api:4.6.0
+FROM graviteeio/apim-management-api:4.9.10
 
 # Switch to root for package installations
 USER root

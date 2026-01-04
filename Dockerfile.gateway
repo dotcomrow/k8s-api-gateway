@@ -1,5 +1,5 @@
 # Gravitee.io Gateway with Enhanced Monitoring
-FROM graviteeio/apim-gateway:4.6.0
+FROM graviteeio/apim-gateway:4.9.10
 
 ARG OTEL_AGENT_VERSION=1.33.0
 
