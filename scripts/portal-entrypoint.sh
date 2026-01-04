@@ -52,7 +52,7 @@ if [ -d "$TEMPLATE_DIR" ]; then
   done
 fi
 
-for conf in /etc/nginx/conf.d/default-next*.conf; do
+for conf in /etc/nginx/conf.d/default*.conf; do
   if [ -f "$conf" ]; then
     render_nginx_conf "$conf"
   fi
