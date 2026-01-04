@@ -52,8 +52,10 @@ if [ -d "$TEMPLATE_DIR" ]; then
   done
 fi
 
-if [ -f /etc/nginx/conf.d/default-next.conf ]; then
-  render_nginx_conf /etc/nginx/conf.d/default-next.conf
-fi
+for conf in /etc/nginx/conf.d/default-next*.conf; do
+  if [ -f "$conf" ]; then
+    render_nginx_conf "$conf"
+  fi
+done
 
 exec nginx -g 'daemon off;'
