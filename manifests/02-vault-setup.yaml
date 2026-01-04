@@ -97,22 +97,24 @@ spec:
           export VAULT_TOKEN=$(cat /vault-token/VAULT_TOKEN)
           echo "🔓 Logging into Vault..."
           
-          # Generate secure APISIX admin key
-          APISIX_ADMIN_KEY=$(openssl rand -hex 32)
-          echo "🔑 Generated APISIX admin key"
-          
-          # Store APISIX admin key in Vault
-          vault kv put secret/apisix/admin key="$APISIX_ADMIN_KEY"
-          echo "✅ APISIX admin key stored in Vault at secret/apisix/admin"
-          
-          # Verify the secret was stored
-          vault kv get secret/apisix/admin
-          echo "✅ APISIX admin key stored in Vault"
+          # Generate APISIX admin key if missing
+          if ! vault kv get secret/apisix/admin >/dev/null 2>&1; then
+            APISIX_ADMIN_KEY=$(openssl rand -hex 32)
+            echo "🔑 Generated APISIX admin key"
+            vault kv put secret/apisix/admin key="$APISIX_ADMIN_KEY"
+            echo "✅ APISIX admin key stored in Vault at secret/apisix/admin"
+          else
+            echo "ℹ️ APISIX admin key already exists in Vault."
+          fi
 
-          # Generate JWT secret for Gravitee
-          JWT_SECRET=$(openssl rand -base64 64)
-          vault kv put secret/gravitee/jwt secret="$JWT_SECRET"
-          echo "🔐 JWT secret stored in Vault"
+          # Generate JWT secret for Gravitee if missing
+          if ! vault kv get secret/gravitee/jwt >/dev/null 2>&1; then
+            JWT_SECRET=$(openssl rand -base64 64)
+            vault kv put secret/gravitee/jwt secret="$JWT_SECRET"
+            echo "🔐 JWT secret stored in Vault"
+          else
+            echo "ℹ️ JWT secret already exists in Vault."
+          fi
 
           # Seed API properties encryption secret if missing
           if ! vault kv get secret/gravitee/api-properties-encryption >/dev/null 2>&1; then

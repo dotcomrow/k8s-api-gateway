@@ -701,10 +701,21 @@ spec:
             . /vault/secrets/jwt
             echo "✅ JWT secret loaded"
           fi
+          if [ ! -f /vault/secrets/api-properties-encryption ]; then
+            echo "⏳ Waiting for API properties encryption secret..."
+            i=0
+            while [ ! -f /vault/secrets/api-properties-encryption ] && [ $i -lt 60 ]; do
+              sleep 2
+              i=$((i+1))
+            done
+          fi
           if [ -f /vault/secrets/api-properties-encryption ]; then
             # shellcheck disable=SC1091
             . /vault/secrets/api-properties-encryption
             echo "✅ API properties encryption secret loaded"
+          else
+            echo "❌ API properties encryption secret missing; cannot start"
+            exit 1
           fi
           if [ -f /vault/secrets/apisix ]; then
             # shellcheck disable=SC1091
@@ -937,10 +948,21 @@ spec:
             . /vault/secrets/db-creds
             echo "✅ Database credentials loaded"
           fi
+          if [ ! -f /vault/secrets/api-properties-encryption ]; then
+            echo "⏳ Waiting for API properties encryption secret..."
+            i=0
+            while [ ! -f /vault/secrets/api-properties-encryption ] && [ $i -lt 60 ]; do
+              sleep 2
+              i=$((i+1))
+            done
+          fi
           if [ -f /vault/secrets/api-properties-encryption ]; then
             # shellcheck disable=SC1091
             . /vault/secrets/api-properties-encryption
             echo "✅ API properties encryption secret loaded"
+          else
+            echo "❌ API properties encryption secret missing; cannot start"
+            exit 1
           fi
           if [ -f /vault/secrets/apisix ]; then
             # shellcheck disable=SC1091
