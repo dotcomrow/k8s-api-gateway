@@ -33,6 +33,14 @@ render_nginx_conf() {
   rm -f "${conf}.rendered"
 }
 
+remove_upstream_defaults() {
+  for conf in /etc/nginx/conf.d/default*.conf; do
+    if [ -f "$conf" ] && [ "$conf" != "/etc/nginx/conf.d/default.conf" ] && [ -w "$conf" ]; then
+      rm -f "$conf"
+    fi
+  done
+}
+
 render_template() {
   tpl="$1"
   target="${tpl%.tpl}"
@@ -60,7 +68,9 @@ if [ -d "$TEMPLATE_DIR" ]; then
   done
 fi
 
-for conf in /etc/nginx/conf.d/default*.conf; do
+remove_upstream_defaults
+
+for conf in /etc/nginx/conf.d/*.conf; do
   if [ -f "$conf" ]; then
     render_nginx_conf "$conf"
   fi
