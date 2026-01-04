@@ -519,6 +519,15 @@ spec:
                 SUBS_APPNAME_COL_EXISTS=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
                   "SELECT 1 FROM information_schema.columns WHERE table_schema='gravitee' AND table_name='subscriptions' AND column_name='application_name'" 2>/dev/null | tr -d '[:space:]')
                 if [ "$SUBS_APPNAME_COL_EXISTS" = "1" ]; then
+                  CHANGESET_ID="4.7.0_02-add_application_name_to_subscription_table"
+                  CHANGESET_FILE="liquibase/changelogs/v4_7_0/02_add_application_name_to_subscription_table.yml"
+                  CHANGESET_LOGGED=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
+                    "SELECT 1 FROM gravitee.databasechangelog WHERE id='${CHANGESET_ID}' AND filename='${CHANGESET_FILE}'" 2>/dev/null | tr -d '[:space:]')
+                  if [ "$CHANGESET_LOGGED" != "1" ]; then
+                    echo "⚠️  subscriptions.application_name exists but changeset not logged; marking it as executed."
+                    PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 \
+                      -c "INSERT INTO gravitee.databasechangelog (id, author, filename, dateexecuted, orderexecuted, exectype) VALUES ('${CHANGESET_ID}', 'GraviteeSource Team', '${CHANGESET_FILE}', now(), (SELECT COALESCE(MAX(orderexecuted), 0) + 1 FROM gravitee.databasechangelog), 'EXECUTED');"
+                  fi
                   NULL_APPNAME_COUNT=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
                     "SELECT count(*) FROM gravitee.subscriptions WHERE application_name IS NULL OR application_name = ''" 2>/dev/null | tr -d '[:space:]')
                   if [ "${NULL_APPNAME_COUNT:-0}" != "0" ]; then
