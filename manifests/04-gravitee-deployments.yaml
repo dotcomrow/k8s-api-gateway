@@ -406,6 +406,11 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: gravitee-management-api
@@ -609,7 +614,7 @@ spec:
         - name: MANAGEMENT_JDBC_URL
           value: "jdbc:postgresql://yb-tserver-service.yugabyte.svc.cluster.local:5433/gravitee?currentSchema=gravitee"
         - name: MANAGEMENT_JDBC_POOL_MAX_POOL_SIZE
-          value: "6"
+          value: "4"
         - name: MANAGEMENT_JDBC_POOL_MIN_IDLE
           value: "0"
         - name: MANAGEMENT_JDBC_POOL_CONNECTION_TIMEOUT
@@ -802,9 +807,9 @@ spec:
         - name: MANAGEMENT_JDBC_USERNAME
           value: "gravitee_app"
         - name: MANAGEMENT_JDBC_POOL_MAX_POOL_SIZE
-          value: "10"
+          value: "4"
         - name: MANAGEMENT_JDBC_POOL_MIN_IDLE
-          value: "2"
+          value: "0"
         - name: MANAGEMENT_JDBC_POOL_CONNECTION_TIMEOUT
           value: "30000"
         - name: MANAGEMENT_JDBC_POOL_IDLE_TIMEOUT
@@ -814,9 +819,9 @@ spec:
         - name: MANAGEMENT_JDBC_POOL_REGISTER_MBEANS
           value: "false"
         - name: RATELIMIT_JDBC_POOL_MAX_POOL_SIZE
-          value: "10"
+          value: "4"
         - name: RATELIMIT_JDBC_POOL_MIN_IDLE
-          value: "2"
+          value: "0"
         - name: RATELIMIT_JDBC_POOL_CONNECTION_TIMEOUT
           value: "30000"
         - name: RATELIMIT_JDBC_POOL_IDLE_TIMEOUT
