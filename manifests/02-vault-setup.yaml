@@ -47,13 +47,18 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "1"
-    argocd.argoproj.io/sync-options: Replace=true
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
     linkerd.io/inject: "disabled"
 spec:
+  selector:
+    matchLabels:
+      app: setup-apisix-db
   template:
     metadata:
       annotations:
         linkerd.io/inject: "disabled"
+      labels:
+        app: setup-apisix-db
     spec:
       serviceAccountName: default
       restartPolicy: OnFailure
