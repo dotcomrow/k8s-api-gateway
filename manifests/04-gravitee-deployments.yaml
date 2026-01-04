@@ -1764,7 +1764,7 @@ spec:
                     return 1
                   fi
 
-                  if ! ADMIN_BCRYPT_HASH=$(python3 -c "import bcrypt, os, sys; pw=os.environ.get('ADMIN_PASSWORD','').encode('utf-8');\nif not pw: sys.exit('ADMIN_PASSWORD is empty; cannot hash'); print(bcrypt.hashpw(pw, bcrypt.gensalt()).decode())"); then
+                  if ! ADMIN_BCRYPT_HASH=$(python3 -c 'import bcrypt, os, sys; pw=os.environ.get("ADMIN_PASSWORD",""); if not pw: sys.exit("ADMIN_PASSWORD is empty; cannot hash"); print(bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode())'); then
                     echo "❌ Failed to compute bcrypt hash locally."
                     return 1
                   fi
