@@ -510,6 +510,26 @@ spec:
                   echo "✅ Liquibase changelog and users table look consistent"
                 fi
 
+                echo "🔍 Checking for null application_name values in gravitee.subscriptions..."
+                SUBS_APPNAME_COL_EXISTS=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
+                  "SELECT 1 FROM information_schema.columns WHERE table_schema='gravitee' AND table_name='subscriptions' AND column_name='application_name'" 2>/dev/null | tr -d '[:space:]')
+                if [ "$SUBS_APPNAME_COL_EXISTS" = "1" ]; then
+                  NULL_APPNAME_COUNT=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -tAc \
+                    "SELECT count(*) FROM gravitee.subscriptions WHERE application_name IS NULL OR application_name = ''" 2>/dev/null | tr -d '[:space:]')
+                  if [ "${NULL_APPNAME_COUNT:-0}" != "0" ]; then
+                    echo "⚠️  Found ${NULL_APPNAME_COUNT} subscriptions with null application_name; backfilling..."
+                    PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 \
+                      -c "UPDATE gravitee.subscriptions s SET application_name = a.name FROM gravitee.applications a WHERE s.application_id = a.id AND (s.application_name IS NULL OR s.application_name = '');"
+                    PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U gravitee_app -d "$YUGABYTE_DATABASE" -v ON_ERROR_STOP=1 \
+                      -c "UPDATE gravitee.subscriptions SET application_name = application_id WHERE application_name IS NULL OR application_name = '';"
+                    echo "✅ Backfilled subscription application_name values"
+                  else
+                    echo "✅ No null application_name values found"
+                  fi
+                else
+                  echo "ℹ️  subscriptions.application_name column not present yet; skipping backfill"
+                fi
+
                 echo "✅ Database setup complete, Gravitee can start"
                 exit 0
               else
