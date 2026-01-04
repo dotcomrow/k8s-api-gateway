@@ -80,6 +80,12 @@ jwt:
   expire-after: ${JWT_EXPIRE_AFTER:604800}
   issuer: ${JWT_ISSUER:k8s-api-gateway}
 
+# API properties encryption
+api:
+  properties:
+    encryption:
+      secret: ${API_PROPERTIES_ENCRYPTION_SECRET}
+
 # CORS configuration
 http:
   cors:

@@ -206,6 +206,12 @@ data:
       expire-after: ${JWT_EXPIRE_AFTER:604800}
       issuer: ${JWT_ISSUER:k8s-api-gateway}
 
+    # API properties encryption
+    api:
+      properties:
+        encryption:
+          secret: ${API_PROPERTIES_ENCRYPTION_SECRET}
+
     # CORS configuration
     http:
       cors:
@@ -432,6 +438,11 @@ spec:
         vault.hashicorp.com/agent-inject-template-jwt: |
           {{- with secret "secret/gravitee/jwt" -}}
           export JWT_SECRET="{{ .Data.secret }}"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-api-properties-encryption: "secret/gravitee/api-properties-encryption"
+        vault.hashicorp.com/agent-inject-template-api-properties-encryption: |
+          {{- with secret "secret/gravitee/api-properties-encryption" -}}
+          export API_PROPERTIES_ENCRYPTION_SECRET="{{ .Data.secret }}"
           {{- end }}
         vault.hashicorp.com/agent-inject-secret-apisix: "secret/apisix/admin"
         vault.hashicorp.com/agent-inject-template-apisix: |
@@ -690,6 +701,11 @@ spec:
             . /vault/secrets/jwt
             echo "✅ JWT secret loaded"
           fi
+          if [ -f /vault/secrets/api-properties-encryption ]; then
+            # shellcheck disable=SC1091
+            . /vault/secrets/api-properties-encryption
+            echo "✅ API properties encryption secret loaded"
+          fi
           if [ -f /vault/secrets/apisix ]; then
             # shellcheck disable=SC1091
             . /vault/secrets/apisix
@@ -761,6 +777,11 @@ spec:
           {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
           export YUGABYTE_USER="gravitee_app"
           export YUGABYTE_PASSWORD="{{ .Data.password }}"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-api-properties-encryption: "secret/gravitee/api-properties-encryption"
+        vault.hashicorp.com/agent-inject-template-api-properties-encryption: |
+          {{- with secret "secret/gravitee/api-properties-encryption" -}}
+          export API_PROPERTIES_ENCRYPTION_SECRET="{{ .Data.secret }}"
           {{- end }}
         vault.hashicorp.com/agent-inject-secret-apisix: "secret/apisix/admin"
         vault.hashicorp.com/agent-inject-template-apisix: |
@@ -915,6 +936,11 @@ spec:
             # shellcheck disable=SC1091
             . /vault/secrets/db-creds
             echo "✅ Database credentials loaded"
+          fi
+          if [ -f /vault/secrets/api-properties-encryption ]; then
+            # shellcheck disable=SC1091
+            . /vault/secrets/api-properties-encryption
+            echo "✅ API properties encryption secret loaded"
           fi
           if [ -f /vault/secrets/apisix ]; then
             # shellcheck disable=SC1091
@@ -1622,6 +1648,9 @@ data:
     
     # API endpoints exposure  
     api:
+      properties:
+        encryption:
+          secret: ${API_PROPERTIES_ENCRYPTION_SECRET}
       # Health check endpoint
       health:
         enabled: true

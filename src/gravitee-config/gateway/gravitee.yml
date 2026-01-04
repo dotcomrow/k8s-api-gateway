@@ -183,6 +183,9 @@ reporters:
 
 # API endpoints exposure  
 api:
+  properties:
+    encryption:
+      secret: ${API_PROPERTIES_ENCRYPTION_SECRET}
   # Health check endpoint
   health:
     enabled: true

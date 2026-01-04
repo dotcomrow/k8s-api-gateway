@@ -113,6 +113,15 @@ spec:
           vault kv put secret/gravitee/jwt secret="$JWT_SECRET"
           echo "🔐 JWT secret stored in Vault"
 
+          # Seed API properties encryption secret if missing
+          if ! vault kv get secret/gravitee/api-properties-encryption >/dev/null 2>&1; then
+            API_PROPERTIES_SECRET=$(openssl rand -hex 32)
+            vault kv put secret/gravitee/api-properties-encryption secret="$API_PROPERTIES_SECRET"
+            echo "🔐 API properties encryption secret stored in Vault"
+          else
+            echo "ℹ️ API properties encryption secret already exists in Vault."
+          fi
+
           # Seed Gravitee admin credentials if missing
           if ! vault kv get secret/gravitee/admin-credentials >/dev/null 2>&1; then
             ADMIN_USER="adm-$(openssl rand -hex 6)"
@@ -137,7 +146,12 @@ spec:
           path "secret/data/gravitee/jwt" {
             capabilities = ["read"]
           }
-          
+
+          # Allow reading API properties encryption secret
+          path "secret/data/gravitee/api-properties-encryption" {
+            capabilities = ["read"]
+          }
+
           # Allow reading APISIX admin key
           path "secret/data/apisix/admin" {
             capabilities = ["read"]

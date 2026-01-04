@@ -13,6 +13,14 @@ if [ -d /vault/secrets ]; then
   done
 fi
 
+render_nginx_conf() {
+  conf="$1"
+  HTTP_PORT="${HTTP_PORT:-8080}"
+  export HTTP_PORT
+  envsubst '$HTTP_PORT' < "$conf" > "${conf}.rendered"
+  mv "${conf}.rendered" "$conf"
+}
+
 render_template() {
   tpl="$1"
   target="${tpl%.tpl}"
@@ -38,6 +46,10 @@ if [ -d "$TEMPLATE_DIR" ]; then
   find "$TEMPLATE_DIR" -name '*.tpl' -print0 | while IFS= read -r -d '' tpl; do
     render_template "$tpl"
   done
+fi
+
+if [ -f /etc/nginx/conf.d/default-next.conf ]; then
+  render_nginx_conf /etc/nginx/conf.d/default-next.conf
 fi
 
 exec nginx -g 'daemon off;'
