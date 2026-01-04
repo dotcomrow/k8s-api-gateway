@@ -15,6 +15,13 @@ fi
 
 render_nginx_conf() {
   conf="$1"
+  if [ ! -w "$conf" ]; then
+    echo "ℹ️ Skipping $conf (not writable)"
+    return 0
+  fi
+  if ! grep -q '\$[A-Za-z_][A-Za-z0-9_]*' "$conf"; then
+    return 0
+  fi
   HTTP_PORT="${HTTP_PORT:-8080}"
   HTTPS_PORT="${HTTPS_PORT:-8443}"
   SERVER_NAME="${SERVER_NAME:-_}"
@@ -22,7 +29,8 @@ render_nginx_conf() {
   PORTAL_BASE_HREF="${PORTAL_BASE_HREF:-/}"
   export HTTP_PORT HTTPS_PORT SERVER_NAME ALLOWED_FRAME_ANCESTOR_URLS PORTAL_BASE_HREF
   envsubst '$HTTP_PORT $HTTPS_PORT $SERVER_NAME $ALLOWED_FRAME_ANCESTOR_URLS $PORTAL_BASE_HREF' < "$conf" > "${conf}.rendered"
-  mv "${conf}.rendered" "$conf"
+  cat "${conf}.rendered" > "$conf"
+  rm -f "${conf}.rendered"
 }
 
 render_template() {
