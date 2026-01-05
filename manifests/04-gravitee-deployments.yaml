@@ -2407,7 +2407,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "4"
     linkerd.io/inject: "disabled"
 spec:
-  schedule: "0 * * * *"
+  schedule: "*/15 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
@@ -2447,26 +2447,12 @@ spec:
               value: "5433"
             - name: YUGABYTE_DATABASE
               value: "gravitee"
-            - name: MGMT_API_URL
-              value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management"
-            - name: ADMIN_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: gravitee-admin-credentials
-                  key: username
-            - name: ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: gravitee-admin-credentials
-                  key: password
-            - name: GRAVITEE_ORG
-              value: "DEFAULT"
-            - name: GRAVITEE_ENV
-              value: "DEFAULT"
             - name: OPENSEARCH_URL
               value: "http://gravitee-opensearch.k8s-api-gateway.svc.cluster.local:9200"
             - name: STALE_NODE_HOURS
               value: "24"
+            - name: STOPPED_NODE_MINUTES
+              value: "30"
             command: ["/bin/sh", "-c"]
             args:
             - |
@@ -2484,37 +2470,43 @@ spec:
                 echo "STALE_NODE_HOURS must be an integer."
                 exit 1
               fi
+              if ! printf "%s" "${STOPPED_NODE_MINUTES}" | grep -Eq '^[0-9]+$'; then
+                echo "STOPPED_NODE_MINUTES must be an integer."
+                exit 1
+              fi
 
               cutoff_hours="${STALE_NODE_HOURS}"
-              cutoff_ms=$(( $(date +%s) * 1000 - cutoff_hours * 3600 * 1000 ))
+              stopped_minutes="${STOPPED_NODE_MINUTES}"
 
-              node_count=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc \
-                "SELECT count(*) FROM (SELECT node_id FROM gravitee.node_monitoring GROUP BY node_id HAVING max(coalesce(updated_at, evaluated_at, created_at)) < (now() - interval '${cutoff_hours} hours')) AS stale_nodes;")
+              stale_cte="WITH latest_info AS (
+                SELECT DISTINCT ON (node_id) node_id,
+                       coalesce(updated_at, evaluated_at, created_at) AS info_ts,
+                       (payload::jsonb ->> 'status') AS status
+                  FROM gravitee.node_monitoring
+                 WHERE type = 'NODE_INFOS'
+                 ORDER BY node_id, coalesce(updated_at, evaluated_at, created_at) DESC
+              ),
+              last_seen AS (
+                SELECT node_id, max(coalesce(updated_at, evaluated_at, created_at)) AS last_seen
+                  FROM gravitee.node_monitoring
+                 GROUP BY node_id
+              )"
+              stale_select="SELECT ls.node_id FROM last_seen ls LEFT JOIN latest_info li USING (node_id) WHERE (li.status = 'STOPPED' AND li.info_ts < (now() - interval '${stopped_minutes} minutes')) OR (ls.last_seen < (now() - interval '${cutoff_hours} hours'))"
 
-              deleted_count=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc \
-                "WITH stale AS (SELECT node_id FROM gravitee.node_monitoring GROUP BY node_id HAVING max(coalesce(updated_at, evaluated_at, created_at)) < (now() - interval '${cutoff_hours} hours')), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;")
-
-              echo "Pruned stale gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (older than ${cutoff_hours}h)."
-
-              if [ -z "${MGMT_API_URL:-}" ] || [ -z "${ADMIN_USERNAME:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
-                echo "Management API credentials not available; skipping OpenSearch cleanup."
+              stale_ids=$(printf "%s\n%s;\n" "$stale_cte" "$stale_select" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
+              node_count=$(printf "%s\n" "$stale_ids" | sed '/^$/d' | wc -l | tr -d ' ')
+              if [ "${node_count:-0}" = "0" ]; then
+                echo "No stale or stopped gateway instances found."
                 exit 0
               fi
 
-              auth_token="$(printf "%s:%s" "$ADMIN_USERNAME" "$ADMIN_PASSWORD" | base64 | tr -d '\n')"
-              instances="$(curl -fsS -H "Authorization: Basic $auth_token" -H "Accept: application/json" \
-                "${MGMT_API_URL}/organizations/${GRAVITEE_ORG}/environments/${GRAVITEE_ENV}/instances" || true)"
+              delete_sql="${stale_cte}, stale AS (${stale_select}), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;"
+              deleted_count=$(printf "%s\n" "$delete_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
 
-              if [ -z "$instances" ]; then
-                echo "No instance data returned; skipping OpenSearch cleanup."
-                exit 0
-              fi
+              echo "Pruned gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (stopped>${stopped_minutes}m or stale>${cutoff_hours}h)."
 
-              stale_ids="$(printf "%s" "$instances" | jq -r --argjson cutoff "$cutoff_ms" \
-                '.content[] | select((.last_heartbeat_at // 0) > 0 and .last_heartbeat_at < $cutoff) | .id')"
-
-              if [ -z "$stale_ids" ]; then
-                echo "No stale instances found (older than ${cutoff_hours}h) in Management API."
+              if [ -z "${OPENSEARCH_URL:-}" ]; then
+                echo "OPENSEARCH_URL not set; skipping OpenSearch cleanup."
                 exit 0
               fi
 
@@ -2529,3 +2521,124 @@ spec:
                   echo "Pruned OpenSearch monitor/health data for gateway ${gateway_id}."
                 fi
               done
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gravitee-gateway-instance-prune-now
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "5"
+    linkerd.io/inject: "disabled"
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      annotations:
+        linkerd.io/inject: "disabled"
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-pre-populate-only: "true"
+        vault.hashicorp.com/role: "gravitee"
+        vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
+        vault.hashicorp.com/agent-inject-template-db-creds: |
+          {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
+          export YUGABYTE_USER="gravitee_app"
+          export YUGABYTE_PASSWORD="{{ .Data.password }}"
+          {{- end }}
+    spec:
+      serviceAccountName: gravitee
+      restartPolicy: OnFailure
+      containers:
+      - name: prune
+        image: alpine:3.20
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        env:
+        - name: YUGABYTE_HOST
+          value: "yb-tserver-service.yugabyte.svc.cluster.local"
+        - name: YUGABYTE_PORT
+          value: "5433"
+        - name: YUGABYTE_DATABASE
+          value: "gravitee"
+        - name: OPENSEARCH_URL
+          value: "http://gravitee-opensearch.k8s-api-gateway.svc.cluster.local:9200"
+        - name: STALE_NODE_HOURS
+          value: "24"
+        - name: STOPPED_NODE_MINUTES
+          value: "30"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          apk add --no-cache postgresql15-client curl jq >/dev/null
+
+          if [ -f "/vault/secrets/db-creds" ]; then
+            . /vault/secrets/db-creds
+          fi
+          if [ -z "${YUGABYTE_USER:-}" ] || [ -z "${YUGABYTE_PASSWORD:-}" ]; then
+            echo "Database credentials not available from Vault."
+            exit 1
+          fi
+          if ! printf "%s" "${STALE_NODE_HOURS}" | grep -Eq '^[0-9]+$'; then
+            echo "STALE_NODE_HOURS must be an integer."
+            exit 1
+          fi
+          if ! printf "%s" "${STOPPED_NODE_MINUTES}" | grep -Eq '^[0-9]+$'; then
+            echo "STOPPED_NODE_MINUTES must be an integer."
+            exit 1
+          fi
+
+          cutoff_hours="${STALE_NODE_HOURS}"
+          stopped_minutes="${STOPPED_NODE_MINUTES}"
+
+          stale_cte="WITH latest_info AS (
+            SELECT DISTINCT ON (node_id) node_id,
+                   coalesce(updated_at, evaluated_at, created_at) AS info_ts,
+                   (payload::jsonb ->> 'status') AS status
+              FROM gravitee.node_monitoring
+             WHERE type = 'NODE_INFOS'
+             ORDER BY node_id, coalesce(updated_at, evaluated_at, created_at) DESC
+          ),
+          last_seen AS (
+            SELECT node_id, max(coalesce(updated_at, evaluated_at, created_at)) AS last_seen
+              FROM gravitee.node_monitoring
+             GROUP BY node_id
+          )"
+          stale_select="SELECT ls.node_id FROM last_seen ls LEFT JOIN latest_info li USING (node_id) WHERE (li.status = 'STOPPED' AND li.info_ts < (now() - interval '${stopped_minutes} minutes')) OR (ls.last_seen < (now() - interval '${cutoff_hours} hours'))"
+
+          stale_ids=$(printf "%s\n%s;\n" "$stale_cte" "$stale_select" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
+          node_count=$(printf "%s\n" "$stale_ids" | sed '/^$/d' | wc -l | tr -d ' ')
+          if [ "${node_count:-0}" = "0" ]; then
+            echo "No stale or stopped gateway instances found."
+            exit 0
+          fi
+
+          delete_sql="${stale_cte}, stale AS (${stale_select}), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;"
+          deleted_count=$(printf "%s\n" "$delete_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
+
+          echo "Pruned gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (stopped>${stopped_minutes}m or stale>${cutoff_hours}h)."
+
+          if [ -z "${OPENSEARCH_URL:-}" ]; then
+            echo "OPENSEARCH_URL not set; skipping OpenSearch cleanup."
+            exit 0
+          fi
+
+          for gateway_id in $stale_ids; do
+            if [ -n "$gateway_id" ]; then
+              curl -fsS -H "Content-Type: application/json" -X POST \
+                "${OPENSEARCH_URL}/gravitee-monitor-*/_delete_by_query?conflicts=proceed" \
+                -d "{\"query\":{\"term\":{\"gateway\":\"${gateway_id}\"}}}" >/dev/null || true
+              curl -fsS -H "Content-Type: application/json" -X POST \
+                "${OPENSEARCH_URL}/gravitee-health-*/_delete_by_query?conflicts=proceed" \
+                -d "{\"query\":{\"term\":{\"gateway\":\"${gateway_id}\"}}}" >/dev/null || true
+              echo "Pruned OpenSearch monitor/health data for gateway ${gateway_id}."
+            fi
+          done
