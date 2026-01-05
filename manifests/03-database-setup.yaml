@@ -149,6 +149,11 @@ spec:
           JWT_SECRET=$(openssl rand -base64 64)
           vault kv put secret/gravitee/jwt secret="$JWT_SECRET"
           echo "🔐 JWT secret stored in Vault"
+
+          # Generate API properties encryption secret for Gravitee
+          API_PROPERTIES_SECRET=$(openssl rand -hex 32)
+          vault kv put secret/gravitee/api-properties-encryption secret="$API_PROPERTIES_SECRET"
+          echo "🔐 API properties encryption secret stored in Vault"
           
           # Create Vault policy for Gravitee
           vault policy write gravitee - <<EOF
@@ -159,6 +164,11 @@ spec:
           
           # Allow reading JWT secret
           path "secret/data/gravitee/jwt" {
+            capabilities = ["read"]
+          }
+
+          # Allow reading API properties encryption secret
+          path "secret/data/gravitee/api-properties-encryption" {
             capabilities = ["read"]
           }
           
