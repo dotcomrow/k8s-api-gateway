@@ -11,7 +11,7 @@ data:
     http.port: 9200
     discovery.type: single-node
     plugins.security.disabled: true
-    compatibility.override_main_response_version: true
+    compatibility.override_main_response_version: false
 ---
 apiVersion: v1
 kind: Service
