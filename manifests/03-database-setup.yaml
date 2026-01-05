@@ -38,18 +38,11 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "2"
-    argocd.argoproj.io/sync-options: Replace=true
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
     linkerd.io/inject: "disabled"
-  labels:
-    app: setup-yugabyte-gravitee-db
 spec:
-  selector:
-    matchLabels:
-      app: setup-yugabyte-gravitee-db
   template:
     metadata:
-      labels:
-        app: setup-yugabyte-gravitee-db
       annotations:
         linkerd.io/inject: "disabled"
     spec:
