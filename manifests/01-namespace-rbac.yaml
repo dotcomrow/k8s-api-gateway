@@ -56,7 +56,7 @@ metadata:
   name: gravitee
 rules:
 - apiGroups: [""]
-  resources: ["services", "endpoints", "configmaps"]
+  resources: ["services", "endpoints", "configmaps", "pods"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["discovery.k8s.io"]
   resources: ["endpointslices"]
