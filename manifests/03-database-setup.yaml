@@ -141,10 +141,14 @@ spec:
             rotation_period="720h"
           
 
-          # Generate APISIX admin key and store in Vault
-          APISIX_ADMIN_KEY=$(openssl rand -hex 32)
-          vault kv put secret/apisix/admin key="$APISIX_ADMIN_KEY"
-          echo "🔐 APISIX admin key stored in Vault"
+          # Generate APISIX admin key if missing (avoid rotating on every deploy)
+          if ! vault kv get secret/apisix/admin >/dev/null 2>&1; then
+            APISIX_ADMIN_KEY=$(openssl rand -hex 32)
+            vault kv put secret/apisix/admin key="$APISIX_ADMIN_KEY"
+            echo "🔐 APISIX admin key stored in Vault"
+          else
+            echo "✅ APISIX admin key already exists in Vault; leaving unchanged"
+          fi
 
           # Generate JWT secret for Gravitee
           JWT_SECRET=$(openssl rand -base64 64)

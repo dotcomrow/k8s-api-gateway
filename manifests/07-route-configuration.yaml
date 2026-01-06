@@ -24,12 +24,26 @@ data:
       fi
 
       echo "🔧 Configuring APISIX routes for ${label}..."
-      until curl -f -s "${admin_url}/apisix/admin/routes" -H "X-API-KEY: ${admin_key}" > /dev/null 2>&1; do
+      retry_count=0
+      max_retries=60
+      while true; do
+        status=$(curl -s -o /dev/null -w "%{http_code}" "${admin_url}/apisix/admin/routes" -H "X-API-KEY: ${admin_key}" || true)
+        if [ "$status" = "200" ]; then
+          echo "✅ ${label} APISIX Admin API is ready"
+          break
+        fi
+        if [ "$status" = "401" ] || [ "$status" = "403" ]; then
+          echo "❌ ${label} APISIX Admin API rejected the admin key (status ${status})."
+          return 1
+        fi
+        retry_count=$((retry_count + 1))
+        if [ "$retry_count" -ge "$max_retries" ]; then
+          echo "❌ ${label} APISIX Admin API not ready after ${max_retries} attempts (last status ${status})."
+          return 1
+        fi
         echo "⏳ Waiting for ${label} APISIX Admin API..."
         sleep 5
       done
-
-      echo "✅ ${label} APISIX Admin API is ready"
 
       if [ "${include_gateway}" = "true" ]; then
         echo "Configuring OpenTelemetry global rule on ${label}..."
