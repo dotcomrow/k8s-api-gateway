@@ -2508,14 +2508,36 @@ spec:
               stale_ids=$(printf "%s\n%s;\n" "$stale_cte" "$stale_select" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
               node_count=$(printf "%s\n" "$stale_ids" | sed '/^$/d' | wc -l | tr -d ' ')
               if [ "${node_count:-0}" = "0" ]; then
-                echo "No stale or stopped gateway instances found."
-                exit 0
+                echo "No stale or stopped gateway instances found in node monitoring."
+              else
+                delete_sql="${stale_cte}, stale AS (${stale_select}), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;"
+                deleted_count=$(printf "%s\n" "$delete_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
+                echo "Pruned gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (stopped>${stopped_minutes}m or stale>${cutoff_label})."
               fi
 
-              delete_sql="${stale_cte}, stale AS (${stale_select}), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;"
-              deleted_count=$(printf "%s\n" "$delete_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
-
-              echo "Pruned gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (stopped>${stopped_minutes}m or stale>${cutoff_label})."
+              events_sql="${stale_cte}, stale AS (${stale_select}), stale_events AS (
+                SELECT e.id
+                  FROM gravitee.events e
+                 WHERE e.type = 'GATEWAY_STARTED'
+                   AND (e.payload::jsonb->>'id') IS NOT NULL
+                   AND (
+                     (e.payload::jsonb->>'id') IN (SELECT node_id FROM stale)
+                     OR (
+                       e.created_at < (now() - interval '${cutoff_interval}')
+                       AND NOT EXISTS (
+                         SELECT 1 FROM gravitee.node_monitoring nm
+                          WHERE nm.node_id = (e.payload::jsonb->>'id')
+                       )
+                     )
+                   )
+              ), deleted_events AS (
+                DELETE FROM gravitee.events
+                 WHERE id IN (SELECT id FROM stale_events)
+                 RETURNING 1
+              )
+              SELECT count(*) FROM deleted_events;"
+              events_deleted_count=$(printf "%s\n" "$events_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
+              echo "Pruned gateway events: ${events_deleted_count:-0} rows (stale>${cutoff_label} or missing monitoring)."
 
               if [ -z "${OPENSEARCH_URL:-}" ]; then
                 echo "OPENSEARCH_URL not set; skipping OpenSearch cleanup."
@@ -2641,14 +2663,36 @@ spec:
           stale_ids=$(printf "%s\n%s;\n" "$stale_cte" "$stale_select" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
           node_count=$(printf "%s\n" "$stale_ids" | sed '/^$/d' | wc -l | tr -d ' ')
           if [ "${node_count:-0}" = "0" ]; then
-            echo "No stale or stopped gateway instances found."
-            exit 0
+            echo "No stale or stopped gateway instances found in node monitoring."
+          else
+            delete_sql="${stale_cte}, stale AS (${stale_select}), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;"
+            deleted_count=$(printf "%s\n" "$delete_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
+            echo "Pruned gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (stopped>${stopped_minutes}m or stale>${cutoff_label})."
           fi
 
-          delete_sql="${stale_cte}, stale AS (${stale_select}), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;"
-          deleted_count=$(printf "%s\n" "$delete_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
-
-          echo "Pruned gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (stopped>${stopped_minutes}m or stale>${cutoff_label})."
+          events_sql="${stale_cte}, stale AS (${stale_select}), stale_events AS (
+            SELECT e.id
+              FROM gravitee.events e
+             WHERE e.type = 'GATEWAY_STARTED'
+               AND (e.payload::jsonb->>'id') IS NOT NULL
+               AND (
+                 (e.payload::jsonb->>'id') IN (SELECT node_id FROM stale)
+                 OR (
+                   e.created_at < (now() - interval '${cutoff_interval}')
+                   AND NOT EXISTS (
+                     SELECT 1 FROM gravitee.node_monitoring nm
+                      WHERE nm.node_id = (e.payload::jsonb->>'id')
+                   )
+                 )
+               )
+          ), deleted_events AS (
+            DELETE FROM gravitee.events
+             WHERE id IN (SELECT id FROM stale_events)
+             RETURNING 1
+          )
+          SELECT count(*) FROM deleted_events;"
+          events_deleted_count=$(printf "%s\n" "$events_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
+          echo "Pruned gateway events: ${events_deleted_count:-0} rows (stale>${cutoff_label} or missing monitoring)."
 
           if [ -z "${OPENSEARCH_URL:-}" ]; then
             echo "OPENSEARCH_URL not set; skipping OpenSearch cleanup."
