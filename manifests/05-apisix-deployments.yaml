@@ -74,6 +74,8 @@ data:
         real_ip_header: X-Forwarded-For
         real_ip_recursive: "on"
         real_ip_from:
+          - 127.0.0.1
+          - "unix:"
           - 10.0.0.0/8
           - 172.16.0.0/12
           - 192.168.0.0/16
