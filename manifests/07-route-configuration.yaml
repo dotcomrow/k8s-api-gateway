@@ -92,6 +92,12 @@ data:
                 "header_name": "x-request-id",
                 "include_in_response": true
               },
+              "serverless-pre-function": {
+                "phase": "rewrite",
+                "functions": [
+                  "local xff = ngx.var.http_x_forwarded_for; local xri = ngx.var.http_x_real_ip; if not xff or xff == '' then if xri and xri ~= '' then ngx.req.set_header(\"X-Forwarded-For\", xri) else ngx.req.set_header(\"X-Forwarded-For\", ngx.var.remote_addr) end else ngx.req.set_header(\"X-Forwarded-For\", xff) end"
+                ]
+              },
               "real-ip": {
                 "source": "X-Forwarded-For",
                 "recursive": true,
@@ -108,7 +114,7 @@ data:
               "proxy-rewrite": {
                 "regex_uri": ["^/gateway(.*)", "$1"],
                 "append_headers": {
-                  "X-Forwarded-For": "$remote_addr",
+                  "X-Forwarded-For": "$proxy_add_x_forwarded_for",
                   "X-Real-IP": "$remote_addr",
                   "X-Forwarded-Proto": "$scheme",
                   "X-Forwarded-Host": "$host"
