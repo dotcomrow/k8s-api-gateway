@@ -1595,6 +1595,11 @@ data:
           protocol: http/protobuf
           timeout: 10000
           compression: none
+
+    handlers:
+      request:
+        x-forward:
+          enabled: true
     
     # Security configuration
     security:

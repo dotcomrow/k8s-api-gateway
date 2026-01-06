@@ -108,6 +108,8 @@ data:
               "proxy-rewrite": {
                 "regex_uri": ["^/gateway(.*)", "$1"],
                 "append_headers": {
+                  "X-Forwarded-For": "$remote_addr",
+                  "X-Real-IP": "$remote_addr",
                   "X-Forwarded-Proto": "$scheme",
                   "X-Forwarded-Host": "$host"
                 }
