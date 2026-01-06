@@ -17,3 +17,22 @@ spec:
         resource:
           service.name: apisix-gateway-internal
           service.namespace: k8s-api-gateway
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixGlobalRule
+metadata:
+  name: real-ip-global
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  plugins:
+    - name: real-ip
+      enable: true
+      config:
+        source: X-Forwarded-For
+        recursive: true
+        trusted_addresses:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
