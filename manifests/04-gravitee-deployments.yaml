@@ -2449,6 +2449,8 @@ spec:
               value: "gravitee"
             - name: OPENSEARCH_URL
               value: "http://gravitee-opensearch.k8s-api-gateway.svc.cluster.local:9200"
+            - name: STALE_NODE_MINUTES
+              value: "60"
             - name: STALE_NODE_HOURS
               value: "24"
             - name: STOPPED_NODE_MINUTES
@@ -2466,16 +2468,26 @@ spec:
                 echo "Database credentials not available from Vault."
                 exit 1
               fi
-              if ! printf "%s" "${STALE_NODE_HOURS}" | grep -Eq '^[0-9]+$'; then
-                echo "STALE_NODE_HOURS must be an integer."
-                exit 1
-              fi
               if ! printf "%s" "${STOPPED_NODE_MINUTES}" | grep -Eq '^[0-9]+$'; then
                 echo "STOPPED_NODE_MINUTES must be an integer."
                 exit 1
               fi
 
-              cutoff_hours="${STALE_NODE_HOURS}"
+              if [ -n "${STALE_NODE_MINUTES:-}" ]; then
+                if ! printf "%s" "${STALE_NODE_MINUTES}" | grep -Eq '^[0-9]+$'; then
+                  echo "STALE_NODE_MINUTES must be an integer."
+                  exit 1
+                fi
+                cutoff_interval="${STALE_NODE_MINUTES} minutes"
+                cutoff_label="${STALE_NODE_MINUTES}m"
+              else
+                if ! printf "%s" "${STALE_NODE_HOURS}" | grep -Eq '^[0-9]+$'; then
+                  echo "STALE_NODE_HOURS must be an integer."
+                  exit 1
+                fi
+                cutoff_interval="${STALE_NODE_HOURS} hours"
+                cutoff_label="${STALE_NODE_HOURS}h"
+              fi
               stopped_minutes="${STOPPED_NODE_MINUTES}"
 
               stale_cte="WITH latest_info AS (
@@ -2491,7 +2503,7 @@ spec:
                   FROM gravitee.node_monitoring
                  GROUP BY node_id
               )"
-              stale_select="SELECT ls.node_id FROM last_seen ls LEFT JOIN latest_info li USING (node_id) WHERE (li.status = 'STOPPED' AND li.info_ts < (now() - interval '${stopped_minutes} minutes')) OR (ls.last_seen < (now() - interval '${cutoff_hours} hours'))"
+              stale_select="SELECT ls.node_id FROM last_seen ls LEFT JOIN latest_info li USING (node_id) WHERE (li.status = 'STOPPED' AND li.info_ts < (now() - interval '${stopped_minutes} minutes')) OR (ls.last_seen < (now() - interval '${cutoff_interval}'))"
 
               stale_ids=$(printf "%s\n%s;\n" "$stale_cte" "$stale_select" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
               node_count=$(printf "%s\n" "$stale_ids" | sed '/^$/d' | wc -l | tr -d ' ')
@@ -2503,7 +2515,7 @@ spec:
               delete_sql="${stale_cte}, stale AS (${stale_select}), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;"
               deleted_count=$(printf "%s\n" "$delete_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
 
-              echo "Pruned gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (stopped>${stopped_minutes}m or stale>${cutoff_hours}h)."
+              echo "Pruned gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (stopped>${stopped_minutes}m or stale>${cutoff_label})."
 
               if [ -z "${OPENSEARCH_URL:-}" ]; then
                 echo "OPENSEARCH_URL not set; skipping OpenSearch cleanup."
@@ -2570,6 +2582,8 @@ spec:
           value: "gravitee"
         - name: OPENSEARCH_URL
           value: "http://gravitee-opensearch.k8s-api-gateway.svc.cluster.local:9200"
+        - name: STALE_NODE_MINUTES
+          value: "60"
         - name: STALE_NODE_HOURS
           value: "24"
         - name: STOPPED_NODE_MINUTES
@@ -2587,16 +2601,26 @@ spec:
             echo "Database credentials not available from Vault."
             exit 1
           fi
-          if ! printf "%s" "${STALE_NODE_HOURS}" | grep -Eq '^[0-9]+$'; then
-            echo "STALE_NODE_HOURS must be an integer."
-            exit 1
-          fi
           if ! printf "%s" "${STOPPED_NODE_MINUTES}" | grep -Eq '^[0-9]+$'; then
             echo "STOPPED_NODE_MINUTES must be an integer."
             exit 1
           fi
 
-          cutoff_hours="${STALE_NODE_HOURS}"
+          if [ -n "${STALE_NODE_MINUTES:-}" ]; then
+            if ! printf "%s" "${STALE_NODE_MINUTES}" | grep -Eq '^[0-9]+$'; then
+              echo "STALE_NODE_MINUTES must be an integer."
+              exit 1
+            fi
+            cutoff_interval="${STALE_NODE_MINUTES} minutes"
+            cutoff_label="${STALE_NODE_MINUTES}m"
+          else
+            if ! printf "%s" "${STALE_NODE_HOURS}" | grep -Eq '^[0-9]+$'; then
+              echo "STALE_NODE_HOURS must be an integer."
+              exit 1
+            fi
+            cutoff_interval="${STALE_NODE_HOURS} hours"
+            cutoff_label="${STALE_NODE_HOURS}h"
+          fi
           stopped_minutes="${STOPPED_NODE_MINUTES}"
 
           stale_cte="WITH latest_info AS (
@@ -2612,7 +2636,7 @@ spec:
               FROM gravitee.node_monitoring
              GROUP BY node_id
           )"
-          stale_select="SELECT ls.node_id FROM last_seen ls LEFT JOIN latest_info li USING (node_id) WHERE (li.status = 'STOPPED' AND li.info_ts < (now() - interval '${stopped_minutes} minutes')) OR (ls.last_seen < (now() - interval '${cutoff_hours} hours'))"
+          stale_select="SELECT ls.node_id FROM last_seen ls LEFT JOIN latest_info li USING (node_id) WHERE (li.status = 'STOPPED' AND li.info_ts < (now() - interval '${stopped_minutes} minutes')) OR (ls.last_seen < (now() - interval '${cutoff_interval}'))"
 
           stale_ids=$(printf "%s\n%s;\n" "$stale_cte" "$stale_select" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
           node_count=$(printf "%s\n" "$stale_ids" | sed '/^$/d' | wc -l | tr -d ' ')
@@ -2624,7 +2648,7 @@ spec:
           delete_sql="${stale_cte}, stale AS (${stale_select}), deleted AS (DELETE FROM gravitee.node_monitoring WHERE node_id IN (SELECT node_id FROM stale) RETURNING 1) SELECT count(*) FROM deleted;"
           deleted_count=$(printf "%s\n" "$delete_sql" | PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -At)
 
-          echo "Pruned gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (stopped>${stopped_minutes}m or stale>${cutoff_hours}h)."
+          echo "Pruned gateway instances (DB): ${node_count:-0} nodes, ${deleted_count:-0} rows (stopped>${stopped_minutes}m or stale>${cutoff_label})."
 
           if [ -z "${OPENSEARCH_URL:-}" ]; then
             echo "OPENSEARCH_URL not set; skipping OpenSearch cleanup."
