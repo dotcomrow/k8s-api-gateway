@@ -449,6 +449,16 @@ spec:
           {{- with secret "secret/apisix/admin" -}}
           export APISIX_ADMIN_KEY="{{ .Data.data.key }}"
           {{- end }}
+        vault.hashicorp.com/agent-inject-secret-drools-token-exchange-client-id: "secret/data/keycloak-client-id-drools-kie-server-service"
+        vault.hashicorp.com/agent-inject-template-drools-token-exchange-client-id: |
+          {{- with secret "secret/data/keycloak-client-id-drools-kie-server-service" -}}
+          export DROOLS_TOKEN_EXCHANGE_CLIENT_ID="{{ .Data.data.value }}"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-drools-token-exchange-client-secret: "secret/data/keycloak-client-secret-drools-kie-server-service"
+        vault.hashicorp.com/agent-inject-template-drools-token-exchange-client-secret: |
+          {{- with secret "secret/data/keycloak-client-secret-drools-kie-server-service" -}}
+          export DROOLS_TOKEN_EXCHANGE_CLIENT_SECRET="{{ .Data.data.value }}"
+          {{- end }}
     spec:
       serviceAccountName: gravitee
       initContainers:
@@ -721,6 +731,16 @@ spec:
             # shellcheck disable=SC1091
             . /vault/secrets/apisix
             echo "✅ APISIX admin key loaded"
+          fi
+          if [ -f /vault/secrets/drools-token-exchange-client-id ]; then
+            # shellcheck disable=SC1091
+            . /vault/secrets/drools-token-exchange-client-id
+            echo "✅ Drools token exchange client id loaded"
+          fi
+          if [ -f /vault/secrets/drools-token-exchange-client-secret ]; then
+            # shellcheck disable=SC1091
+            . /vault/secrets/drools-token-exchange-client-secret
+            echo "✅ Drools token exchange client secret loaded"
           fi
 
           # Wire JDBC creds for Gravitee from Vault-provided env

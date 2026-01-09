@@ -181,6 +181,14 @@ spec:
           path "secret/data/apisix/admin" {
             capabilities = ["read"]
           }
+
+          # Allow reading Drools token exchange client credentials
+          path "secret/data/keycloak-client-id-drools-kie-server-service" {
+            capabilities = ["read"]
+          }
+          path "secret/data/keycloak-client-secret-drools-kie-server-service" {
+            capabilities = ["read"]
+          }
           EOF
           
           # Create Vault policy for APISIX
