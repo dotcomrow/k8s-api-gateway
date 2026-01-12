@@ -1451,7 +1451,7 @@ data:
         listen [::]:8080;
         server_name _;
 
-        add_header Content-Security-Policy "frame-ancestors 'self';" always;
+        add_header Content-Security-Policy "frame-ancestors 'self' https://gravitee-management.teleport.app.suncoast.systems https://teleport.app.suncoast.systems;" always;
         add_header X-XSS-Protection "1; mode=block";
         add_header X-Content-Type-Options nosniff;
         add_header X-Permitted-Cross-Domain-Policies none;
