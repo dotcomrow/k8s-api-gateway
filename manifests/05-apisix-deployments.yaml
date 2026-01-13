@@ -113,11 +113,10 @@ data:
           cas-auth: 10m
           ocsp-stapling: 10m
           mcp-session: 10m
-    nginx_config:
-      http:
-        proxy_buffer_size: 256k
-        proxy_buffers: "16 256k"
-        proxy_busy_buffers_size: 512k
+      http_configuration_snippet: |
+        proxy_buffer_size 256k;
+        proxy_buffers 16 256k;
+        proxy_busy_buffers_size 512k;
     plugin_attr:
       prometheus:
         export_uri: /apisix/prometheus/metrics
