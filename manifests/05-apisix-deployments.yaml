@@ -59,6 +59,10 @@ data:
           worker-events-stream: 10m
           tars-stream: 1m
           upstream-healthcheck-stream: 10m
+      http_configuration_snippet: |
+        proxy_buffer_size 256k;
+        proxy_buffers 16 256k;
+        proxy_busy_buffers_size 512k;
       http:
         enable_access_log: true
         access_log: logs/access.log
@@ -113,10 +117,6 @@ data:
           cas-auth: 10m
           ocsp-stapling: 10m
           mcp-session: 10m
-      http_configuration_snippet: |
-        proxy_buffer_size 256k;
-        proxy_buffers 16 256k;
-        proxy_busy_buffers_size 512k;
     plugin_attr:
       prometheus:
         export_uri: /apisix/prometheus/metrics
