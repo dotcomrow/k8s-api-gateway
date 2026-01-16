@@ -65,7 +65,7 @@ data:
                   "address": "otel-collector.observability.svc.cluster.local:4318"
                 },
                 "resource": {
-                  "service.name": "apisix-gateway-internal",
+                  "service.name": "gravitee-gateway",
                   "service.namespace": "k8s-api-gateway"
                 }
               }

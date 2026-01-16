@@ -132,7 +132,7 @@ data:
           address: otel-collector.observability.svc.cluster.local:4318
           request_timeout: 3
         resource:
-          service.name: apisix-gateway-internal
+          service.name: gravitee-gateway
           service.namespace: k8s-api-gateway
     deployment:
       role: traditional
