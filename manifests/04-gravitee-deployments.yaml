@@ -932,6 +932,8 @@ spec:
           value: "true"
         - name: APISIX_ADMIN_URL
           value: "http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180"
+        - name: GRAVITEE_LOG_LEVEL
+          value: "DEBUG"
         - name: JAVA_TOOL_OPTIONS
           value: "-javaagent:/opt/otel/opentelemetry-javaagent.jar"
         - name: OTEL_SERVICE_NAME
