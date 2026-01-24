@@ -427,6 +427,7 @@ metadata:
     teleport.dev/name: "gravitee-suite"
     teleport.dev/protocol: "http"
     teleport.dev/public-addr: "gravitee.teleport.app.suncoast.systems"
+    teleport.dev/description: "Gravitee API Suite (Portal + Management UI)"
     teleport.dev/labels: "environment=production,service=gravitee"
   labels:
     teleport.dev/enroll: "true"
