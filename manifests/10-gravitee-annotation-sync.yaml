@@ -1121,7 +1121,7 @@ spec:
             - name: DEFAULT_LIFECYCLE_STATE
               value: "PUBLISHED"
             - name: TAGS_MODE
-              value: "ignore"
+              value: "labels"
             - name: ARGOCD_APP_NAME
               value: "k8s-api-gateway"
             - name: ARGOCD_TRACKING_ENABLED
