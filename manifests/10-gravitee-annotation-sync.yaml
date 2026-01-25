@@ -311,6 +311,14 @@ data:
     AUTO_CREATE_GROUPS = os.environ.get("AUTO_CREATE_GROUPS", "true").strip().lower() == "true"
     AUTO_CREATE_CATEGORIES = os.environ.get("AUTO_CREATE_CATEGORIES", "true").strip().lower() == "true"
     ENABLE_NATIVE_CATEGORIES = os.environ.get("ENABLE_NATIVE_CATEGORIES", "false").strip().lower() == "true"
+    DEFAULT_JWT_ENABLED = os.environ.get("DEFAULT_JWT_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+    DEFAULT_JWT_FLOW_MODE = os.environ.get("DEFAULT_JWT_FLOW_MODE", "replace-empty").strip().lower()
+    DEFAULT_JWT_INTERNAL_ISSUER = os.environ.get("DEFAULT_JWT_INTERNAL_ISSUER", "").strip()
+    DEFAULT_JWT_EXTERNAL_ISSUER = os.environ.get("DEFAULT_JWT_EXTERNAL_ISSUER", "").strip()
+    DEFAULT_JWT_INTERNAL_JWKS = os.environ.get("DEFAULT_JWT_INTERNAL_JWKS", "").strip()
+    DEFAULT_JWT_EXTERNAL_JWKS = os.environ.get("DEFAULT_JWT_EXTERNAL_JWKS", "").strip()
+    DEFAULT_JWT_EMAIL_ALLOWLIST = os.environ.get("DEFAULT_JWT_EMAIL_ALLOWLIST", "").strip()
+    DEFAULT_JWT_DEV_ROLE = os.environ.get("DEFAULT_JWT_DEV_ROLE", "dev_access").strip()
 
     def log(msg):
         print(msg, flush=True)
@@ -699,6 +707,252 @@ data:
             return value
         return None
 
+    def normalized_jwks_url(issuer, explicit):
+        if explicit:
+            return explicit
+        if issuer:
+            return f"{issuer}/protocol/openid-connect/certs"
+        return ""
+
+    def build_jwks_resolver_script(internal_issuer, external_issuer, internal_jwks, external_jwks):
+        def q(value):
+            return json.dumps(value)
+        lines = [
+            "import io.gravitee.policy.groovy.PolicyResult.State",
+            "import groovy.json.JsonSlurper",
+            "import java.util.Base64",
+            "",
+            f"def internalIssuer = {q(internal_issuer)}",
+            f"def externalIssuer = {q(external_issuer)}",
+            f"def internalJwks = {q(internal_jwks)}",
+            f"def externalJwks = {q(external_jwks)}",
+            "",
+            "def authHeader = null",
+            "if (request.headers != null) {",
+            "  if (request.headers.containsKey(\"Authorization\")) {",
+            "    authHeader = request.headers.\"Authorization\"",
+            "  } else if (request.headers.containsKey(\"authorization\")) {",
+            "    authHeader = request.headers.\"authorization\"",
+            "  }",
+            "}",
+            "def authValue = authHeader instanceof List ? authHeader[0] : authHeader",
+            "if (authValue == null || !authValue.startsWith(\"Bearer \")) {",
+            "  result.state = State.FAILURE",
+            "  result.code = 401",
+            "  result.error = \"Missing bearer token\"",
+            "  return",
+            "}",
+            "def token = authValue.substring(7)",
+            "def parts = token.split(\"\\\\.\")",
+            "if (parts.length < 2) {",
+            "  result.state = State.FAILURE",
+            "  result.code = 401",
+            "  result.error = \"Invalid token\"",
+            "  return",
+            "}",
+            "def payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), \"UTF-8\")",
+            "def claims = new JsonSlurper().parseText(payloadJson)",
+            "def iss = claims != null && claims.iss != null ? claims.iss.toString() : null",
+            "if (iss == internalIssuer) {",
+            "  context.attributes[\"gravitee.attribute.jwt_jwks_url\"] = internalJwks",
+            "} else if (iss == externalIssuer) {",
+            "  context.attributes[\"gravitee.attribute.jwt_jwks_url\"] = externalJwks",
+            "} else {",
+            "  result.state = State.FAILURE",
+            "  result.code = 401",
+            "  result.error = \"Unsupported token issuer\"",
+            "  return",
+            "}",
+            "context.attributes[\"gravitee.attribute.jwt_issuer\"] = iss",
+        ]
+        return "\n".join(lines)
+
+    def build_roles_script(email_allowlist, dev_role):
+        def q(value):
+            return json.dumps(value)
+        allowlist = [email.strip().lower() for email in email_allowlist if email.strip()]
+        lines = [
+            "import io.gravitee.policy.groovy.PolicyResult.State",
+            "",
+            f"def allowlist = {q(allowlist)}",
+            f"def requiredRole = {q(dev_role)}",
+            "def claims = context.attributes[\"jwt.claims\"]",
+            "if (!(claims instanceof Map)) {",
+            "  result.state = State.FAILURE",
+            "  result.code = 401",
+            "  result.error = \"Missing JWT claims\"",
+            "  return",
+            "}",
+            "def email = null",
+            "for (String key : [\"email\", \"preferred_username\", \"upn\", \"sub\"]) {",
+            "  def value = claims.get(key)",
+            "  if (value != null) {",
+            "    email = value.toString().toLowerCase()",
+            "    break",
+            "  }",
+            "}",
+            "if (email != null) {",
+            "  context.attributes[\"gravitee.attribute.user.email\"] = email",
+            "}",
+            "def roles = []",
+            "def realmAccess = claims.get(\"realm_access\")",
+            "if (realmAccess instanceof Map && realmAccess.get(\"roles\") instanceof Collection) {",
+            "  roles.addAll(realmAccess.get(\"roles\"))",
+            "}",
+            "def resourceAccess = claims.get(\"resource_access\")",
+            "if (resourceAccess instanceof Map) {",
+            "  resourceAccess.values().each { entry ->",
+            "    if (entry instanceof Map && entry.get(\"roles\") instanceof Collection) {",
+            "      roles.addAll(entry.get(\"roles\"))",
+            "    }",
+            "  }",
+            "}",
+            "def flatRoles = claims.get(\"roles\")",
+            "if (flatRoles instanceof Collection) {",
+            "  roles.addAll(flatRoles)",
+            "}",
+            "if (allowlist != null && !allowlist.isEmpty()) {",
+            "  if (email == null || !allowlist.contains(email)) {",
+            "    result.state = State.FAILURE",
+            "    result.code = 403",
+            "    result.error = \"User not allowed\"",
+            "    return",
+            "  }",
+            "  if (requiredRole != null && requiredRole.trim()) {",
+            "    roles.add(requiredRole)",
+            "  }",
+            "}",
+            "def uniqueRoles = roles.findAll { it != null }.collect { it.toString() }.unique()",
+            "context.attributes[\"gravitee.attribute.user.roles\"] = uniqueRoles",
+        ]
+        return "\n".join(lines)
+
+    def build_jwks_resolver_step(internal_issuer, external_issuer, internal_jwks, external_jwks):
+        return {
+            "name": "resolve-jwks",
+            "policy": "groovy",
+            "enabled": True,
+            "configuration": {
+                "onRequestScript": build_jwks_resolver_script(internal_issuer, external_issuer, internal_jwks, external_jwks),
+            },
+        }
+
+    def build_roles_step(email_allowlist, dev_role):
+        return {
+            "name": "map-roles",
+            "policy": "groovy",
+            "enabled": True,
+            "configuration": {
+                "onRequestScript": build_roles_script(email_allowlist, dev_role),
+            },
+        }
+
+    def build_rbac_step(dev_role):
+        return {
+            "name": "rbac-dev",
+            "policy": "role-based-access-control",
+            "enabled": True,
+            "configuration": {
+                "roles": [dev_role],
+                "strict": True,
+            },
+        }
+
+    def update_jwt_step(step):
+        config = step.get("configuration")
+        if not isinstance(config, dict):
+            config = {}
+        config["publicKeyResolver"] = "JWKS_URL"
+        config["resolverParameter"] = "{#context.attributes['gravitee.attribute.jwt_jwks_url']}"
+        config.setdefault("signature", "RSA_RS256")
+        config.setdefault("extractClaims", True)
+        config.setdefault("userClaim", "preferred_username")
+        config.setdefault("propagateAuthHeader", True)
+        step["configuration"] = config
+
+    def augment_jwt_flows(flows, email_allowlist, dev_role, internal_issuer, external_issuer, internal_jwks, external_jwks):
+        if not flows:
+            return flows
+        for flow in flows:
+            request_steps = flow.get("request")
+            if not isinstance(request_steps, list):
+                continue
+            jwt_indices = [idx for idx, step in enumerate(request_steps) if isinstance(step, dict) and step.get("policy") == "jwt"]
+            if not jwt_indices:
+                continue
+            if not any(isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "resolve-jwks" for step in request_steps):
+                request_steps.insert(jwt_indices[0], build_jwks_resolver_step(internal_issuer, external_issuer, internal_jwks, external_jwks))
+                jwt_indices = [idx + 1 for idx in jwt_indices]
+            for step in request_steps:
+                if isinstance(step, dict) and step.get("policy") == "jwt":
+                    update_jwt_step(step)
+            roles_step_present = any(isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "map-roles" for step in request_steps)
+            if not roles_step_present:
+                request_steps.insert(max(jwt_indices) + 1, build_roles_step(email_allowlist, dev_role))
+                jwt_indices = [idx if idx <= max(jwt_indices) else idx + 1 for idx in jwt_indices]
+            allowlist_enabled = bool(email_allowlist)
+            rbac_present = any(isinstance(step, dict) and step.get("policy") == "role-based-access-control" and step.get("name") == "rbac-dev" for step in request_steps)
+            if allowlist_enabled and dev_role and not rbac_present:
+                insert_at = max(jwt_indices) + 1
+                for idx, step in enumerate(request_steps):
+                    if isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "map-roles":
+                        insert_at = idx + 1
+                        break
+                request_steps.insert(insert_at, build_rbac_step(dev_role))
+        return flows
+
+    def apply_default_jwt_flows(flows, svc_key):
+        if not DEFAULT_JWT_ENABLED:
+            return flows
+        internal_issuer = DEFAULT_JWT_INTERNAL_ISSUER
+        external_issuer = DEFAULT_JWT_EXTERNAL_ISSUER
+        internal_jwks = normalized_jwks_url(internal_issuer, DEFAULT_JWT_INTERNAL_JWKS)
+        external_jwks = normalized_jwks_url(external_issuer, DEFAULT_JWT_EXTERNAL_JWKS)
+        if not (internal_issuer and external_issuer and internal_jwks and external_jwks):
+            log(f"DEFAULT_JWT_ENABLED is true but issuer/JWKS URLs are missing; skipping for {svc_key}")
+            return flows
+        email_allowlist = parse_csv(DEFAULT_JWT_EMAIL_ALLOWLIST)
+        dev_role = DEFAULT_JWT_DEV_ROLE
+        flows_list = flows if isinstance(flows, list) else []
+        has_jwt = any(
+            isinstance(flow, dict) and any(isinstance(step, dict) and step.get("policy") == "jwt" for step in flow.get("request", []))
+            for flow in flows_list
+        )
+        if has_jwt:
+            return augment_jwt_flows(flows_list, email_allowlist, dev_role, internal_issuer, external_issuer, internal_jwks, external_jwks)
+        default_flow = {
+            "name": "default-jwt",
+            "enabled": True,
+            "request": [
+                build_jwks_resolver_step(internal_issuer, external_issuer, internal_jwks, external_jwks),
+                {
+                    "name": "validate-jwt",
+                    "policy": "jwt",
+                    "enabled": True,
+                    "configuration": {
+                        "signature": "RSA_RS256",
+                        "publicKeyResolver": "JWKS_URL",
+                        "resolverParameter": "{#context.attributes['gravitee.attribute.jwt_jwks_url']}",
+                        "extractClaims": True,
+                        "userClaim": "preferred_username",
+                        "propagateAuthHeader": True,
+                    },
+                },
+                build_roles_step(email_allowlist, dev_role),
+            ],
+        }
+        if email_allowlist and dev_role:
+            default_flow["request"].append(build_rbac_step(dev_role))
+        if DEFAULT_JWT_FLOW_MODE == "prepend":
+            return [default_flow] + flows_list
+        if DEFAULT_JWT_FLOW_MODE == "append":
+            return flows_list + [default_flow]
+        if DEFAULT_JWT_FLOW_MODE == "replace":
+            return [default_flow]
+        if DEFAULT_JWT_FLOW_MODE == "replace-empty":
+            return [default_flow] if not flows_list else flows_list
+        return flows_list
+
     def is_true(value):
         return str(value).lower() == "true"
 
@@ -923,6 +1177,7 @@ data:
         resources_json = normalize_list(parse_json(annotations.get("gravitee.io/definition-resources"), "definition-resources", svc_key))
         plans_json = normalize_plans(parse_json(annotations.get("gravitee.io/definition-plans"), "definition-plans", svc_key), svc_key)
         flows_json = normalize_list(parse_json(annotations.get("gravitee.io/definition-flows"), "definition-flows", svc_key))
+        flows_json = apply_default_jwt_flows(flows_json, svc_key)
         responses_json = normalize_map(parse_json(annotations.get("gravitee.io/definition-response-templates"), "definition-response-templates", svc_key))
         analytics_json = normalize_analytics(parse_json(annotations.get("gravitee.io/definition-analytics"), "definition-analytics", svc_key))
         pages_json = normalize_map(build_pages(annotations, svc_key))
@@ -1150,6 +1405,22 @@ spec:
               value: "true"
             - name: ENABLE_NATIVE_CATEGORIES
               value: "false"
+            - name: DEFAULT_JWT_ENABLED
+              value: "true"
+            - name: DEFAULT_JWT_FLOW_MODE
+              value: "replace-empty"
+            - name: DEFAULT_JWT_INTERNAL_ISSUER
+              value: "https://auth.suncoast.systems/realms/internal"
+            - name: DEFAULT_JWT_EXTERNAL_ISSUER
+              value: "https://auth.suncoast.systems/realms/external"
+            - name: DEFAULT_JWT_INTERNAL_JWKS
+              value: "https://auth.suncoast.systems/realms/internal/protocol/openid-connect/certs"
+            - name: DEFAULT_JWT_EXTERNAL_JWKS
+              value: "https://auth.suncoast.systems/realms/external/protocol/openid-connect/certs"
+            - name: DEFAULT_JWT_EMAIL_ALLOWLIST
+              value: "administrator@suncoast.systems"
+            - name: DEFAULT_JWT_DEV_ROLE
+              value: "dev_access"
           volumeMounts:
             - name: sync-script
               mountPath: /app
