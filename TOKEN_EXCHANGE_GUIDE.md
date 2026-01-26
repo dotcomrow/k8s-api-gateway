@@ -13,7 +13,11 @@ Where the config lives
   - `keycloak-client-config-external`: JSON definitions for external-realm clients
   - `keycloak-token-exchange-config`: rules for who can exchange to which targets
 - Gravitee token exchange policy injection: `k8s-api-gateway/manifests/10-gravitee-annotation-sync.yaml`
-- Gravitee gateway env + Vault wiring: `k8s-api-gateway/manifests/04-gravitee-deployments.yaml`
+- Per-service token exchange properties (URL/client id/secret) live on the Service annotation:
+  - `gravitee.io/definition-properties` JSON with:
+    - `token_exchange_url`
+    - `token_exchange_client_id`
+    - `token_exchange_client_secret`
 - Per-service enablement: add `gravitee.io/token-exchange-target` annotation on the Service
   (example: `k8s-ollama/manifests/ollama.yaml`)
 
@@ -43,8 +47,13 @@ Add a new service (high level)
 3) Enable token exchange on the Gravitee API
    - On the Kubernetes Service for the API, add:
      - `gravitee.io/token-exchange-target: "<client-id>"`
+     - `gravitee.io/definition-properties` entries for:
+       - `token_exchange_url`
+       - `token_exchange_client_id`
+       - `token_exchange_client_secret`
    - Example:
      - `gravitee.io/token-exchange-target: "openwebui"`
+     - `gravitee.io/definition-properties: '{"token_exchange_url":"https://auth.../token","token_exchange_client_id":"<path:secret/data/keycloak-client-id-gravitee-introspection#value>","token_exchange_client_secret":"<path:secret/data/keycloak-client-secret-gravitee-introspection#value>"}'`
 
 4) Ensure the upstream service validates the exchanged token
    - Configure the service to accept tokens issued for its client ID (audience).
@@ -67,8 +76,8 @@ Troubleshooting
   - Ensure the target client exists in external realm.
   - Ensure token exchange permissions are present in Keycloak.
 - Token exchange fails in Gravitee:
-  - Confirm `TOKEN_EXCHANGE_CLIENT_ID`, `TOKEN_EXCHANGE_CLIENT_SECRET`, and
-    `TOKEN_EXCHANGE_TOKEN_ENDPOINT` are set in the gateway pod.
+  - Confirm the API properties include `token_exchange_url`,
+    `token_exchange_client_id`, and `token_exchange_client_secret`.
   - Check Keycloak logs for token exchange errors.
 
 Notes

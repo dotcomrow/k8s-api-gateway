@@ -852,120 +852,71 @@ data:
             },
         }
 
-    def build_token_exchange_script(target_client_id):
-        def q(value):
-            return json.dumps(value)
-        lines = [
-            "import io.gravitee.policy.groovy.PolicyResult.State",
-            "import groovy.json.JsonSlurper",
-            "import java.net.HttpURLConnection",
-            "import java.net.URLEncoder",
-            "",
-            f"def targetClient = {q('PLACEHOLDER')}",
-            "def tokenEndpoint = context.getAttribute(\"token_exchange.token_endpoint\")",
-            "def clientId = context.getAttribute(\"token_exchange.client_id\")",
-            "def clientSecret = context.getAttribute(\"token_exchange.client_secret\")",
-            "tokenEndpoint = tokenEndpoint != null ? tokenEndpoint.toString() : null",
-            "clientId = clientId != null ? clientId.toString() : null",
-            "clientSecret = clientSecret != null ? clientSecret.toString() : null",
-            "if (tokenEndpoint == null || tokenEndpoint.trim().isEmpty() || clientId == null || clientId.trim().isEmpty() || clientSecret == null || clientSecret.trim().isEmpty()) {",
-            "  result.state = State.FAILURE",
-            "  result.code = 500",
-            "  result.error = \"Token exchange is not configured\"",
-            "  return",
-            "}",
-            "def req = context.request()",
-            "def headers = req != null ? req.getHeaders() : null",
-            "def authHeader = null",
-            "if (headers != null) {",
-            "  if (headers.containsKey(\"Authorization\")) {",
-            "    authHeader = headers.get(\"Authorization\")",
-            "  } else if (headers.containsKey(\"authorization\")) {",
-            "    authHeader = headers.get(\"authorization\")",
-            "  }",
-            "}",
-            "def authValue = authHeader instanceof List ? authHeader[0] : authHeader",
-            "if (authValue == null || !authValue.startsWith(\"Bearer \")) {",
-            "  result.state = State.FAILURE",
-            "  result.code = 401",
-            "  result.error = \"Missing bearer token\"",
-            "  return",
-            "}",
-            "def subjectToken = authValue.substring(7)",
-            "def params = [",
-            "  grant_type: \"urn:ietf:params:oauth:grant-type:token-exchange\",",
-            "  subject_token: subjectToken,",
-            "  subject_token_type: \"urn:ietf:params:oauth:token-type:access_token\",",
-            "  audience: targetClient,",
-            "  client_id: clientId,",
-            "  client_secret: clientSecret",
-            "]",
-            "def body = params.collect { k, v -> k + \"=\" + URLEncoder.encode(v.toString(), \"UTF-8\") }.join(\"&\")",
-            "def url = new URL(tokenEndpoint)",
-            "def conn = (HttpURLConnection) url.openConnection()",
-            "conn.setRequestMethod(\"POST\")",
-            "conn.setConnectTimeout(5000)",
-            "conn.setReadTimeout(10000)",
-            "conn.setDoOutput(true)",
-            "conn.setRequestProperty(\"Content-Type\", \"application/x-www-form-urlencoded\")",
-            "conn.setRequestProperty(\"Accept\", \"application/json\")",
-            "conn.getOutputStream().withCloseable { it.write(body.getBytes(\"UTF-8\")) }",
-            "def status = conn.getResponseCode()",
-            "def stream = (status >= 200 && status < 300) ? conn.getInputStream() : conn.getErrorStream()",
-            "def respText = stream != null ? stream.getText(\"UTF-8\") : \"\"",
-            "if (status < 200 || status >= 300) {",
-            "  result.state = State.FAILURE",
-            "  result.code = 401",
-            "  result.error = \"Token exchange failed\"",
-            "  return",
-            "}",
-            "def json = new JsonSlurper().parseText(respText)",
-            "def accessToken = json != null ? json.access_token : null",
-            "if (accessToken == null || accessToken.toString().trim().isEmpty()) {",
-            "  result.state = State.FAILURE",
-            "  result.code = 502",
-            "  result.error = \"Token exchange missing access token\"",
-            "  return",
-            "}",
-            "if (headers != null) {",
-            "  headers.put(\"Authorization\", \"Bearer \" + accessToken.toString())",
-            "}",
-            "context.setAttribute(\"token_exchange.access_token\", accessToken)",
-        ]
-        lines = [line for line in lines]
-        # Replace target client placeholder with JSON-encoded value.
-        lines[5] = f"def targetClient = {q(target_client_id)}"
-        return "\n".join(lines)
-
-    def build_token_exchange_step(target_client_id):
+    def build_token_exchange_callout_step(target_client_id):
+        target = str(target_client_id)
+        body = (
+            "grant_type=urn:ietf:params:oauth:grant-type:token-exchange"
+            "&subject_token={#request.headers[\"authorization\"][0].substring(7)}"
+            "&subject_token_type=urn:ietf:params:oauth:token-type:access_token"
+            f"&audience={target}"
+            "&client_id={#properties[\"token_exchange_client_id\"]}"
+            "&client_secret={#properties[\"token_exchange_client_secret\"]}"
+        )
         return {
-            "name": "token-exchange",
-            "policy": "groovy",
+            "name": "token-exchange-callout",
+            "policy": "policy-http-callout",
             "enabled": True,
+            "description": "Exchange token for target client",
+            "messageCondition": '{#request.headers["authorization"] != null && #request.headers["authorization"].size() > 0 && #request.headers["authorization"][0].startsWith("Bearer ") && (#context.attributes["token_exchange.access_token"] == null || #context.attributes["token_exchange.access_token"].length() == 0)}',
             "configuration": {
-                "onRequestScript": build_token_exchange_script(target_client_id),
+                "method": "POST",
+                "url": '{#properties["token_exchange_url"]}',
+                "headers": [
+                    {
+                        "name": "Content-Type",
+                        "value": "application/x-www-form-urlencoded",
+                    }
+                ],
+                "body": body,
+                "variables": [
+                    {
+                        "name": "token_exchange.access_token",
+                        "value": '{#calloutResponse != null && #calloutResponse.status == 200 ? #jsonPath(#calloutResponse.content, "$.access_token") : null}',
+                    },
+                    {
+                        "name": "token_exchange.callout_status",
+                        "value": "{#calloutResponse != null ? #calloutResponse.status : -1}",
+                    },
+                ],
+                "exitOnError": True,
+                "errorCondition": "{#calloutResponse.status != 200}",
+                "errorStatusCode": "401",
             },
         }
 
-    def build_token_exchange_attributes_step():
+    def build_token_exchange_strip_auth_step():
         return {
-            "name": "token-exchange-attributes",
-            "policy": "policy-assign-attributes",
+            "name": "token-exchange-strip-auth",
+            "policy": "transform-headers",
             "enabled": True,
+            "messageCondition": '{#context.attributes["token_exchange.access_token"] != null && #context.attributes["token_exchange.access_token"].length() > 0}',
             "configuration": {
-                "attributes": [
+                "removeHeaders": ["Authorization", "authorization"],
+            },
+        }
+
+    def build_token_exchange_set_auth_step():
+        return {
+            "name": "token-exchange-set-auth",
+            "policy": "transform-headers",
+            "enabled": True,
+            "messageCondition": '{#context.attributes["token_exchange.access_token"] != null && #context.attributes["token_exchange.access_token"].length() > 0}',
+            "configuration": {
+                "addHeaders": [
                     {
-                        "name": "token_exchange.token_endpoint",
-                        "value": "{#properties['token.exchange.token_endpoint']}",
-                    },
-                    {
-                        "name": "token_exchange.client_id",
-                        "value": "{#properties['token.exchange.client_id']}",
-                    },
-                    {
-                        "name": "token_exchange.client_secret",
-                        "value": "{#properties['token.exchange.client_secret']}",
-                    },
+                        "name": "Authorization",
+                        "value": 'Bearer {#context.attributes["token_exchange.access_token"]}',
+                    }
                 ],
             },
         }
@@ -1090,24 +1041,18 @@ data:
             request_steps = flow.get("request")
             if not isinstance(request_steps, list):
                 continue
-            token_exchange_index = next(
-                (
-                    idx
-                    for idx, step in enumerate(request_steps)
-                    if isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "token-exchange"
-                ),
-                None,
-            )
-            attributes_present = any(
-                isinstance(step, dict)
-                and step.get("policy") == "policy-assign-attributes"
-                and step.get("name") == "token-exchange-attributes"
+            remove_names = {
+                "token-exchange",
+                "token-exchange-attributes",
+                "token-exchange-callout",
+                "token-exchange-strip-auth",
+                "token-exchange-set-auth",
+            }
+            request_steps[:] = [
+                step
                 for step in request_steps
-            )
-            if token_exchange_index is not None:
-                if not attributes_present:
-                    request_steps.insert(token_exchange_index, build_token_exchange_attributes_step())
-                continue
+                if not (isinstance(step, dict) and step.get("name") in remove_names)
+            ]
             jwt_indices = [idx for idx, step in enumerate(request_steps) if isinstance(step, dict) and step.get("policy") == "jwt"]
             if not jwt_indices:
                 continue
@@ -1116,10 +1061,9 @@ data:
                 if isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "map-roles":
                     insert_at = idx + 1
                     break
-            if not attributes_present:
-                request_steps.insert(insert_at, build_token_exchange_attributes_step())
-                insert_at += 1
-            request_steps.insert(insert_at, build_token_exchange_step(target))
+            request_steps.insert(insert_at, build_token_exchange_callout_step(target))
+            request_steps.insert(insert_at + 1, build_token_exchange_strip_auth_step())
+            request_steps.insert(insert_at + 2, build_token_exchange_set_auth_step())
         return flows_list
 
     def is_true(value):
