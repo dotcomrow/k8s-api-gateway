@@ -178,6 +178,16 @@ spec:
             capabilities = ["read"]
           }
           EOF
+
+          # Create Gravitee token exchange policy (separate to avoid policy clobbering)
+          vault policy write gravitee-token-exchange - <<'EOF'
+          path "secret/data/keycloak-client-id-gravitee-introspection" {
+            capabilities = ["read"]
+          }
+          path "secret/data/keycloak-client-secret-gravitee-introspection" {
+            capabilities = ["read"]
+          }
+          EOF
           
           # Create APISIX policy
           vault policy write apisix - <<'EOF'
@@ -211,7 +221,7 @@ spec:
           vault write auth/kubernetes/role/gravitee \
             bound_service_account_names="gravitee" \
             bound_service_account_namespaces="k8s-api-gateway" \
-            policies="gravitee" \
+            policies="gravitee,gravitee-token-exchange" \
             ttl="24h"
           
           vault write auth/kubernetes/role/apisix \
