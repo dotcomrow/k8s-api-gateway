@@ -319,6 +319,7 @@ data:
     DEFAULT_JWT_EXTERNAL_JWKS = os.environ.get("DEFAULT_JWT_EXTERNAL_JWKS", "").strip()
     DEFAULT_JWT_EMAIL_ALLOWLIST = os.environ.get("DEFAULT_JWT_EMAIL_ALLOWLIST", "").strip()
     DEFAULT_JWT_DEV_ROLE = os.environ.get("DEFAULT_JWT_DEV_ROLE", "dev_access").strip()
+    DEFAULT_JWT_RBAC_ENABLED = os.environ.get("DEFAULT_JWT_RBAC_ENABLED", "true").strip().lower() in ("1", "true", "yes")
 
     def log(msg):
         print(msg, flush=True)
@@ -980,7 +981,7 @@ data:
                 jwt_indices = [idx if idx <= max(jwt_indices) else idx + 1 for idx in jwt_indices]
             allowlist_enabled = bool(email_allowlist)
             rbac_present = any(isinstance(step, dict) and step.get("policy") == "role-based-access-control" and step.get("name") == "rbac-dev" for step in request_steps)
-            if allowlist_enabled and dev_role and not rbac_present:
+            if DEFAULT_JWT_RBAC_ENABLED and allowlist_enabled and dev_role and not rbac_present:
                 insert_at = max(jwt_indices) + 1
                 for idx, step in enumerate(request_steps):
                     if isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "map-roles":
@@ -1029,7 +1030,7 @@ data:
                 build_roles_step(email_allowlist, dev_role),
             ],
         }
-        if email_allowlist and dev_role:
+        if DEFAULT_JWT_RBAC_ENABLED and email_allowlist and dev_role:
             default_flow["request"].append(build_rbac_step(dev_role))
         if DEFAULT_JWT_FLOW_MODE == "prepend":
             return [default_flow] + flows_list
@@ -1538,6 +1539,8 @@ spec:
               value: "administrator@suncoast.systems"
             - name: DEFAULT_JWT_DEV_ROLE
               value: "dev_access"
+            - name: DEFAULT_JWT_RBAC_ENABLED
+              value: "false"
           volumeMounts:
             - name: sync-script
               mountPath: /app
