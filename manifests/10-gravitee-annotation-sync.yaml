@@ -757,16 +757,16 @@ data:
             "def claims = new JsonSlurper().parseText(payloadJson)",
             "def iss = claims != null && claims.iss != null ? claims.iss.toString() : null",
             "if (iss == internalIssuer) {",
-            "  context.attributes[\"gravitee.attribute.jwt_jwks_url\"] = internalJwks",
+            "  context.setAttribute(\"gravitee.attribute.jwt_jwks_url\", internalJwks)",
             "} else if (iss == externalIssuer) {",
-            "  context.attributes[\"gravitee.attribute.jwt_jwks_url\"] = externalJwks",
+            "  context.setAttribute(\"gravitee.attribute.jwt_jwks_url\", externalJwks)",
             "} else {",
             "  result.state = State.FAILURE",
             "  result.code = 401",
             "  result.error = \"Unsupported token issuer\"",
             "  return",
             "}",
-            "context.attributes[\"gravitee.attribute.jwt_issuer\"] = iss",
+            "context.setAttribute(\"gravitee.attribute.jwt_issuer\", iss)",
         ]
         return "\n".join(lines)
 
@@ -779,7 +779,7 @@ data:
             "",
             f"def allowlist = {q(allowlist)}",
             f"def requiredRole = {q(dev_role)}",
-            "def claims = context.attributes[\"jwt.claims\"]",
+            "def claims = context.getAttribute(\"jwt.claims\")",
             "if (!(claims instanceof Map)) {",
             "  result.state = State.FAILURE",
             "  result.code = 401",
@@ -795,7 +795,7 @@ data:
             "  }",
             "}",
             "if (email != null) {",
-            "  context.attributes[\"gravitee.attribute.user.email\"] = email",
+            "  context.setAttribute(\"gravitee.attribute.user.email\", email)",
             "}",
             "def roles = []",
             "def realmAccess = claims.get(\"realm_access\")",
@@ -826,7 +826,7 @@ data:
             "  }",
             "}",
             "def uniqueRoles = roles.findAll { it != null }.collect { it.toString() }.unique()",
-            "context.attributes[\"gravitee.attribute.user.roles\"] = uniqueRoles",
+            "context.setAttribute(\"gravitee.attribute.user.roles\", uniqueRoles)",
         ]
         return "\n".join(lines)
 
@@ -924,7 +924,7 @@ data:
             "  return",
             "}",
             "request.headers.set(\"Authorization\", \"Bearer \" + accessToken.toString())",
-            "context.attributes[\"token_exchange.access_token\"] = accessToken",
+            "context.setAttribute(\"token_exchange.access_token\", accessToken)",
         ]
         lines = [line for line in lines]
         # Replace target client placeholder with JSON-encoded value.
