@@ -979,47 +979,37 @@ data:
             },
         }
 
-    def update_jwt_step(step):
+    def update_jwt_step(step, jwks_url):
         config = step.get("configuration")
         if not isinstance(config, dict):
             config = {}
         config["publicKeyResolver"] = "JWKS_URL"
-        config["resolverParameter"] = "{#context.attributes['gravitee.attribute.jwt_jwks_url']}"
+        if jwks_url:
+            config["resolverParameter"] = jwks_url
         config.setdefault("signature", "RSA_RS256")
         config.setdefault("extractClaims", True)
         config.setdefault("userClaim", "preferred_username")
         config.setdefault("propagateAuthHeader", True)
         step["configuration"] = config
 
-    def augment_jwt_flows(flows, email_allowlist, dev_role, internal_issuer, external_issuer, internal_jwks, external_jwks):
+    def augment_jwt_flows(flows, jwks_url):
         if not flows:
             return flows
         for flow in flows:
             request_steps = flow.get("request")
             if not isinstance(request_steps, list):
                 continue
+            request_steps[:] = [
+                step
+                for step in request_steps
+                if not (isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") in ("resolve-jwks", "map-roles"))
+            ]
             jwt_indices = [idx for idx, step in enumerate(request_steps) if isinstance(step, dict) and step.get("policy") == "jwt"]
             if not jwt_indices:
                 continue
-            if not any(isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "resolve-jwks" for step in request_steps):
-                request_steps.insert(jwt_indices[0], build_jwks_resolver_step(internal_issuer, external_issuer, internal_jwks, external_jwks))
-                jwt_indices = [idx + 1 for idx in jwt_indices]
             for step in request_steps:
                 if isinstance(step, dict) and step.get("policy") == "jwt":
-                    update_jwt_step(step)
-            roles_step_present = any(isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "map-roles" for step in request_steps)
-            if not roles_step_present:
-                request_steps.insert(max(jwt_indices) + 1, build_roles_step(email_allowlist, dev_role))
-                jwt_indices = [idx if idx <= max(jwt_indices) else idx + 1 for idx in jwt_indices]
-            allowlist_enabled = bool(email_allowlist)
-            rbac_present = any(isinstance(step, dict) and step.get("policy") == "role-based-access-control" and step.get("name") == "rbac-dev" for step in request_steps)
-            if DEFAULT_JWT_RBAC_ENABLED and allowlist_enabled and dev_role and not rbac_present:
-                insert_at = max(jwt_indices) + 1
-                for idx, step in enumerate(request_steps):
-                    if isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "map-roles":
-                        insert_at = idx + 1
-                        break
-                request_steps.insert(insert_at, build_rbac_step(dev_role))
+                    update_jwt_step(step, jwks_url)
         return flows
 
     def apply_default_jwt_flows(flows, svc_key):
@@ -1029,23 +1019,21 @@ data:
         external_issuer = DEFAULT_JWT_EXTERNAL_ISSUER
         internal_jwks = normalized_jwks_url(internal_issuer, DEFAULT_JWT_INTERNAL_JWKS)
         external_jwks = normalized_jwks_url(external_issuer, DEFAULT_JWT_EXTERNAL_JWKS)
-        if not (internal_issuer and external_issuer and internal_jwks and external_jwks):
-            log(f"DEFAULT_JWT_ENABLED is true but issuer/JWKS URLs are missing; skipping for {svc_key}")
+        jwks_url = external_jwks or internal_jwks
+        if not jwks_url:
+            log(f"DEFAULT_JWT_ENABLED is true but no JWKS URL is configured; skipping for {svc_key}")
             return flows
-        email_allowlist = parse_csv(DEFAULT_JWT_EMAIL_ALLOWLIST)
-        dev_role = DEFAULT_JWT_DEV_ROLE
         flows_list = flows if isinstance(flows, list) else []
         has_jwt = any(
             isinstance(flow, dict) and any(isinstance(step, dict) and step.get("policy") == "jwt" for step in flow.get("request", []))
             for flow in flows_list
         )
         if has_jwt:
-            return augment_jwt_flows(flows_list, email_allowlist, dev_role, internal_issuer, external_issuer, internal_jwks, external_jwks)
+            return augment_jwt_flows(flows_list, jwks_url)
         default_flow = {
             "name": "default-jwt",
             "enabled": True,
             "request": [
-                build_jwks_resolver_step(internal_issuer, external_issuer, internal_jwks, external_jwks),
                 {
                     "name": "validate-jwt",
                     "policy": "jwt",
@@ -1053,17 +1041,14 @@ data:
                     "configuration": {
                         "signature": "RSA_RS256",
                         "publicKeyResolver": "JWKS_URL",
-                        "resolverParameter": "{#context.attributes['gravitee.attribute.jwt_jwks_url']}",
+                        "resolverParameter": jwks_url,
                         "extractClaims": True,
                         "userClaim": "preferred_username",
                         "propagateAuthHeader": True,
                     },
                 },
-                build_roles_step(email_allowlist, dev_role),
             ],
         }
-        if DEFAULT_JWT_RBAC_ENABLED and email_allowlist and dev_role:
-            default_flow["request"].append(build_rbac_step(dev_role))
         if DEFAULT_JWT_FLOW_MODE == "prepend":
             return [default_flow] + flows_list
         if DEFAULT_JWT_FLOW_MODE == "append":
