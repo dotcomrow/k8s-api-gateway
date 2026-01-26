@@ -860,9 +860,12 @@ data:
             "import java.net.URLEncoder",
             "",
             f"def targetClient = {q('PLACEHOLDER')}",
-            "def tokenEndpoint = context.getProperty(\"token.exchange.token_endpoint\")",
-            "def clientId = context.getProperty(\"token.exchange.client_id\")",
-            "def clientSecret = context.getProperty(\"token.exchange.client_secret\")",
+            "def tokenEndpoint = context.getAttribute(\"token_exchange.token_endpoint\")",
+            "def clientId = context.getAttribute(\"token_exchange.client_id\")",
+            "def clientSecret = context.getAttribute(\"token_exchange.client_secret\")",
+            "tokenEndpoint = tokenEndpoint != null ? tokenEndpoint.toString() : null",
+            "clientId = clientId != null ? clientId.toString() : null",
+            "clientSecret = clientSecret != null ? clientSecret.toString() : null",
             "if (tokenEndpoint == null || tokenEndpoint.trim().isEmpty() || clientId == null || clientId.trim().isEmpty() || clientSecret == null || clientSecret.trim().isEmpty()) {",
             "  result.state = State.FAILURE",
             "  result.code = 500",
@@ -935,6 +938,29 @@ data:
             "enabled": True,
             "configuration": {
                 "onRequestScript": build_token_exchange_script(target_client_id),
+            },
+        }
+
+    def build_token_exchange_attributes_step():
+        return {
+            "name": "token-exchange-attributes",
+            "policy": "assign-attributes",
+            "enabled": True,
+            "configuration": {
+                "attributes": [
+                    {
+                        "name": "token_exchange.token_endpoint",
+                        "value": "{#properties['token.exchange.token_endpoint']}",
+                    },
+                    {
+                        "name": "token_exchange.client_id",
+                        "value": "{#properties['token.exchange.client_id']}",
+                    },
+                    {
+                        "name": "token_exchange.client_secret",
+                        "value": "{#properties['token.exchange.client_secret']}",
+                    },
+                ],
             },
         }
 
@@ -1058,7 +1084,23 @@ data:
             request_steps = flow.get("request")
             if not isinstance(request_steps, list):
                 continue
-            if any(isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "token-exchange" for step in request_steps):
+            token_exchange_index = next(
+                (
+                    idx
+                    for idx, step in enumerate(request_steps)
+                    if isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "token-exchange"
+                ),
+                None,
+            )
+            attributes_present = any(
+                isinstance(step, dict)
+                and step.get("policy") == "assign-attributes"
+                and step.get("name") == "token-exchange-attributes"
+                for step in request_steps
+            )
+            if token_exchange_index is not None:
+                if not attributes_present:
+                    request_steps.insert(token_exchange_index, build_token_exchange_attributes_step())
                 continue
             jwt_indices = [idx for idx, step in enumerate(request_steps) if isinstance(step, dict) and step.get("policy") == "jwt"]
             if not jwt_indices:
@@ -1068,6 +1110,9 @@ data:
                 if isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "map-roles":
                     insert_at = idx + 1
                     break
+            if not attributes_present:
+                request_steps.insert(insert_at, build_token_exchange_attributes_step())
+                insert_at += 1
             request_steps.insert(insert_at, build_token_exchange_step(target))
         return flows_list
 
