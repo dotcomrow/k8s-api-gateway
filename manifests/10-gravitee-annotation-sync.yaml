@@ -847,6 +847,94 @@ data:
             },
         }
 
+    def build_token_exchange_script(target_client_id):
+        def q(value):
+            return json.dumps(value)
+        lines = [
+            "import io.gravitee.policy.groovy.PolicyResult.State",
+            "import groovy.json.JsonSlurper",
+            "import java.net.HttpURLConnection",
+            "import java.net.URLEncoder",
+            "",
+            f"def targetClient = {q('PLACEHOLDER')}",
+            "def tokenEndpoint = System.getenv(\"TOKEN_EXCHANGE_TOKEN_ENDPOINT\")",
+            "def clientId = System.getenv(\"TOKEN_EXCHANGE_CLIENT_ID\")",
+            "def clientSecret = System.getenv(\"TOKEN_EXCHANGE_CLIENT_SECRET\")",
+            "if (tokenEndpoint == null || tokenEndpoint.trim().isEmpty() || clientId == null || clientId.trim().isEmpty() || clientSecret == null || clientSecret.trim().isEmpty()) {",
+            "  result.state = State.FAILURE",
+            "  result.code = 500",
+            "  result.error = \"Token exchange is not configured\"",
+            "  return",
+            "}",
+            "def authHeader = null",
+            "if (request.headers != null) {",
+            "  if (request.headers.containsKey(\"Authorization\")) {",
+            "    authHeader = request.headers.\"Authorization\"",
+            "  } else if (request.headers.containsKey(\"authorization\")) {",
+            "    authHeader = request.headers.\"authorization\"",
+            "  }",
+            "}",
+            "def authValue = authHeader instanceof List ? authHeader[0] : authHeader",
+            "if (authValue == null || !authValue.startsWith(\"Bearer \")) {",
+            "  result.state = State.FAILURE",
+            "  result.code = 401",
+            "  result.error = \"Missing bearer token\"",
+            "  return",
+            "}",
+            "def subjectToken = authValue.substring(7)",
+            "def params = [",
+            "  grant_type: \"urn:ietf:params:oauth:grant-type:token-exchange\",",
+            "  subject_token: subjectToken,",
+            "  subject_token_type: \"urn:ietf:params:oauth:token-type:access_token\",",
+            "  audience: targetClient,",
+            "  client_id: clientId,",
+            "  client_secret: clientSecret",
+            "]",
+            "def body = params.collect { k, v -> k + \"=\" + URLEncoder.encode(v.toString(), \"UTF-8\") }.join(\"&\")",
+            "def url = new URL(tokenEndpoint)",
+            "def conn = (HttpURLConnection) url.openConnection()",
+            "conn.setRequestMethod(\"POST\")",
+            "conn.setConnectTimeout(5000)",
+            "conn.setReadTimeout(10000)",
+            "conn.setDoOutput(true)",
+            "conn.setRequestProperty(\"Content-Type\", \"application/x-www-form-urlencoded\")",
+            "conn.setRequestProperty(\"Accept\", \"application/json\")",
+            "conn.getOutputStream().withCloseable { it.write(body.getBytes(\"UTF-8\")) }",
+            "def status = conn.getResponseCode()",
+            "def stream = (status >= 200 && status < 300) ? conn.getInputStream() : conn.getErrorStream()",
+            "def respText = stream != null ? stream.getText(\"UTF-8\") : \"\"",
+            "if (status < 200 || status >= 300) {",
+            "  result.state = State.FAILURE",
+            "  result.code = 401",
+            "  result.error = \"Token exchange failed\"",
+            "  return",
+            "}",
+            "def json = new JsonSlurper().parseText(respText)",
+            "def accessToken = json != null ? json.access_token : null",
+            "if (accessToken == null || accessToken.toString().trim().isEmpty()) {",
+            "  result.state = State.FAILURE",
+            "  result.code = 502",
+            "  result.error = \"Token exchange missing access token\"",
+            "  return",
+            "}",
+            "request.headers.set(\"Authorization\", \"Bearer \" + accessToken.toString())",
+            "context.attributes[\"token_exchange.access_token\"] = accessToken",
+        ]
+        lines = [line for line in lines]
+        # Replace target client placeholder with JSON-encoded value.
+        lines[5] = f"def targetClient = {q(target_client_id)}"
+        return "\n".join(lines)
+
+    def build_token_exchange_step(target_client_id):
+        return {
+            "name": "token-exchange",
+            "policy": "groovy",
+            "enabled": True,
+            "configuration": {
+                "onRequestScript": build_token_exchange_script(target_client_id),
+            },
+        }
+
     def build_rbac_step(dev_role):
         return {
             "name": "rbac-dev",
@@ -951,6 +1039,33 @@ data:
             return [default_flow]
         if DEFAULT_JWT_FLOW_MODE == "replace-empty":
             return [default_flow] if not flows_list else flows_list
+        return flows_list
+
+    def apply_token_exchange_flows(flows, target_client_id, svc_key):
+        if not target_client_id:
+            return flows
+        target = str(target_client_id).strip()
+        if not target:
+            return flows
+        flows_list = flows if isinstance(flows, list) else []
+        if not flows_list:
+            log(f"Token exchange configured for {svc_key} but no flows present; skipping")
+            return flows
+        for flow in flows_list:
+            request_steps = flow.get("request")
+            if not isinstance(request_steps, list):
+                continue
+            if any(isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "token-exchange" for step in request_steps):
+                continue
+            jwt_indices = [idx for idx, step in enumerate(request_steps) if isinstance(step, dict) and step.get("policy") == "jwt"]
+            if not jwt_indices:
+                continue
+            insert_at = max(jwt_indices) + 1
+            for idx, step in enumerate(request_steps):
+                if isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "map-roles":
+                    insert_at = idx + 1
+                    break
+            request_steps.insert(insert_at, build_token_exchange_step(target))
         return flows_list
 
     def is_true(value):
@@ -1178,6 +1293,8 @@ data:
         plans_json = normalize_plans(parse_json(annotations.get("gravitee.io/definition-plans"), "definition-plans", svc_key), svc_key)
         flows_json = normalize_list(parse_json(annotations.get("gravitee.io/definition-flows"), "definition-flows", svc_key))
         flows_json = apply_default_jwt_flows(flows_json, svc_key)
+        token_exchange_target = (annotations.get("gravitee.io/token-exchange-target") or "").strip()
+        flows_json = apply_token_exchange_flows(flows_json, token_exchange_target, svc_key)
         responses_json = normalize_map(parse_json(annotations.get("gravitee.io/definition-response-templates"), "definition-response-templates", svc_key))
         analytics_json = normalize_analytics(parse_json(annotations.get("gravitee.io/definition-analytics"), "definition-analytics", svc_key))
         pages_json = normalize_map(build_pages(annotations, svc_key))

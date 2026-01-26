@@ -10,6 +10,7 @@ GKO must be installed for these annotations to take effect.
 - `gravitee.io/context-path`: API context path
 - `gravitee.io/auth-required`: auth type hint (ex: `jwt`, `apikey`)
 - `gravitee.io/approval-required`: approval policy hint (ex: `admin`)
+- `gravitee.io/token-exchange-target`: Keycloak client ID to exchange user tokens for (enables token exchange flow)
 
 ## Definition metadata (string)
 - `gravitee.io/description`

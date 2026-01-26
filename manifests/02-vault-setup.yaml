@@ -167,6 +167,14 @@ spec:
           path "secret/data/keycloak-client-secret-drools-kie-server-service" {
             capabilities = ["read"]
           }
+
+          # Allow reading Gravitee token exchange client credentials
+          path "secret/data/keycloak-client-id-gravitee-introspection" {
+            capabilities = ["read"]
+          }
+          path "secret/data/keycloak-client-secret-gravitee-introspection" {
+            capabilities = ["read"]
+          }
           EOF
           
           # Create APISIX policy

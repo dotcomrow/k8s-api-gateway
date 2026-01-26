@@ -237,6 +237,7 @@ data:
             gravitee.io/context-path: ""
             gravitee.io/auth-required: ""
             gravitee.io/approval-required: ""
+            gravitee.io/token-exchange-target: ""
             gravitee.io/description: ""
             gravitee.io/version: ""
             gravitee.io/tags: ""
@@ -819,6 +820,16 @@ spec:
           {{- with secret "secret/apisix/admin" -}}
           export APISIX_ADMIN_KEY="{{ .Data.data.key }}"
           {{- end }}
+        vault.hashicorp.com/agent-inject-secret-token-exchange-client-id: "secret/data/keycloak-client-id-gravitee-introspection"
+        vault.hashicorp.com/agent-inject-template-token-exchange-client-id: |
+          {{- with secret "secret/data/keycloak-client-id-gravitee-introspection" -}}
+          export TOKEN_EXCHANGE_CLIENT_ID="{{ .Data.data.value }}"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-token-exchange-client-secret: "secret/data/keycloak-client-secret-gravitee-introspection"
+        vault.hashicorp.com/agent-inject-template-token-exchange-client-secret: |
+          {{- with secret "secret/data/keycloak-client-secret-gravitee-introspection" -}}
+          export TOKEN_EXCHANGE_CLIENT_SECRET="{{ .Data.data.value }}"
+          {{- end }}
     spec:
       serviceAccountName: gravitee
       initContainers:
@@ -934,6 +945,8 @@ spec:
           value: "http://apisix-admin.k8s-api-gateway.svc.cluster.local:9180"
         - name: GRAVITEE_LOG_LEVEL
           value: "DEBUG"
+        - name: TOKEN_EXCHANGE_TOKEN_ENDPOINT
+          value: "https://auth.suncoast.systems/realms/external/protocol/openid-connect/token"
         - name: JAVA_TOOL_OPTIONS
           value: "-javaagent:/opt/otel/opentelemetry-javaagent.jar"
         - name: OTEL_SERVICE_NAME
@@ -990,6 +1003,17 @@ spec:
             # shellcheck disable=SC1091
             . /vault/secrets/apisix
             echo "✅ APISIX admin key loaded"
+          fi
+
+          if [ -f /vault/secrets/token-exchange-client-id ]; then
+            # shellcheck disable=SC1091
+            . /vault/secrets/token-exchange-client-id
+            echo "✅ Token exchange client ID loaded"
+          fi
+          if [ -f /vault/secrets/token-exchange-client-secret ]; then
+            # shellcheck disable=SC1091
+            . /vault/secrets/token-exchange-client-secret
+            echo "✅ Token exchange client secret loaded"
           fi
 
           # Wire JDBC creds for Gravitee from Vault-provided env
