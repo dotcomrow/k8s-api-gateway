@@ -1534,6 +1534,12 @@ data:
       # Management API connection
       management:
         url: http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083
+
+    # Properties exposed to policies (token exchange)
+    properties:
+      token.exchange.token_endpoint: ${TOKEN_EXCHANGE_TOKEN_ENDPOINT}
+      token.exchange.client_id: ${TOKEN_EXCHANGE_CLIENT_ID}
+      token.exchange.client_secret: ${TOKEN_EXCHANGE_CLIENT_SECRET}
     
     # HTTP server configuration  
     http:
