@@ -727,7 +727,7 @@ data:
             f"def internalJwks = {q(internal_jwks)}",
             f"def externalJwks = {q(external_jwks)}",
             "",
-            "def req = context.request()",
+            "def req = request",
             "def headers = req != null ? req.getHeaders() : null",
             "def authHeader = null",
             "if (headers != null) {",
