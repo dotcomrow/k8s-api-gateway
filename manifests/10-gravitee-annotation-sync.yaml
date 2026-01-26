@@ -950,7 +950,7 @@ data:
     def build_token_exchange_attributes_step():
         return {
             "name": "token-exchange-attributes",
-            "policy": "assign-attributes",
+            "policy": "policy-assign-attributes",
             "enabled": True,
             "configuration": {
                 "attributes": [
@@ -1100,7 +1100,7 @@ data:
             )
             attributes_present = any(
                 isinstance(step, dict)
-                and step.get("policy") == "assign-attributes"
+                and step.get("policy") == "policy-assign-attributes"
                 and step.get("name") == "token-exchange-attributes"
                 for step in request_steps
             )
