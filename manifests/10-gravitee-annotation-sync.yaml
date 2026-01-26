@@ -914,7 +914,7 @@ data:
             "policy": "policy-http-callout",
             "enabled": True,
             "description": "Exchange token for target client",
-            "messageCondition": '{#request.headers["authorization"] != null && #request.headers["authorization"].size() > 0 && #request.headers["authorization"][0].startsWith("Bearer ") && (#context.attributes["token_exchange.access_token"] == null || #context.attributes["token_exchange.access_token"].length() == 0)}',
+            "messageCondition": '{#request.headers["authorization"] != null && #request.headers["authorization"][0].startsWith("Bearer ")}',
             "configuration": {
                 "method": "POST",
                 "url": '{#properties["token_exchange_url"]}',
