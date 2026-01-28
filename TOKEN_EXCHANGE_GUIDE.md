@@ -7,6 +7,8 @@ Overview
 - Gravitee validates the JWT (issuer + JWKS).
 - Gravitee exchanges the user token at Keycloak for a target-audience token.
 - Gravitee replaces the upstream Authorization header with the exchanged token.
+  - Important: the exchange client must match the subject token's `azp`.
+    For GraphQL-sourced user tokens, use the graphql-api client ID + secret.
 
 Where the config lives
 - Keycloak clients and exchange rules: `k8s-keycloak/manifests/keycloak.yaml`
@@ -49,11 +51,11 @@ Add a new service (high level)
      - `gravitee.io/token-exchange-target: "<client-id>"`
      - `gravitee.io/definition-properties` entries for:
        - `token_exchange_url`
-       - `token_exchange_client_id`
+       - `token_exchange_client_id` (must match the subject token's `azp`)
        - `token_exchange_client_secret`
    - Example:
      - `gravitee.io/token-exchange-target: "openwebui"`
-     - `gravitee.io/definition-properties: '{"token_exchange_url":"https://auth.../token","token_exchange_client_id":"<path:secret/data/keycloak-client-id-gravitee-introspection#value>","token_exchange_client_secret":"<path:secret/data/keycloak-client-secret-gravitee-introspection#value>"}'`
+    - `gravitee.io/definition-properties: '{"token_exchange_url":"https://auth.../token","token_exchange_client_id":"<path:secret/data/keycloak-client-id-graphql-api#value>","token_exchange_client_secret":"<path:secret/data/keycloak-client-secret-graphql-api#value>"}'`
 
 4) Ensure the upstream service validates the exchanged token
    - Configure the service to accept tokens issued for its client ID (audience).
