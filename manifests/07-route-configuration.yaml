@@ -55,7 +55,7 @@ data:
           "real-ip": {
             "source": "X-Forwarded-For",
             "recursive": true,
-            "trusted_addresses": ["127.0.0.1","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]
+            "trusted_addresses": ["127.0.0.1","10.0.0.0/24","10.0.0.10/32","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]
           },
               "opentelemetry": {
                 "sampler": {
@@ -95,7 +95,7 @@ data:
           "real-ip": {
             "source": "X-Forwarded-For",
             "recursive": true,
-            "trusted_addresses": ["127.0.0.1","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]
+            "trusted_addresses": ["127.0.0.1","10.0.0.0/24","10.0.0.10/32","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]
           },
               "cors": {
                 "allow_origins": "http://apisix.k8s-api-gateway.svc.cluster.local",
@@ -110,6 +110,8 @@ data:
                 "append_headers": {
                   "X-Forwarded-For": "$proxy_add_x_forwarded_for",
                   "X-Real-IP": "$remote_addr",
+                  "X-Client-IP": "$remote_addr",
+                  "X-Original-Forwarded-For": "$http_x_forwarded_for",
                   "X-Forwarded-Proto": "$scheme",
                   "X-Forwarded-Host": "$host"
                 }
