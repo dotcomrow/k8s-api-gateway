@@ -901,13 +901,25 @@ data:
 
     def build_token_exchange_callout_step(target_client_id):
         target = str(target_client_id)
+        client_id_expr = (
+            '{#properties["token_exchange_client_id"] != null && #properties["token_exchange_client_id"].length() > 0 '
+            '? #properties["token_exchange_client_id"] : #properties["token.exchange.client_id"]}'
+        )
+        client_secret_expr = (
+            '{#properties["token_exchange_client_secret"] != null && #properties["token_exchange_client_secret"].length() > 0 '
+            '? #properties["token_exchange_client_secret"] : #properties["token.exchange.client_secret"]}'
+        )
+        token_url_expr = (
+            '{#properties["token_exchange_url"] != null && #properties["token_exchange_url"].length() > 0 '
+            '? #properties["token_exchange_url"] : #properties["token.exchange.token_endpoint"]}'
+        )
         body = (
             "grant_type=urn:ietf:params:oauth:grant-type:token-exchange"
             "&subject_token={#request.headers[\"authorization\"][0].substring(7)}"
             "&subject_token_type=urn:ietf:params:oauth:token-type:access_token"
             f"&audience={target}"
-            "&client_id={#properties[\"token_exchange_client_id\"]}"
-            "&client_secret={#properties[\"token_exchange_client_secret\"]}"
+            f"&client_id={client_id_expr}"
+            f"&client_secret={client_secret_expr}"
         )
         return {
             "name": "token-exchange-callout",
@@ -917,7 +929,7 @@ data:
             "messageCondition": '{#request.headers["authorization"] != null && #request.headers["authorization"][0].startsWith("Bearer ")}',
             "configuration": {
                 "method": "POST",
-                "url": '{#properties["token_exchange_url"]}',
+                "url": token_url_expr,
                 "headers": [
                     {
                         "name": "Content-Type",
