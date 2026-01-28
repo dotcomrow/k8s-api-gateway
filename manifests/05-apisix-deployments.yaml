@@ -298,6 +298,7 @@ spec:
       labels:
         app: apisix
       annotations:
+        reloader.stakater.com/auto: "true"
         gravitee.io/admin-key-source: "vault"
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "apisix"
