@@ -356,7 +356,7 @@ data:
     <configuration>
       <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} trace_id=%X{trace_id:-} span_id=%X{span_id:-} trace_id_alt=%X{traceId:-} span_id_alt=%X{spanId:-} - %msg%n</pattern>
         </encoder>
       </appender>
 
@@ -367,7 +367,7 @@ data:
           <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>
-          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} trace_id=%X{trace_id:-} span_id=%X{span_id:-} trace_id_alt=%X{traceId:-} span_id_alt=%X{spanId:-} - %msg%n</pattern>
         </encoder>
       </appender>
 
@@ -378,7 +378,7 @@ data:
           <maxHistory>12</maxHistory>
         </rollingPolicy>
         <encoder>
-          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} trace_id=%X{trace_id:-} span_id=%X{span_id:-} trace_id_alt=%X{traceId:-} span_id_alt=%X{spanId:-} - %msg%n</pattern>
         </encoder>
       </appender>
 
@@ -969,6 +969,10 @@ spec:
           value: "none"
         - name: OTEL_LOGS_EXPORTER
           value: "none"
+        - name: OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED
+          value: "true"
+        - name: OTEL_INSTRUMENTATION_LOGGING_MDC_ENABLED
+          value: "true"
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otel-collector.observability.svc.cluster.local:4318"
         - name: OTEL_EXPORTER_OTLP_PROTOCOL
@@ -1082,6 +1086,9 @@ spec:
         - name: gateway-config
           mountPath: /opt/graviteeio-gateway/config/gravitee.yml
           subPath: gravitee.yml
+        - name: gateway-config
+          mountPath: /opt/graviteeio-gateway/config/logback.xml
+          subPath: logback.xml
         - name: gravitee-reporter
           mountPath: /tmp/gravitee-reporter
       - name: gravitee-reporter-tail
@@ -1596,6 +1603,49 @@ data:
     
     # Multi-tenant configuration  
     tenant: ${TENANT:}
+
+  logback.xml: |-
+    <?xml version="1.0" encoding="UTF-8" ?>
+    <configuration>
+      <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} trace_id=%X{trace_id:-} span_id=%X{span_id:-} trace_id_alt=%X{traceId:-} span_id_alt=%X{spanId:-} - %msg%n</pattern>
+        </encoder>
+      </appender>
+
+      <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${gravitee.home}/logs/gravitee.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+          <fileNamePattern>${gravitee.home}/logs/gravitee_%d{yyyy-MM-dd}.log</fileNamePattern>
+          <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder>
+          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} trace_id=%X{trace_id:-} span_id=%X{span_id:-} trace_id_alt=%X{traceId:-} span_id_alt=%X{spanId:-} - %msg%n</pattern>
+        </encoder>
+      </appender>
+
+      <appender name="FILE-UPGRADERS" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${gravitee.home}/logs/gravitee-upgraders.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+          <fileNamePattern>${gravitee.home}/logs/gravitee-upgraders_%d{yyyy-MM}.log</fileNamePattern>
+          <maxHistory>12</maxHistory>
+        </rollingPolicy>
+        <encoder>
+          <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} trace_id=%X{trace_id:-} span_id=%X{span_id:-} trace_id_alt=%X{traceId:-} span_id_alt=%X{spanId:-} - %msg%n</pattern>
+        </encoder>
+      </appender>
+
+      <logger name="io.gravitee.rest.api.service.impl.upgrade" level="INFO">
+        <appender-ref ref="FILE-UPGRADERS" />
+      </logger>
+
+      <logger name="io.gravitee" level="INFO" />
+      <logger name="org.eclipse.jetty" level="INFO" />
+
+      <root level="WARN">
+        <appender-ref ref="STDOUT" />
+      </root>
+    </configuration>
     
     # Plugin repository
     plugins:
