@@ -133,6 +133,7 @@ data:
         collector:
           address: otel-collector.observability.svc.cluster.local:4318
           request_timeout: 3
+        set_ngx_var: true
         resource:
           service.name: gravitee-gateway
           service.namespace: k8s-api-gateway
