@@ -184,7 +184,7 @@ reporters:
   # File reporter for debugging
   file:
     enabled: true
-    fileName: /proc/1/fd/1
+    fileName: /tmp/gravitee-reporter/%s
     output: json
     v4-log:
       exclude:
@@ -204,6 +204,27 @@ reporters:
         - status
         - remoteAddress
         - userAgent
+    request:
+      exclude:
+        - "*"
+    log:
+      exclude:
+        - "*"
+    node:
+      exclude:
+        - "*"
+    health-check:
+      exclude:
+        - "*"
+    v4-metrics:
+      exclude:
+        - "*"
+    v4-message-log:
+      exclude:
+        - "*"
+    v4-message-metrics:
+      exclude:
+        - "*"
 
 # API endpoints exposure  
 api:

@@ -1074,10 +1074,27 @@ spec:
         - name: gateway-config
           mountPath: /opt/graviteeio-gateway/config/gravitee.yml
           subPath: gravitee.yml
+        - name: gravitee-reporter
+          mountPath: /tmp/gravitee-reporter
+      - name: gravitee-reporter-tail
+        image: alpine:3.20
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          mkdir -p /tmp/gravitee-reporter
+          touch /tmp/gravitee-reporter/v4-log.json
+          tail -n+1 -F /tmp/gravitee-reporter/*.json
+        volumeMounts:
+        - name: gravitee-reporter
+          mountPath: /tmp/gravitee-reporter
       volumes:
       - name: gateway-config
         configMap:
           name: gravitee-gateway-config
+      - name: gravitee-reporter
+        emptyDir: {}
 ---
 # Gravitee Portal Deployment
 apiVersion: apps/v1
@@ -1723,7 +1740,7 @@ data:
       # File reporter for debugging
       file:
         enabled: true
-        fileName: /proc/1/fd/1
+        fileName: /tmp/gravitee-reporter/%s
         output: json
         v4-log:
           exclude:
@@ -1743,6 +1760,27 @@ data:
             - status
             - remoteAddress
             - userAgent
+        request:
+          exclude:
+            - "*"
+        log:
+          exclude:
+            - "*"
+        node:
+          exclude:
+            - "*"
+        health-check:
+          exclude:
+            - "*"
+        v4-metrics:
+          exclude:
+            - "*"
+        v4-message-log:
+          exclude:
+            - "*"
+        v4-message-metrics:
+          exclude:
+            - "*"
     
     # API endpoints exposure  
     api:
