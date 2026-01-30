@@ -1781,6 +1781,8 @@ data:
           exclude:
             - "*"
           include:
+            - traceId
+            - spanId
             - requestId
             - transactionId
             - entrypointRequest.headers
