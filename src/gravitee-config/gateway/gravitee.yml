@@ -185,6 +185,25 @@ reporters:
   file:
     enabled: true
     fileName: /dev/stdout
+    output: json
+    v4-log:
+      exclude:
+        - "*"
+      include:
+        - requestId
+        - transactionId
+        - entrypointRequest.headers
+        - endpointRequest.headers
+        - entrypointResponse.headers
+        - endpointResponse.headers
+        - api
+        - application
+        - plan
+        - method
+        - path
+        - status
+        - remoteAddress
+        - userAgent
 
 # API endpoints exposure  
 api:
