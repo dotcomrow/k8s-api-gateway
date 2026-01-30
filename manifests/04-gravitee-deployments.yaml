@@ -910,6 +910,8 @@ spec:
           value: "/tmp/gravitee-reporter/%s-yyyy_mm_dd"
         - name: REPORTERS_FILE_OUTPUT
           value: "json"
+        - name: REPORTERS_FILE_RETAINDAYS
+          value: "1"
         - name: SERVICES_CACHE_ENABLED
           value: "false"
         - name: SERVICES_HEARTBEAT_ENABLED
@@ -954,7 +956,7 @@ spec:
         - name: TOKEN_EXCHANGE_TOKEN_ENDPOINT
           value: "https://auth.suncoast.systems/realms/external/protocol/openid-connect/token"
         - name: JAVA_TOOL_OPTIONS
-          value: "-javaagent:/opt/otel/opentelemetry-javaagent.jar -Dreporters.file.enabled=true -Dreporters.file.fileName=/tmp/gravitee-reporter/%s-yyyy_mm_dd -Dreporters.file.output=json"
+          value: "-javaagent:/opt/otel/opentelemetry-javaagent.jar -Dreporters.file.enabled=true -Dreporters.file.fileName=/tmp/gravitee-reporter/%s-yyyy_mm_dd -Dreporters.file.output=json -Dreporters.file.retainDays=1"
         - name: OTEL_SERVICE_NAME
           value: "gravitee-gateway"
         - name: OTEL_RESOURCE_ATTRIBUTES
@@ -1090,10 +1092,12 @@ spec:
         - |
           set -e
           mkdir -p /tmp/gravitee-reporter
+          chown -R 1001:1000 /tmp/gravitee-reporter
           date_suffix="$(date +%Y_%m_%d)"
           for name in v4-log v4-message-log v4-message-metrics v4-metrics request log node health-check event-metrics; do
             touch "/tmp/gravitee-reporter/${name}-${date_suffix}.json"
           done
+          chown 1001:1000 /tmp/gravitee-reporter/*-"${date_suffix}".json
           tail -n+1 -F /tmp/gravitee-reporter/*-"${date_suffix}".json
         volumeMounts:
         - name: gravitee-reporter
@@ -1751,6 +1755,7 @@ data:
         enabled: true
         fileName: /tmp/gravitee-reporter/%s-yyyy_mm_dd
         output: json
+        retainDays: 1
         v4-log:
           exclude:
             - "*"

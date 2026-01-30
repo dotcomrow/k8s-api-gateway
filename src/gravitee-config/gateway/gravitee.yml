@@ -186,6 +186,7 @@ reporters:
     enabled: true
     fileName: /tmp/gravitee-reporter/%s-yyyy_mm_dd
     output: json
+    retainDays: 1
     v4-log:
       exclude:
         - "*"
