@@ -1092,13 +1092,21 @@ spec:
         - |
           set -e
           mkdir -p /tmp/gravitee-reporter
-          chown -R 1001:1000 /tmp/gravitee-reporter
-          date_suffix="$(date +%Y_%m_%d)"
-          for name in v4-log v4-message-log v4-message-metrics v4-metrics request log node health-check event-metrics; do
-            touch "/tmp/gravitee-reporter/${name}-${date_suffix}.json"
+          while true; do
+            date_suffix="$(date +%Y_%m_%d)"
+            chown -R 1001:1000 /tmp/gravitee-reporter
+            for name in v4-log v4-message-log v4-message-metrics v4-metrics request log node health-check event-metrics; do
+              touch "/tmp/gravitee-reporter/${name}-${date_suffix}.json"
+            done
+            chown 1001:1000 /tmp/gravitee-reporter/*-"${date_suffix}".json
+            tail -n+1 -F /tmp/gravitee-reporter/*-"${date_suffix}".json &
+            tail_pid=$!
+            while [ "$(date +%Y_%m_%d)" = "$date_suffix" ]; do
+              sleep 60
+            done
+            kill "$tail_pid"
+            wait "$tail_pid" 2>/dev/null || true
           done
-          chown 1001:1000 /tmp/gravitee-reporter/*-"${date_suffix}".json
-          tail -n+1 -F /tmp/gravitee-reporter/*-"${date_suffix}".json
         volumeMounts:
         - name: gravitee-reporter
           mountPath: /tmp/gravitee-reporter
