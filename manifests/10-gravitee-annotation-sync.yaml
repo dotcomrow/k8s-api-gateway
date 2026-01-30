@@ -1364,15 +1364,9 @@ data:
         analytics_json = normalize_analytics(parse_json(annotations.get("gravitee.io/definition-analytics"), "definition-analytics", svc_key))
         if default_logging_config:
             if not analytics_json:
-                analytics_json = {
-                    "enabled": True,
-                    "logging": default_logging_config,
-                }
-            else:
-                if analytics_json.get("enabled") is None:
-                    analytics_json["enabled"] = True
-                if "logging" not in analytics_json:
-                    analytics_json["logging"] = default_logging_config
+                analytics_json = {}
+            analytics_json["enabled"] = True
+            analytics_json["logging"] = default_logging_config
         pages_json = normalize_map(build_pages(annotations, svc_key))
 
         set_if(metadata_json, "metadata")
@@ -1594,6 +1588,8 @@ spec:
                   key: password
             - name: GRAVITEE_DEFAULT_ANALYTICS_LOGGING
               value: "true"
+            - name: GRAVITEE_DEFAULT_ANALYTICS_LOGGING_JSON
+              value: '{"mode":{"entrypoint":true,"endpoint":true},"phase":{"request":true,"response":true},"content":{"headers":true,"payload":false,"messageHeaders":false,"messageMetadata":false,"messagePayload":false}}'
             - name: AUTO_CREATE_GROUPS
               value: "true"
             - name: AUTO_CREATE_CATEGORIES
