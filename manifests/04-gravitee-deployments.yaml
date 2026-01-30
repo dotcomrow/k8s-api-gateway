@@ -1090,8 +1090,11 @@ spec:
         - |
           set -e
           mkdir -p /tmp/gravitee-reporter
-          touch /tmp/gravitee-reporter/v4-log.json
-          tail -n+1 -F /tmp/gravitee-reporter/*.json
+          date_suffix="$(date +%Y_%m_%d)"
+          for name in v4-log v4-message-log v4-message-metrics v4-metrics request log node health-check event-metrics; do
+            touch "/tmp/gravitee-reporter/${name}-${date_suffix}.json"
+          done
+          tail -n+1 -F /tmp/gravitee-reporter/*-"${date_suffix}".json
         volumeMounts:
         - name: gravitee-reporter
           mountPath: /tmp/gravitee-reporter
