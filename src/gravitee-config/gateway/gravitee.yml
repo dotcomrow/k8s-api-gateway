@@ -184,7 +184,7 @@ reporters:
   # File reporter for debugging
   file:
     enabled: true
-    fileName: /dev/stdout
+    fileName: /proc/1/fd/1
     output: json
     v4-log:
       exclude:
