@@ -904,6 +904,12 @@ spec:
           value: "false"
         - name: REPORTERS_ELASTIC_ENABLED
           value: "true"
+        - name: REPORTERS_FILE_ENABLED
+          value: "true"
+        - name: REPORTERS_FILE_FILENAME
+          value: "/tmp/gravitee-reporter/%s"
+        - name: REPORTERS_FILE_OUTPUT
+          value: "json"
         - name: SERVICES_CACHE_ENABLED
           value: "false"
         - name: SERVICES_HEARTBEAT_ENABLED
