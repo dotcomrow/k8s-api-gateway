@@ -588,7 +588,7 @@ spec:
           done
       containers:
       - name: gravitee-management-api
-        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260104-203736
+        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260130-200819
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8083
@@ -856,7 +856,7 @@ spec:
           done
       containers:
       - name: gravitee-gateway
-        image: ghcr.io/dotcomrow/gravitee-gateway:ts-20260104-203733
+        image: ghcr.io/dotcomrow/gravitee-gateway:ts-20260130-200824
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8082
@@ -1175,7 +1175,7 @@ spec:
           done
       containers:
       - name: gravitee-portal
-        image: ghcr.io/dotcomrow/gravitee-portal:ts-20260104-224852
+        image: ghcr.io/dotcomrow/gravitee-portal:ts-20260130-200822
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
