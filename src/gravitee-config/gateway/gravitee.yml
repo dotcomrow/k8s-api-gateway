@@ -184,7 +184,7 @@ reporters:
   # File reporter for debugging
   file:
     enabled: true
-    fileName: /tmp/gravitee-reporter/%s
+    fileName: /tmp/gravitee-reporter/%s-yyyy_mm_dd
     output: json
     v4-log:
       exclude:
