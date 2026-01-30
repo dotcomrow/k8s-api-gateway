@@ -954,7 +954,7 @@ spec:
         - name: TOKEN_EXCHANGE_TOKEN_ENDPOINT
           value: "https://auth.suncoast.systems/realms/external/protocol/openid-connect/token"
         - name: JAVA_TOOL_OPTIONS
-          value: "-javaagent:/opt/otel/opentelemetry-javaagent.jar"
+          value: "-javaagent:/opt/otel/opentelemetry-javaagent.jar -Dreporters.file.enabled=true -Dreporters.file.fileName=/tmp/gravitee-reporter/%s -Dreporters.file.output=json"
         - name: OTEL_SERVICE_NAME
           value: "gravitee-gateway"
         - name: OTEL_RESOURCE_ATTRIBUTES
