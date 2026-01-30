@@ -1,0 +1,8 @@
+= TraceContext Gravitee Policy
+
+ifdef::env-github[]
+image:https://ci.gravitee.io/buildStatus/icon?job=gravitee-io/trace-context-policy/master["Build status", link="https://ci.gravitee.io/job/gravitee-io/job/trace-context-policy/"]
+image:https://f.hubspotusercontent40.net/hubfs/7600448/gravitee-github-button.jpg["Join the community forum", link="https://community.gravitee.io?utm_source=readme", height=20]
+endif::[]
+
+Here you can document your TraceContext Gravitee Policy.

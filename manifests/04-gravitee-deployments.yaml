@@ -394,6 +394,7 @@ data:
       <logger name="io.gravitee.rest.api.service.impl.FetcherServiceImpl" level="DEBUG" />
       <logger name="io.gravitee.rest.api.service.impl.swagger" level="DEBUG" />
 
+      <logger name="io.suncoast.gravitee.extension.policy" level="INFO" />
       <logger name="io.gravitee" level="INFO" />
       <logger name="org.eclipse.jetty" level="INFO" />
 

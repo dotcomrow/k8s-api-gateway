@@ -1,3 +1,9 @@
+# Build the trace context policy plugin
+FROM maven:3.9.8-eclipse-temurin-17 AS trace-context-policy-build
+WORKDIR /workspace/trace-context-policy
+COPY trace-context-policy /workspace/trace-context-policy
+RUN mvn -q -DskipTests package
+
 # Gravitee.io Gateway with Enhanced Monitoring
 FROM graviteeio/apim-gateway:4.9.10
 
@@ -24,6 +30,8 @@ RUN mkdir -p /opt/otel \
 RUN cp /usr/local/lib/postgresql-42.7.4.jar /opt/graviteeio-gateway/lib/postgresql-42.7.4.jar
 # Copy custom gateway configuration for Kubernetes and APISIX integration
 COPY --chown=graviteeio:gravitee src/gravitee-config/gateway/gravitee.yml /opt/graviteeio-gateway/config/
+# Install the trace context policy plugin
+COPY --from=trace-context-policy-build /workspace/trace-context-policy/target/trace-context-policy-1.0.0-SNAPSHOT.zip /opt/graviteeio-gateway/plugins/
 
 # Switch back to gravitee user (logs directory already exists with correct permissions)
 USER graviteeio
