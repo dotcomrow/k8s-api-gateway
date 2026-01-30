@@ -494,6 +494,29 @@ data:
             return value
         return str(value).lower() == "true"
 
+    default_logging_enabled = parse_bool(os.environ.get("GRAVITEE_DEFAULT_ANALYTICS_LOGGING"), True)
+    default_logging_json = os.environ.get("GRAVITEE_DEFAULT_ANALYTICS_LOGGING_JSON")
+    default_logging_config = None
+    if default_logging_json:
+        try:
+            parsed = json.loads(default_logging_json)
+            if isinstance(parsed, dict):
+                default_logging_config = parsed
+        except json.JSONDecodeError as exc:
+            log(f"Invalid GRAVITEE_DEFAULT_ANALYTICS_LOGGING_JSON: {exc}")
+    elif default_logging_enabled:
+        default_logging_config = {
+            "mode": {"entrypoint": True, "endpoint": True},
+            "phase": {"request": True, "response": True},
+            "content": {
+                "headers": True,
+                "payload": False,
+                "messageHeaders": False,
+                "messageMetadata": False,
+                "messagePayload": False,
+            },
+        }
+
     def normalize_healthcheck_service(value, svc_key):
         if not isinstance(value, dict):
             return None
@@ -1339,6 +1362,17 @@ data:
         flows_json = apply_token_exchange_flows(flows_json, token_exchange_target, svc_key)
         responses_json = normalize_map(parse_json(annotations.get("gravitee.io/definition-response-templates"), "definition-response-templates", svc_key))
         analytics_json = normalize_analytics(parse_json(annotations.get("gravitee.io/definition-analytics"), "definition-analytics", svc_key))
+        if default_logging_config:
+            if not analytics_json:
+                analytics_json = {
+                    "enabled": True,
+                    "logging": default_logging_config,
+                }
+            else:
+                if analytics_json.get("enabled") is None:
+                    analytics_json["enabled"] = True
+                if "logging" not in analytics_json:
+                    analytics_json["logging"] = default_logging_config
         pages_json = normalize_map(build_pages(annotations, svc_key))
 
         set_if(metadata_json, "metadata")
@@ -1558,6 +1592,8 @@ spec:
                 secretKeyRef:
                   name: gravitee-admin-credentials
                   key: password
+            - name: GRAVITEE_DEFAULT_ANALYTICS_LOGGING
+              value: "true"
             - name: AUTO_CREATE_GROUPS
               value: "true"
             - name: AUTO_CREATE_CATEGORIES
