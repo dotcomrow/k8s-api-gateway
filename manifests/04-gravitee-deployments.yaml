@@ -468,7 +468,7 @@ spec:
       serviceAccountName: gravitee
       initContainers:
       - name: wait-database-setup
-        image: alpine/k8s:1.31.4
+        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260131-225218
         env:
         - name: YUGABYTE_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
@@ -482,8 +482,25 @@ spec:
         - |
           echo "🔧 Waiting for Gravitee database to be ready..."
 
-          # Install required packages
-          apk add --no-cache netcat-openbsd postgresql15-client
+          # Ensure required tools are present (baked into the image)
+          if ! command -v nc >/dev/null 2>&1; then
+            echo "❌ nc not available in init image."
+            exit 1
+          fi
+          if ! command -v psql >/dev/null 2>&1; then
+            echo "❌ psql not available in init image."
+            exit 1
+          fi
+
+          # Load DB creds from Vault
+          if [ -f /vault/secrets/db-creds ]; then
+            # shellcheck disable=SC1091
+            . /vault/secrets/db-creds
+            echo "✅ Database credentials loaded"
+          else
+            echo "❌ Database credentials not available from Vault."
+            exit 1
+          fi
 
           # Wait for YugabyteDB to be reachable
           echo "🔍 Waiting for YugabyteDB to be reachable..."
