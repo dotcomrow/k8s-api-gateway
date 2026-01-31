@@ -8,7 +8,7 @@ RUN mvn -q -DskipTests package
 FROM graviteeio/apim-gateway:4.9.10
 
 ARG OTEL_AGENT_VERSION=1.33.0
-ARG OTEL_LOGBACK_APPENDER_VERSION=1.33.0
+ARG OTEL_LOGBACK_APPENDER_VERSION=1.33.0-alpha
 
 # Switch to root for package installations  
 USER root
