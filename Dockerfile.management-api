@@ -1,6 +1,8 @@
 # Gravitee.io Management API with YugabyteDB Support
 FROM graviteeio/apim-management-api:4.9.10
 
+ARG OTEL_LOGBACK_APPENDER_VERSION=1.33.0-alpha
+
 # Switch to root for package installations
 USER root
 
@@ -17,6 +19,31 @@ RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/post
     -O /usr/local/lib/postgresql-42.7.4.jar
 # Also copy the JDBC driver to the Gravitee lib directory for classpath loading
 RUN cp /usr/local/lib/postgresql-42.7.4.jar /opt/graviteeio-management-api/lib/postgresql-42.7.4.jar
+
+# Install OpenTelemetry Logback appender for log export
+RUN wget -q https://repo1.maven.org/maven2/io/opentelemetry/instrumentation/opentelemetry-logback-appender-1.0/${OTEL_LOGBACK_APPENDER_VERSION}/opentelemetry-logback-appender-1.0-${OTEL_LOGBACK_APPENDER_VERSION}.jar \
+    -O /opt/graviteeio-management-api/lib/opentelemetry-logback-appender-1.0-${OTEL_LOGBACK_APPENDER_VERSION}.jar \
+    && chmod 0444 /opt/graviteeio-management-api/lib/opentelemetry-logback-appender-1.0-${OTEL_LOGBACK_APPENDER_VERSION}.jar
+
+# Ensure Logback can load the OTEL appender during early bootstrap.
+RUN cat > /tmp/patch-gravitee-classpath.sh <<'EOF'
+#!/bin/sh
+set -e
+target="/opt/graviteeio-management-api/bin/gravitee"
+tmp="$(mktemp)"
+awk '
+  {print}
+  /^GRAVITEE_BOOT_CLASSPATH=/ {
+    print "OTEL_LOGBACK_APPENDER_JAR=$(ls -1 \"$GRAVITEE_HOME\"/lib/opentelemetry-logback-appender-1.0-*.jar 2>/dev/null | head -n 1)"
+    print "if [ -n \"$OTEL_LOGBACK_APPENDER_JAR\" ]; then"
+    print "  GRAVITEE_BOOT_CLASSPATH=\"${GRAVITEE_BOOT_CLASSPATH}:${OTEL_LOGBACK_APPENDER_JAR}\""
+    print "fi"
+  }
+' "$target" > "$tmp"
+mv "$tmp" "$target"
+chmod 0755 "$target"
+EOF
+RUN sh /tmp/patch-gravitee-classpath.sh && rm /tmp/patch-gravitee-classpath.sh
 
 # Copy custom configuration with YugabyteDB and Vault integration
 COPY --chown=graviteeio:gravitee src/gravitee-config/management-api/gravitee.yml /opt/graviteeio-management-api/config/
