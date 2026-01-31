@@ -360,7 +360,7 @@ data:
         </encoder>
       </appender>
 
-      <appender name="OTEL" class="io.opentelemetry.instrumentation.logback.v1_0.OpenTelemetryAppender" />
+      <appender name="OTEL" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender" />
 
       <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${gravitee.home}/logs/gravitee.log</file>
@@ -974,7 +974,7 @@ spec:
         - name: OTEL_LOGS_EXPORTER
           value: "otlp"
         - name: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
-          value: "http://grafana-k8s-monitoring-alloy-receiver.logging-and-monitoring.svc.cluster.local:4318"
+          value: "http://grafana-k8s-monitoring-alloy-receiver.logging-and-monitoring.svc.cluster.local:4318/v1/logs"
         - name: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
           value: "http/protobuf"
         - name: OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED
@@ -1848,7 +1848,7 @@ data:
         </encoder>
       </appender>
 
-      <appender name="OTEL" class="io.opentelemetry.instrumentation.logback.v1_0.OpenTelemetryAppender" />
+      <appender name="OTEL" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender" />
 
       <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${gravitee.home}/logs/gravitee.log</file>
