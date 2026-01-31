@@ -432,6 +432,7 @@ spec:
       annotations:
         linkerd.io/inject: "disabled"
         vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-init-first: "true"
         vault.hashicorp.com/role: "gravitee"
         vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
         vault.hashicorp.com/agent-inject-template-db-creds: |
@@ -492,7 +493,15 @@ spec:
             exit 1
           fi
 
-          # Load DB creds from Vault
+          # Load DB creds from Vault (wait briefly for Vault init to populate)
+          if [ ! -f /vault/secrets/db-creds ]; then
+            echo "⏳ Waiting for Vault db-creds..."
+            i=0
+            while [ ! -f /vault/secrets/db-creds ] && [ $i -lt 60 ]; do
+              sleep 2
+              i=$((i+1))
+            done
+          fi
           if [ -f /vault/secrets/db-creds ]; then
             # shellcheck disable=SC1091
             . /vault/secrets/db-creds
