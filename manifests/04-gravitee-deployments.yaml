@@ -889,6 +889,13 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 8082
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
         env:
         - name: YUGABYTE_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
@@ -1121,7 +1128,7 @@ spec:
           initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 10
-          failureThreshold: 60
+          failureThreshold: 120
         volumeMounts:
         - name: gateway-config
           mountPath: /opt/graviteeio-gateway/config/gravitee.yml
