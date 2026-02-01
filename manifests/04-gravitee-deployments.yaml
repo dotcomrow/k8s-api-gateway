@@ -1944,6 +1944,7 @@ spec:
           annotations:
             linkerd.io/inject: "disabled"
             vault.hashicorp.com/agent-inject: "true"
+            vault.hashicorp.com/agent-init-first: "true"
             vault.hashicorp.com/agent-pre-populate-only: "true"
             vault.hashicorp.com/role: "gravitee"
             vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
@@ -1977,7 +1978,7 @@ spec:
               done
           containers:
           - name: configure
-            image: alpine/k8s:1.31.4
+            image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260131-225218
             env:
             - name: MGMT_API_URL
               value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"
@@ -2027,7 +2028,12 @@ spec:
             args:
             - |
               set -e
-              apk add --no-cache curl jq postgresql15-client >/dev/null
+              for tool in curl jq psql; do
+                if ! command -v "$tool" >/dev/null 2>&1; then
+                  echo "❌ Required tool $tool not available in image."
+                  exit 1
+                fi
+              done
 
               retry() {
                 attempts="$1"
@@ -2052,8 +2058,17 @@ spec:
 
               JQ_BIN="/usr/bin/jq"
 
+              if [ ! -f "/vault/secrets/db-creds" ]; then
+                echo "⏳ Waiting for Vault db-creds..."
+                i=0
+                while [ ! -f /vault/secrets/db-creds ] && [ $i -lt 60 ]; do
+                  sleep 2
+                  i=$((i+1))
+                done
+              fi
               if [ -f "/vault/secrets/db-creds" ]; then
                 . /vault/secrets/db-creds
+                echo "✅ Database credentials loaded"
               fi
               if [ -z "${YUGABYTE_USER:-}" ] || [ -z "${YUGABYTE_PASSWORD:-}" ]; then
                 echo "❌ Database credentials not available from Vault."
@@ -2075,12 +2090,11 @@ spec:
                   echo "✅ Using pgcrypto for password hashing."
                 else
                   echo "⚠️ pgcrypto unavailable (see /tmp/pgcrypto.log). Falling back to local bcrypt generation."
-                  if ! apk add --no-cache python3 py3-bcrypt >/dev/null; then
-                    echo "❌ Failed to install python3/py3-bcrypt for local hashing."
+                  if ! command -v python3 >/dev/null 2>&1; then
+                    echo "❌ python3 not available in image; bake python3 + bcrypt into the image or enable pgcrypto."
                     return 1
                   fi
-
-                  if ! ADMIN_BCRYPT_HASH=$(python3 -c 'import bcrypt, os, sys; pw=os.environ.get("ADMIN_PASSWORD",""); if not pw: sys.exit("ADMIN_PASSWORD is empty; cannot hash"); print(bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode())'); then
+                  if ! python3 -c 'import bcrypt, os, sys; pw=os.environ.get("ADMIN_PASSWORD",""); if not pw: sys.exit("ADMIN_PASSWORD is empty; cannot hash"); print(bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode())'; then
                     echo "❌ Failed to compute bcrypt hash locally."
                     return 1
                   fi
