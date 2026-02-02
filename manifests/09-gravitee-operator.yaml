@@ -5757,7 +5757,8 @@ spec:
                                           type: object
                                         type: array
                                         x-kubernetes-list-type: atomic
-
+                                      resources:
+                                        description: >-
                                           Cannot be updated.
 
                                           More info: https://kubernetes.
