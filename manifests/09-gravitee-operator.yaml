@@ -5759,6 +5759,9 @@ spec:
                                         x-kubernetes-list-type: atomic
                                       resources:
                                         description: >-
+                                          Compute Resources required by this
+                                          container.
+
                                           Cannot be updated.
 
                                           More info: https://kubernetes.
@@ -7003,6 +7006,38 @@ spec:
                                           type: object
                                         type: array
                                         x-kubernetes-list-type: atomic
+                                      resources:
+                                        description: Resources are not allowed for ephemeral containers.
+                                        properties:
+                                          claims:
+                                            description: Claims lists the names of resources, defined in spec.
+                                            items:
+                                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                                              properties:
+                                                name:
+                                                  description: Name must match the name of one entry in pod.spec.
+                                                  type: string
+                                                request:
+                                                  description: Request is the name chosen for a request in the referenced claim.
+                                                  type: string
+                                              required:
+                                                - name
+                                              type: object
+                                            type: array
+                                            x-kubernetes-list-map-keys:
+                                              - name
+                                            x-kubernetes-list-type: map
+                                          limits:
+                                            additionalProperties:
+                                              anyOf:
+                                                - type: integer
+                                                - type: string
+                                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                              x-kubernetes-int-or-string: true
+                                            description: >-
+                                              Limits describes the maximum
+                                              amount of compute resources
+                                              allowed.
 
                                               More info: https://kubernetes.
                                             type: object
@@ -8252,6 +8287,10 @@ spec:
                                           type: object
                                         type: array
                                         x-kubernetes-list-type: atomic
+                                      resources:
+                                        description: >-
+                                          Compute Resources required by this
+                                          container.
 
                                           Cannot be updated.
 
