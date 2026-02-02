@@ -889,13 +889,6 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 8082
-        resources:
-          requests:
-            cpu: "250m"
-            memory: "512Mi"
-          limits:
-            cpu: "1000m"
-            memory: "1Gi"
         env:
         - name: YUGABYTE_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
@@ -2685,13 +2678,6 @@ spec:
           containers:
           - name: prune
             image: alpine:3.20
-            resources:
-              requests:
-                cpu: 50m
-                memory: 128Mi
-              limits:
-                cpu: 250m
-                memory: 256Mi
             env:
             - name: YUGABYTE_HOST
               value: "yb-tserver-service.yugabyte.svc.cluster.local"
@@ -2870,13 +2856,6 @@ spec:
       containers:
       - name: prune
         image: alpine:3.20
-        resources:
-          requests:
-            cpu: 50m
-            memory: 128Mi
-          limits:
-            cpu: 250m
-            memory: 256Mi
         env:
         - name: YUGABYTE_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
