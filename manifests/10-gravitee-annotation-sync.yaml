@@ -1212,18 +1212,63 @@ data:
     def service_dns(name, namespace):
         return f"{name}.{namespace}.svc.cluster.local"
 
-    def pick_port(ports, preferred_name=None):
+    def normalize_port_override(value):
+        if value is None:
+            return None
+        raw = str(value).strip()
+        if not raw:
+            return None
+        if raw.isdigit():
+            return int(raw)
+        return raw.lower()
+
+    def pick_port(ports, preferred_name=None, override=None):
         if not ports:
             return None
+        if override is not None:
+            if isinstance(override, int):
+                for port in ports:
+                    if port.get("port") == override:
+                        return port
+                    target = port.get("targetPort")
+                    if target == override:
+                        return port
+                    if isinstance(target, str) and target.isdigit() and int(target) == override:
+                        return port
+            else:
+                override_name = str(override).lower()
+                for port in ports:
+                    if str(port.get("name", "")).lower() == override_name:
+                        return port
+                    if str(port.get("appProtocol", "")).lower() == override_name:
+                        return port
+                for port in ports:
+                    if override_name in str(port.get("name", "")).lower():
+                        return port
+                    if override_name in str(port.get("appProtocol", "")).lower():
+                        return port
         if preferred_name:
+            preferred = str(preferred_name).lower()
             for port in ports:
-                if str(port.get("name", "")).lower() == preferred_name:
+                if str(port.get("name", "")).lower() == preferred:
+                    return port
+                if str(port.get("appProtocol", "")).lower() == preferred:
+                    return port
+            for port in ports:
+                if str(port.get("name", "")).lower().startswith(preferred):
+                    return port
+                if preferred in str(port.get("name", "")).lower():
+                    return port
+                if preferred in str(port.get("appProtocol", "")).lower():
                     return port
         return ports[0]
 
     def infer_http_scheme(port):
+        app_protocol = str(port.get("appProtocol", "")).lower()
+        if app_protocol in {"https", "http"}:
+            return app_protocol
         name = str(port.get("name", "")).lower()
-        if "https" in name or port.get("port") == 443:
+        if "https" in name or app_protocol == "https" or port.get("port") == 443:
             return "https"
         return "http"
 
@@ -1274,7 +1319,8 @@ data:
         if raw_groups is not None:
             return normalize_endpoint_groups(raw_groups)
         endpoints = parse_json(annotations.get("gravitee.io/definition-endpoints"), "definition-endpoints", svc_key)
-        port = pick_port(ports, "kafka" if api_type == "NATIVE" else "http") or pick_port(ports)
+        endpoint_port_override = normalize_port_override(annotations.get("gravitee.io/definition-endpoint-port"))
+        port = pick_port(ports, "kafka" if api_type == "NATIVE" else "http", endpoint_port_override) or pick_port(ports)
         if not port:
             return []
         if api_type == "NATIVE":

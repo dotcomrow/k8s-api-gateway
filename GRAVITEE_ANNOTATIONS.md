@@ -54,6 +54,7 @@ GKO must be installed for these annotations to take effect.
 ## Listener and endpoint helpers
 - `gravitee.io/definition-listener-host` (defaults to service DNS name)
 - `gravitee.io/definition-listener-port` (defaults to service port)
+- `gravitee.io/definition-endpoint-port` (service port name or number override for endpoint selection)
 - `gravitee.io/definition-endpoint-scheme` (`http` or `https`)
 
 ## Definition execution options
