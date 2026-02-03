@@ -469,7 +469,7 @@ spec:
       serviceAccountName: gravitee
       initContainers:
       - name: wait-database-setup
-        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260201-002435
+        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260203-144106
         env:
         - name: YUGABYTE_HOST
           value: "yb-tserver-service.yugabyte.svc.cluster.local"
@@ -617,7 +617,7 @@ spec:
           done
       containers:
       - name: gravitee-management-api
-        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260201-002435
+        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260203-144106
         imagePullPolicy: Always
         ports:
         - containerPort: 8083
@@ -885,7 +885,7 @@ spec:
           done
       containers:
       - name: gravitee-gateway
-        image: ghcr.io/dotcomrow/gravitee-gateway:ts-20260201-002435
+        image: ghcr.io/dotcomrow/gravitee-gateway:ts-20260203-144111
         imagePullPolicy: Always
         ports:
         - containerPort: 8082
@@ -1208,7 +1208,7 @@ spec:
           done
       containers:
       - name: gravitee-portal
-        image: ghcr.io/dotcomrow/gravitee-portal:ts-20260201-002439
+        image: ghcr.io/dotcomrow/gravitee-portal:ts-20260203-144107
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
@@ -1978,7 +1978,7 @@ spec:
               done
           containers:
           - name: configure
-            image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260201-002435
+            image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260203-144106
             env:
             - name: MGMT_API_URL
               value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083"

@@ -324,7 +324,7 @@ spec:
           echo "etcd is ready"
       containers:
         - name: apisix
-          image: ghcr.io/dotcomrow/gravitee-apisix:ts-20260201-002438
+          image: ghcr.io/dotcomrow/gravitee-apisix:ts-20260203-144109
           command: ["/bin/sh", "-c"]
           args:
             - |
