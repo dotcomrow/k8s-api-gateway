@@ -42,12 +42,14 @@ ghcr.io/dotcomrow/gravitee-portal:prod-20241110-143022
 - ✅ **Debugging**: curl, wget, jq, netcat for troubleshooting
 - ✅ **Health Checks**: Kubernetes-optimized readiness/liveness probes
 - ✅ **Custom Config**: Pre-configured for YugabyteDB and Vault integration
+- ✅ **Trace Context Policy**: Ships the `trace-context` policy plugin for API import validation
 
 ### **Gateway Image** 
 - ✅ **Enhanced Monitoring**: Network debugging tools (tcpdump, netcat)
 - ✅ **API Tools**: curl, jq for API testing and monitoring
 - ✅ **Health Checks**: Custom endpoint monitoring for Kubernetes
 - ✅ **Custom Config**: Pre-configured for APISIX integration
+- ✅ **Trace Context Policy**: Ships the `trace-context` policy plugin for runtime execution
 
 ### **Portal Image**
 - ✅ **Custom Branding**: Configurable UI elements and themes

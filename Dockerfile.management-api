@@ -1,3 +1,9 @@
+# Build the trace context policy plugin
+FROM maven:3.9.8-eclipse-temurin-17 AS trace-context-policy-build
+WORKDIR /workspace/trace-context-policy
+COPY trace-context-policy /workspace/trace-context-policy
+RUN mvn -q -DskipTests package
+
 # Gravitee.io Management API with YugabyteDB Support
 FROM graviteeio/apim-management-api:4.9.10
 
@@ -27,6 +33,8 @@ RUN wget -q https://repo1.maven.org/maven2/io/opentelemetry/instrumentation/open
 
 # Copy custom configuration with YugabyteDB and Vault integration
 COPY --chown=graviteeio:gravitee src/gravitee-config/management-api/gravitee.yml /opt/graviteeio-management-api/config/
+# Install the trace context policy plugin (required for API import validation)
+COPY --from=trace-context-policy-build /workspace/trace-context-policy/target/trace-context-policy-1.0.0-SNAPSHOT.zip /opt/graviteeio-management-api/plugins/
 
 # Switch back to gravitee user (logs directory already exists with correct permissions)
 USER graviteeio
