@@ -1019,7 +1019,10 @@ data:
         if not isinstance(config, dict):
             config = {}
         config["publicKeyResolver"] = "JWKS_URL"
-        if jwks_url:
+        # Only apply the default JWKS URL when the service did not specify one.
+        # This lets service-provided flows pick internal vs external realms.
+        existing_resolver = config.get("resolverParameter")
+        if jwks_url and (existing_resolver is None or str(existing_resolver).strip() == ""):
             config["resolverParameter"] = jwks_url
         config.setdefault("signature", "RSA_RS256")
         config.setdefault("extractClaims", True)
