@@ -721,6 +721,11 @@ spec:
           value: "[Gravitee.io] %s"
         - name: GRAVITEE_LOG_LEVEL
           value: "DEBUG"
+        # Control startup heap via GIO_* (bin/gravitee appends these after JAVA_OPTS).
+        - name: GIO_MIN_MEM
+          value: "1024m"
+        - name: GIO_MAX_MEM
+          value: "1024m"
         - name: GRAVITEE_LICENSE_KEY
           valueFrom:
             secretKeyRef:
@@ -800,6 +805,13 @@ spec:
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 6
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
         volumeMounts:
         - name: gravitee-management-config
           mountPath: /opt/graviteeio-management-api/config/gravitee.yml
