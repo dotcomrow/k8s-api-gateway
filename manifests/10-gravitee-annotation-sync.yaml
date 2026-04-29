@@ -277,6 +277,7 @@ data:
   sync.py: |
     #!/usr/bin/env python3
     import base64
+    import hashlib
     import json
     import os
     import re
@@ -320,6 +321,8 @@ data:
     DEFAULT_JWT_EMAIL_ALLOWLIST = os.environ.get("DEFAULT_JWT_EMAIL_ALLOWLIST", "").strip()
     DEFAULT_JWT_DEV_ROLE = os.environ.get("DEFAULT_JWT_DEV_ROLE", "dev_access").strip()
     DEFAULT_JWT_RBAC_ENABLED = os.environ.get("DEFAULT_JWT_RBAC_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+    OPENAPI_PREFLIGHT_ENABLED = os.environ.get("OPENAPI_PREFLIGHT_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+    OPENAPI_PREFLIGHT_TIMEOUT_SECONDS = int(os.environ.get("OPENAPI_PREFLIGHT_TIMEOUT_SECONDS", "10"))
 
     def log(msg):
         print(msg, flush=True)
@@ -1391,6 +1394,76 @@ data:
             },
         }
 
+    def page_source_url(page):
+        if not isinstance(page, dict):
+            return None
+        source = page.get("source") or {}
+        if not isinstance(source, dict) or source.get("type") != "http-fetcher":
+            return None
+        config = source.get("configuration") or {}
+        if not isinstance(config, dict):
+            return None
+        return config.get("url")
+
+    class OpenApiNotReady(Exception):
+        pass
+
+    def validate_openapi_document(body):
+        text = body.decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return bool(parsed.get("openapi") or parsed.get("swagger")) and isinstance(parsed.get("paths"), dict)
+        except Exception:
+            pass
+        lines = [line.strip() for line in text.splitlines()]
+        has_version = any(line.startswith("openapi:") or line.startswith("swagger:") for line in lines)
+        has_paths = any(line == "paths:" or line.startswith("paths:") for line in lines)
+        return has_version and has_paths
+
+    def preflight_openapi_pages(pages, svc_key):
+        if not OPENAPI_PREFLIGHT_ENABLED or not isinstance(pages, dict):
+            return True, []
+        fingerprints = []
+        for page_key, page in pages.items():
+            page_type = str((page or {}).get("type") or "").upper() if isinstance(page, dict) else ""
+            if page_type not in ("SWAGGER", "OPENAPI"):
+                continue
+            url = page_source_url(page)
+            if not url:
+                content = page.get("content") if isinstance(page, dict) else None
+                if content:
+                    digest = hashlib.sha256(str(content).encode("utf-8")).hexdigest()
+                    fingerprints.append(f"{page_key}:inline:{digest}")
+                continue
+            try:
+                req = urllib.request.Request(url, headers={"Accept": "application/json, application/yaml, text/yaml, */*"})
+                with urllib.request.urlopen(req, timeout=OPENAPI_PREFLIGHT_TIMEOUT_SECONDS) as resp:
+                    body = resp.read()
+                    status = getattr(resp, "status", 200)
+            except Exception as exc:
+                log(f"Skipping {svc_key}: OpenAPI page {page_key} is not ready at {url}: {exc}")
+                return False, []
+            if status < 200 or status >= 300 or not validate_openapi_document(body):
+                log(f"Skipping {svc_key}: OpenAPI page {page_key} at {url} did not return a valid OpenAPI document")
+                return False, []
+            digest = hashlib.sha256(body).hexdigest()
+            fingerprints.append(f"{page_key}:{url}:{digest}")
+        return True, fingerprints
+
+    def append_sync_metadata(metadata_json, fingerprints):
+        items = list(metadata_json or [])
+        if fingerprints:
+            digest = hashlib.sha256("\n".join(sorted(fingerprints)).encode("utf-8")).hexdigest()
+            items = [item for item in items if item.get("key") != "annotation_sync_openapi_sha256"]
+            items.append({
+                "key": "annotation_sync_openapi_sha256",
+                "name": "annotation_sync_openapi_sha256",
+                "format": "STRING",
+                "value": digest,
+            })
+        return items or None
+
     def build_api_definition(service):
         metadata = service.get("metadata", {})
         annotations = metadata.get("annotations", {}) or {}
@@ -1492,6 +1565,10 @@ data:
             analytics_json["enabled"] = True
             analytics_json["logging"] = default_logging_config
         pages_json = normalize_map(build_pages(annotations, svc_key))
+        pages_ready, openapi_fingerprints = preflight_openapi_pages(pages_json, svc_key)
+        if not pages_ready:
+            raise OpenApiNotReady(svc_key)
+        metadata_json = append_sync_metadata(metadata_json, openapi_fingerprints)
 
         set_if(metadata_json, "metadata")
         set_if(properties_json, "properties")
@@ -1604,12 +1681,19 @@ data:
 
         ensure_groups_and_categories(desired_groups, desired_categories)
         desired = {}
+        desired_preserve = set()
         desired_healthchecks = {}
         for service in services:
             annotations = service.get("metadata", {}).get("annotations", {}) or {}
             if not is_true(annotations.get("gravitee.io/expose")):
                 continue
-            api = build_api_definition(service)
+            metadata = service.get("metadata", {})
+            svc_key_tuple = (metadata.get("namespace"), metadata.get("name"))
+            try:
+                api = build_api_definition(service)
+            except OpenApiNotReady:
+                desired_preserve.add(svc_key_tuple)
+                continue
             if not api:
                 continue
             key = (api["metadata"]["namespace"], api["metadata"]["name"])
@@ -1626,7 +1710,7 @@ data:
         existing = list_managed_apis()
         for api in existing:
             key = (api.get("metadata", {}).get("namespace"), api.get("metadata", {}).get("name"))
-            if key not in desired:
+            if key not in desired and key not in desired_preserve:
                 if delete_api(*key):
                     log(f"deleted: {key[0]}/{key[1]}")
 
@@ -1738,6 +1822,10 @@ spec:
               value: "dev_access"
             - name: DEFAULT_JWT_RBAC_ENABLED
               value: "false"
+            - name: OPENAPI_PREFLIGHT_ENABLED
+              value: "true"
+            - name: OPENAPI_PREFLIGHT_TIMEOUT_SECONDS
+              value: "10"
           volumeMounts:
             - name: sync-script
               mountPath: /app
