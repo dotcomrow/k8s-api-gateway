@@ -1053,9 +1053,16 @@ data:
                     update_jwt_step(step, jwks_url)
         return flows
 
-    def apply_default_jwt_flows(flows, svc_key):
+    def apply_default_jwt_flows(flows, svc_key, token_exchange_target=None):
         if not DEFAULT_JWT_ENABLED:
             return flows
+        token_exchange_target = str(token_exchange_target or "").strip()
+        flows_list = flows if isinstance(flows, list) else []
+        # Token-exchange callouts validate and normalize bearer tokens for both
+        # internal/external issuers. Avoid injecting a single static JWKS JWT
+        # gate in front of those APIs, which can reject one realm.
+        if token_exchange_target:
+            return flows_list
         internal_issuer = DEFAULT_JWT_INTERNAL_ISSUER
         external_issuer = DEFAULT_JWT_EXTERNAL_ISSUER
         internal_jwks = normalized_jwks_url(internal_issuer, DEFAULT_JWT_INTERNAL_JWKS)
@@ -1064,7 +1071,6 @@ data:
         if not jwks_url:
             log(f"DEFAULT_JWT_ENABLED is true but no JWKS URL is configured; skipping for {svc_key}")
             return flows
-        flows_list = flows if isinstance(flows, list) else []
         has_jwt = any(
             isinstance(flow, dict) and any(isinstance(step, dict) and step.get("policy") == "jwt" for step in flow.get("request", []))
             for flow in flows_list
@@ -1108,12 +1114,18 @@ data:
             return flows
         flows_list = flows if isinstance(flows, list) else []
         if not flows_list:
-            log(f"Token exchange configured for {svc_key} but no flows present; skipping")
-            return flows
+            flows_list = [
+                {
+                    "name": "default-token-exchange",
+                    "enabled": True,
+                    "request": [],
+                }
+            ]
         for flow in flows_list:
             request_steps = flow.get("request")
             if not isinstance(request_steps, list):
-                continue
+                request_steps = []
+                flow["request"] = request_steps
             remove_names = {
                 "token-exchange",
                 "token-exchange-attributes",
@@ -1127,13 +1139,14 @@ data:
                 if not (isinstance(step, dict) and step.get("name") in remove_names)
             ]
             jwt_indices = [idx for idx, step in enumerate(request_steps) if isinstance(step, dict) and step.get("policy") == "jwt"]
-            if not jwt_indices:
-                continue
-            insert_at = max(jwt_indices) + 1
-            for idx, step in enumerate(request_steps):
-                if isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "map-roles":
-                    insert_at = idx + 1
-                    break
+            if jwt_indices:
+                insert_at = max(jwt_indices) + 1
+                for idx, step in enumerate(request_steps):
+                    if isinstance(step, dict) and step.get("policy") == "groovy" and step.get("name") == "map-roles":
+                        insert_at = idx + 1
+                        break
+            else:
+                insert_at = 0
             request_steps.insert(insert_at, build_token_exchange_callout_step(target))
             request_steps.insert(insert_at + 1, build_token_exchange_strip_auth_step())
             request_steps.insert(insert_at + 2, build_token_exchange_set_auth_step())
@@ -1552,8 +1565,8 @@ data:
         resources_json = normalize_list(parse_json(annotations.get("gravitee.io/definition-resources"), "definition-resources", svc_key))
         plans_json = normalize_plans(parse_json(annotations.get("gravitee.io/definition-plans"), "definition-plans", svc_key), svc_key)
         flows_json = normalize_list(parse_json(annotations.get("gravitee.io/definition-flows"), "definition-flows", svc_key))
-        flows_json = apply_default_jwt_flows(flows_json, svc_key)
         token_exchange_target = (annotations.get("gravitee.io/token-exchange-target") or "").strip()
+        flows_json = apply_default_jwt_flows(flows_json, svc_key, token_exchange_target)
         flows_json = apply_token_exchange_flows(flows_json, token_exchange_target, svc_key)
         flows_json = apply_trace_header_flows(flows_json, svc_key)
         flows_json = apply_trace_context_policy_flows(flows_json, svc_key)
