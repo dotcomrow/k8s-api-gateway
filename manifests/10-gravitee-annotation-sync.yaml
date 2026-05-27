@@ -1647,12 +1647,66 @@ data:
                 return []
             raise
 
+    def managed_patch_equal(current, desired):
+        # Compare only the fields this sync process manages.
+        desired_meta = desired.get("metadata", {}) if isinstance(desired, dict) else {}
+        desired_spec = desired.get("spec", {}) if isinstance(desired, dict) else {}
+        current_meta = current.get("metadata", {}) if isinstance(current, dict) else {}
+        current_spec = current.get("spec", {}) if isinstance(current, dict) else {}
+
+        desired_view = {
+            "metadata": {
+                "labels": desired_meta.get("labels") or {},
+                "annotations": desired_meta.get("annotations") or {},
+                "ownerReferences": desired_meta.get("ownerReferences") or [],
+            },
+            "spec": desired_spec or {},
+        }
+        current_view = {
+            "metadata": {
+                "labels": current_meta.get("labels") or {},
+                "annotations": current_meta.get("annotations") or {},
+                "ownerReferences": current_meta.get("ownerReferences") or [],
+            },
+            "spec": current_spec or {},
+        }
+
+        def matches(current_value, desired_value):
+            if isinstance(desired_value, dict):
+                if not isinstance(current_value, dict):
+                    return False
+                for key, value in desired_value.items():
+                    if value is None:
+                        if key in current_value and current_value.get(key) is not None:
+                            return False
+                        continue
+                    if key not in current_value:
+                        return False
+                    if not matches(current_value.get(key), value):
+                        return False
+                return True
+            if isinstance(desired_value, list):
+                if not isinstance(current_value, list):
+                    return False
+                if len(current_value) != len(desired_value):
+                    return False
+                for idx in range(len(desired_value)):
+                    if not matches(current_value[idx], desired_value[idx]):
+                        return False
+                return True
+            return current_value == desired_value
+
+        return matches(current_view, desired_view)
+
     def apply_api(api):
         ns = api["metadata"]["namespace"]
         name = api["metadata"]["name"]
         path = f"/apis/gravitee.io/v1alpha1/namespaces/{ns}/apiv4definitions/{name}"
         try:
-            kube_request("GET", path).close()
+            with kube_request("GET", path) as resp:
+                existing = json.loads(resp.read().decode("utf-8"))
+            if managed_patch_equal(existing, api):
+                return "unchanged"
             try:
                 kube_request("PATCH", path, api, content_type="application/merge-patch+json").close()
             except urllib.error.HTTPError as exc:
@@ -1768,7 +1822,7 @@ spec:
           command: ["python", "/app/sync.py"]
           env:
             - name: SYNC_INTERVAL
-              value: "60"
+              value: "120"
             - name: GRAVITEE_CONTEXT_NAME
               value: "gravitee-default"
             - name: GRAVITEE_CONTEXT_NAMESPACE
