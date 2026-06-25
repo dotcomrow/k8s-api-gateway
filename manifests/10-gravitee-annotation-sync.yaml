@@ -939,11 +939,12 @@ data:
             '{#properties["token_exchange_url"] != null && #properties["token_exchange_url"].length() > 0 '
             '? #properties["token_exchange_url"] : #properties["token.exchange.token_endpoint"]}'
         )
+        target_expr = client_id_expr if target.startswith("<path:") else target
         body = (
             "grant_type=urn:ietf:params:oauth:grant-type:token-exchange"
             "&subject_token={#request.headers[\"authorization\"][0].substring(7)}"
             "&subject_token_type=urn:ietf:params:oauth:token-type:access_token"
-            f"&audience={target}"
+            f"&audience={target_expr}"
             f"&client_id={client_id_expr}"
             f"&client_secret={client_secret_expr}"
         )
