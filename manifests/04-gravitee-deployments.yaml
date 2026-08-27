@@ -725,7 +725,15 @@ spec:
         - name: GIO_MIN_MEM
           value: "1024m"
         - name: GIO_MAX_MEM
-          value: "1024m"
+          value: "2048m"
+        - name: GIO_HEAP_PERCENT_OF_LIMIT
+          value: "50"
+        - name: CONTAINER_MEMORY_LIMIT_MIB
+          valueFrom:
+            resourceFieldRef:
+              containerName: gravitee-management-api
+              resource: limits.memory
+              divisor: 1Mi
         - name: GRAVITEE_LICENSE_KEY
           valueFrom:
             secretKeyRef:
@@ -783,35 +791,73 @@ spec:
           export MANAGEMENT_JDBC_PASSWORD="$YUGABYTE_PASSWORD"
           export MANAGEMENT_JDBC_USERNAME="${YUGABYTE_USER:-gravitee_app}"
 
+          case "${CONTAINER_MEMORY_LIMIT_MIB:-}" in
+            ''|*[!0-9]*)
+              echo "⚠️ Container memory limit unavailable; using GIO_MAX_MEM=${GIO_MAX_MEM}"
+              ;;
+            *)
+              HEAP_MIB=$((CONTAINER_MEMORY_LIMIT_MIB * ${GIO_HEAP_PERCENT_OF_LIMIT:-50} / 100))
+              if [ "$HEAP_MIB" -lt 1024 ]; then
+                HEAP_MIB=1024
+              fi
+              if [ "$HEAP_MIB" -gt 6144 ]; then
+                HEAP_MIB=6144
+              fi
+              export GIO_MAX_MEM="${HEAP_MIB}m"
+              echo "✅ Configured GIO_MAX_MEM=${GIO_MAX_MEM} from ${CONTAINER_MEMORY_LIMIT_MIB}Mi container limit"
+              ;;
+          esac
+
           echo "🚀 Starting Gravitee Management API..."
-          set +e
-          ./bin/gravitee
-          EXIT_CODE=$?
-          if [ "$EXIT_CODE" -ne 0 ]; then
-            echo "❌ Gravitee Management API exited with code $EXIT_CODE. Holding pod for investigation (not restarting)..."
-            while true; do sleep 3600; done
-          fi
+          exec ./bin/gravitee
         livenessProbe:
-          tcpSocket:
-            port: 8083
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - |
+              STATUS=$(curl --max-time 8 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8083/management/platform || echo "000")
+              if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
+                exit 0
+              fi
+              echo "Liveness probe failed, management API returned $STATUS" >&2
+              exit 1
           initialDelaySeconds: 480
           periodSeconds: 30
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           failureThreshold: 6
         readinessProbe:
-          tcpSocket:
-            port: 8083
-          initialDelaySeconds: 240
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - |
+              STATUS=$(curl --max-time 8 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8083/management/platform || echo "000")
+              if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
+                exit 0
+              fi
+              echo "Readiness probe failed, management API returned $STATUS" >&2
+              exit 1
+          initialDelaySeconds: 120
           periodSeconds: 20
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           failureThreshold: 6
-        resources:
-          requests:
-            cpu: "500m"
-            memory: "1Gi"
-          limits:
-            cpu: "2000m"
-            memory: "2Gi"
+        startupProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - |
+              STATUS=$(curl --max-time 8 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8083/management/platform || echo "000")
+              if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
+                exit 0
+              fi
+              echo "Startup probe failed, management API returned $STATUS" >&2
+              exit 1
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 120
         volumeMounts:
         - name: gravitee-management-config
           mountPath: /opt/graviteeio-management-api/config/gravitee.yml
@@ -887,7 +933,7 @@ spec:
           set -e
           echo "🔍 Waiting for Gravitee Management API before starting gateway..."
           while true; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
+            STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
               echo "✅ Management API responded with HTTP $STATUS, continuing startup."
               break
@@ -1210,7 +1256,7 @@ spec:
           set -e
           echo "🔍 Waiting for Gravitee Management API before starting portal..."
           while true; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
+            STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
               echo "✅ Management API responded with HTTP $STATUS, continuing startup."
               break
@@ -1980,7 +2026,7 @@ spec:
               set -e
               echo "🔍 Waiting for Gravitee Management API before applying configuration..."
               while true; do
-                STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
+                STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
                 if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                   echo "✅ Management API responded with HTTP $STATUS, continuing."
                   break

@@ -199,9 +199,9 @@ spec:
               
               while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
                 # Check Gravitee Management API
-                if curl -s -o /dev/null http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management/platform; then
+                if curl --max-time 10 -s -o /dev/null http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management/platform; then
                   echo "✅ Gravitee Management API is ready"
-                  if curl -s -o /dev/null http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082/_node/health; then
+                  if curl --max-time 10 -s -o /dev/null http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082/_node/health; then
                     echo "✅ Gravitee Gateway is ready"
                     echo "✅ Gravitee services are ready"
                     exit 0
