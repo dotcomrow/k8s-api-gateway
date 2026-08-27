@@ -151,6 +151,8 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 300
       template:
         metadata:
           annotations:
