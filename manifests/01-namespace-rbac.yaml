@@ -7,6 +7,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
     linkerd.io/inject: "enabled"
+    config.linkerd.io/proxy-cpu-request: "25m"
+    config.linkerd.io/proxy-memory-request: "64Mi"
     linkerd.io/skip-outbound-ports: "8200"
     field.cattle.io/projectId: "local:infrastructure"
 ---
