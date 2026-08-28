@@ -27,8 +27,9 @@ data:
       retry_count=0
       max_retries=60
       while true; do
-        status=$(curl -s -o /dev/null -w "%{http_code}" "${admin_url}/apisix/admin/routes" -H "X-API-KEY: ${admin_key}" || true)
-        if [ "$status" = "200" ]; then
+        response_file="/tmp/apisix-admin-routes-${label}.json"
+        status=$(curl --max-time 10 -s -o "${response_file}" -w "%{http_code}" "${admin_url}/apisix/admin/routes" -H "X-API-KEY: ${admin_key}" || true)
+        if [ "$status" = "200" ] || { [ "$status" = "404" ] && grep -q "Key not found" "${response_file}"; }; then
           echo "✅ ${label} APISIX Admin API is ready"
           break
         fi
@@ -41,7 +42,7 @@ data:
           echo "❌ ${label} APISIX Admin API not ready after ${max_retries} attempts (last status ${status})."
           return 1
         fi
-        echo "⏳ Waiting for ${label} APISIX Admin API..."
+        echo "⏳ Waiting for ${label} APISIX Admin API... (last status ${status})"
         sleep 5
       done
 
