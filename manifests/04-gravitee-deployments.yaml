@@ -412,12 +412,13 @@ data:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: gravitee-management-api-data
+  name: gravitee-management-api-search-index
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "1"
     argocd.argoproj.io/sync-options: Delete=false
 spec:
+  storageClassName: nfs-client
   accessModes:
     - ReadWriteOnce
   resources:
@@ -893,7 +894,7 @@ spec:
           name: gravitee-management-config
       - name: gravitee-management-data
         persistentVolumeClaim:
-          claimName: gravitee-management-api-data
+          claimName: gravitee-management-api-search-index
 ---
 # Gravitee Gateway Deployment
 apiVersion: apps/v1
