@@ -407,6 +407,23 @@ data:
       </root>
     </configuration>
 ---
+# Persist Gravitee's local Lucene search index so Management API restarts do not
+# drop API search results used by the console API list.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gravitee-management-api-data
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
 # Gravitee Management API Deployment
 apiVersion: apps/v1
 kind: Deployment
@@ -467,6 +484,9 @@ spec:
           {{- end }}
     spec:
       serviceAccountName: gravitee
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       initContainers:
       - name: wait-database-setup
         image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260203-144106
@@ -865,10 +885,15 @@ spec:
         - name: gravitee-management-config
           mountPath: /opt/graviteeio-management-api/config/logback.xml
           subPath: logback.xml
+        - name: gravitee-management-data
+          mountPath: /opt/graviteeio-management-api/data
       volumes:
       - name: gravitee-management-config
         configMap:
           name: gravitee-management-config
+      - name: gravitee-management-data
+        persistentVolumeClaim:
+          claimName: gravitee-management-api-data
 ---
 # Gravitee Gateway Deployment
 apiVersion: apps/v1

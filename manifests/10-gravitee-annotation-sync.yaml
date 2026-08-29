@@ -26,6 +26,10 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["gravitee-management-api"]
+    verbs: ["get"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "patch", "delete"]
@@ -284,6 +288,7 @@ data:
     import ssl
     import time
     import urllib.error
+    import urllib.parse
     import urllib.request
 
     KUBE_HOST = os.environ.get("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
@@ -323,6 +328,9 @@ data:
     DEFAULT_JWT_RBAC_ENABLED = os.environ.get("DEFAULT_JWT_RBAC_ENABLED", "true").strip().lower() in ("1", "true", "yes")
     OPENAPI_PREFLIGHT_ENABLED = os.environ.get("OPENAPI_PREFLIGHT_ENABLED", "true").strip().lower() in ("1", "true", "yes")
     OPENAPI_PREFLIGHT_TIMEOUT_SECONDS = int(os.environ.get("OPENAPI_PREFLIGHT_TIMEOUT_SECONDS", "10"))
+    SEARCH_INDEX_BOOTSTRAP_ENABLED = os.environ.get("GRAVITEE_SEARCH_INDEX_BOOTSTRAP_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+    SEARCH_INDEX_BOOTSTRAP_DEPLOYMENT = os.environ.get("GRAVITEE_SEARCH_INDEX_BOOTSTRAP_DEPLOYMENT", "gravitee-management-api").strip()
+    SEARCH_INDEX_BOOTSTRAP_METADATA_KEY = os.environ.get("GRAVITEE_SEARCH_INDEX_BOOTSTRAP_METADATA_KEY", "annotation_sync_search_index_epoch").strip()
 
     def log(msg):
         print(msg, flush=True)
@@ -360,6 +368,27 @@ data:
             data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(f"{GRAVITEE_MANAGEMENT_API}{path}", data=data, headers=headers, method=method)
         return urllib.request.urlopen(req, timeout=10)
+
+    def current_search_index_bootstrap_token():
+        if not SEARCH_INDEX_BOOTSTRAP_ENABLED or not SEARCH_INDEX_BOOTSTRAP_DEPLOYMENT:
+            return None
+        path = f"/apis/apps/v1/namespaces/{CONTEXT_NAMESPACE}/deployments/{urllib.parse.quote(SEARCH_INDEX_BOOTSTRAP_DEPLOYMENT, safe='')}"
+        try:
+            with kube_request("GET", path) as resp:
+                deployment = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            log(f"search index bootstrap deployment lookup error {exc.code}: {exc.read().decode('utf-8', errors='replace')}")
+            return None
+        except Exception as exc:
+            log(f"search index bootstrap deployment lookup error: {exc}")
+            return None
+
+        metadata = deployment.get("metadata", {}) or {}
+        uid = metadata.get("uid")
+        generation = metadata.get("generation")
+        if not uid or generation is None:
+            return None
+        return f"{SEARCH_INDEX_BOOTSTRAP_DEPLOYMENT}:{uid}:{generation}"
 
     def cleanup_admin_secret():
         ns = CONTEXT_NAMESPACE
@@ -1465,7 +1494,7 @@ data:
             fingerprints.append(f"{page_key}:{url}:{digest}")
         return True, fingerprints
 
-    def append_sync_metadata(metadata_json, fingerprints):
+    def append_sync_metadata(metadata_json, fingerprints, search_index_bootstrap_token=None):
         items = list(metadata_json or [])
         if fingerprints:
             digest = hashlib.sha256("\n".join(sorted(fingerprints)).encode("utf-8")).hexdigest()
@@ -1476,9 +1505,21 @@ data:
                 "format": "STRING",
                 "value": digest,
             })
+        if search_index_bootstrap_token and SEARCH_INDEX_BOOTSTRAP_METADATA_KEY:
+            items = [
+                item
+                for item in items
+                if not (isinstance(item, dict) and item.get("key") == SEARCH_INDEX_BOOTSTRAP_METADATA_KEY)
+            ]
+            items.append({
+                "key": SEARCH_INDEX_BOOTSTRAP_METADATA_KEY,
+                "name": SEARCH_INDEX_BOOTSTRAP_METADATA_KEY,
+                "format": "STRING",
+                "value": search_index_bootstrap_token,
+            })
         return items or None
 
-    def build_api_definition(service):
+    def build_api_definition(service, search_index_bootstrap_token=None):
         metadata = service.get("metadata", {})
         annotations = metadata.get("annotations", {}) or {}
         svc_name = metadata.get("name")
@@ -1582,7 +1623,7 @@ data:
         pages_ready, openapi_fingerprints = preflight_openapi_pages(pages_json, svc_key)
         if not pages_ready:
             raise OpenApiNotReady(svc_key)
-        metadata_json = append_sync_metadata(metadata_json, openapi_fingerprints)
+        metadata_json = append_sync_metadata(metadata_json, openapi_fingerprints, search_index_bootstrap_token)
 
         set_if(metadata_json, "metadata")
         set_if(properties_json, "properties")
@@ -1737,6 +1778,10 @@ data:
     def run_once():
         cleanup_admin_secret()
         services = list_services()
+        search_index_bootstrap_token = current_search_index_bootstrap_token()
+        if SEARCH_INDEX_BOOTSTRAP_ENABLED and not search_index_bootstrap_token:
+            log("Search index bootstrap enabled but Management API deployment marker is unavailable; skipping API sync")
+            return
         desired_groups = set()
         desired_categories = set()
         for svc in services:
@@ -1758,7 +1803,7 @@ data:
             metadata = service.get("metadata", {})
             svc_key_tuple = (metadata.get("namespace"), metadata.get("name"))
             try:
-                api = build_api_definition(service)
+                api = build_api_definition(service, search_index_bootstrap_token)
             except OpenApiNotReady:
                 desired_preserve.add(svc_key_tuple)
                 continue
@@ -1848,6 +1893,10 @@ spec:
               value: "2"
             - name: GRAVITEE_MANAGEMENT_API
               value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management"
+            - name: GRAVITEE_SEARCH_INDEX_BOOTSTRAP_ENABLED
+              value: "true"
+            - name: GRAVITEE_SEARCH_INDEX_BOOTSTRAP_DEPLOYMENT
+              value: "gravitee-management-api"
             - name: GRAVITEE_ORG
               value: "DEFAULT"
             - name: GRAVITEE_ENV
