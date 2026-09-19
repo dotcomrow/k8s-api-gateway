@@ -425,6 +425,24 @@ spec:
     requests:
       storage: 2Gi
 ---
+# Fresh Lucene search index PVC used after the original index blocked startup on
+# NFS file deletion. Keep the original PVC above for rollback/forensics.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gravitee-management-api-search-index-v2
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  storageClassName: nfs-client
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
 # Gravitee Management API Deployment
 apiVersion: apps/v1
 kind: Deployment
@@ -896,7 +914,7 @@ spec:
           name: gravitee-management-config
       - name: gravitee-management-data
         persistentVolumeClaim:
-          claimName: gravitee-management-api-search-index
+          claimName: gravitee-management-api-search-index-v2
 ---
 # Gravitee Gateway Deployment
 apiVersion: apps/v1
