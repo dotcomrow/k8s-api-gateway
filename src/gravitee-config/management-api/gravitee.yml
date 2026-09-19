@@ -202,7 +202,7 @@ security:
 
 # Email configuration (for notifications)
 email:
-  enabled: ${EMAIL_ENABLED:true}
+  enabled: ${EMAIL_ENABLED:false}
   host: ${EMAIL_HOST}
   port: ${EMAIL_PORT:587}
   username: ${EMAIL_USERNAME}

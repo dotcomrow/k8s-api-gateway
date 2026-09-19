@@ -324,7 +324,7 @@ data:
 
     # Email configuration (for notifications)
     email:
-      enabled: ${EMAIL_ENABLED:true}
+      enabled: ${EMAIL_ENABLED:false}
       host: ${EMAIL_HOST}
       port: ${EMAIL_PORT:587}
       username: ${EMAIL_USERNAME}
@@ -728,6 +728,8 @@ spec:
           value: "604800"
         - name: GATEWAY_URL
           value: "http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082"
+        - name: EMAIL_ENABLED
+          value: "false"
         - name: EMAIL_HOST
           value: ""
         - name: EMAIL_PORT
