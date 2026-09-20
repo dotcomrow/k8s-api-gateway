@@ -1,4 +1,4 @@
-FROM apache/apisix:3.18.0-debian
+FROM apache/apisix:latest
 
 USER root
 
