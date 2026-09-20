@@ -37,7 +37,7 @@
         <gravitee-common.version>4.7.3</gravitee-common.version>
         <gravitee-gateway-api.version>4.0.1</gravitee-gateway-api.version>
         <gravitee-policy-api.version>1.11.0</gravitee-policy-api.version>
-        <opentelemetry-api.version>1.33.0</opentelemetry-api.version>
+        <opentelemetry-api.version>1.62.0</opentelemetry-api.version>
         <slf4j-api.version>2.0.13</slf4j-api.version>
         <json-schema-generator-maven-plugin.version>1.3.0</json-schema-generator-maven-plugin.version>
         <json-schema-generator-maven-plugin.outputDirectory>${project.build.directory}/schemas</json-schema-generator-maven-plugin.outputDirectory>
