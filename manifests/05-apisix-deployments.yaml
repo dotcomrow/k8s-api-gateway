@@ -9,7 +9,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
 data:
   config.yaml: |
-    # APISIX Configuration for v3.11.0
+    # APISIX Configuration for v3.18.0
     apisix:
       node_listen:
         - 9080
@@ -139,6 +139,8 @@ data:
           service.namespace: k8s-api-gateway
     deployment:
       role: traditional
+      role_traditional:
+        config_provider: etcd
       admin:
         admin_key_required: true
         admin_key:
@@ -156,15 +158,15 @@ data:
           ip: "0.0.0.0"
           port: 9180
         admin_api_version: v3
-    etcd:
-      host:
-        - "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
-      prefix: /apisix
-      timeout: 30
-      watch_timeout: 50
-      startup_retry: 2
-      tls:
-        verify: true
+      etcd:
+        host:
+          - "http://apisix-etcd.k8s-api-gateway.svc.cluster.local:2379"
+        prefix: /apisix
+        timeout: 30
+        watch_timeout: 50
+        startup_retry: 2
+        tls:
+          verify: true
 
     plugins:
       - real-ip
@@ -324,11 +326,12 @@ spec:
           echo "etcd is ready"
       containers:
         - name: apisix
-          image: ghcr.io/dotcomrow/gravitee-apisix:ts-20260203-144109
+          image: ghcr.io/dotcomrow/gravitee-apisix:ts-20260920-210114
           command: ["/bin/sh", "-c"]
           args:
             - |
               echo "🔧 Starting APISIX with robust config patching..."
+              set -eu
               # Load APISIX admin key from Vault
               if [ -f /vault/secrets/admin ]; then
                 . /vault/secrets/admin
@@ -337,36 +340,22 @@ spec:
                 echo "❌ Failed to load APISIX admin key from Vault"
                 exit 1
               fi
-              # Patch config file with placeholders to /tmp/config.yaml (writable)
+              # Patch the mounted template into APISIX's normal config path.
               cd /usr/local/apisix/conf
               sed \
                 -e "s/ADMIN_KEY_PLACEHOLDER/${APISIX_ADMIN_KEY}/" \
-                config.yaml > /tmp/config.yaml
+                config-template.yaml > config.yaml
               echo "🔐 Updated all keys in configuration using sed"
               echo "🔍 Verifying replaced values:"
-              grep ADMIN_KEY_PLACEHOLDER /tmp/config.yaml && echo "❌ ADMIN_KEY_PLACEHOLDER not replaced" && exit 1 || echo "✅ ADMIN_KEY replaced"
+              grep ADMIN_KEY_PLACEHOLDER config.yaml && echo "❌ ADMIN_KEY_PLACEHOLDER not replaced" && exit 1 || echo "✅ ADMIN_KEY replaced"
               echo "🚀 Initializing APISIX..."
               cd /usr/local/apisix
-              # Use patched config for APISIX startup
-              APISIX_CONFIG_PATH=/tmp/config.yaml
-              /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua init -c $APISIX_CONFIG_PATH
+              /usr/bin/apisix init
               echo "🔗 Initializing etcd..."
-              /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua init_etcd -c $APISIX_CONFIG_PATH
+              /usr/bin/apisix init_etcd
               echo "▶️ Starting APISIX..."
-              /usr/local/openresty/luajit/bin/luajit /usr/local/apisix/apisix/cli/apisix.lua start -c $APISIX_CONFIG_PATH
-              apisix_exit_code=$?
-              if [ $apisix_exit_code -ne 0 ]; then
-                echo "❌ APISIX failed to start. Exit code: $apisix_exit_code"
-                echo "🔍 Dumping config file for debugging:"
-                cat /tmp/config.yaml || echo "(config file missing)"
-                echo "🔍 Listing contents of /usr/local/apisix/conf:"
-                ls -l /usr/local/apisix/conf
-                echo "🔍 Listing contents of /usr/local/apisix:"
-                ls -l /usr/local/apisix
-                echo "🔍 Printing last 50 lines of /usr/local/apisix/logs/error.log (if exists):"
-                tail -50 /usr/local/apisix/logs/error.log || echo "(no error log found)"
-                exit $apisix_exit_code
-              fi
+              rm -f /usr/local/apisix/conf/config_listen.sock /usr/local/apisix/logs/worker_events.sock /usr/local/apisix/logs/stream_worker_events.sock
+              exec /usr/local/openresty/bin/openresty -p /usr/local/apisix -g 'daemon off;'
           ports:
             - containerPort: 9080
             - containerPort: 9180
@@ -374,7 +363,7 @@ spec:
             - containerPort: 9091
           volumeMounts:
             - name: apisix-config
-              mountPath: /usr/local/apisix/conf/config.yaml
+              mountPath: /usr/local/apisix/conf/config-template.yaml
               subPath: config.yaml
           env:
             - name: APISIX_STAND_ALONE
