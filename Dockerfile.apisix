@@ -2,11 +2,35 @@
 FROM apache/apisix:3.11.0-debian
 
 USER root
-RUN apt-get update -qq \
-	&& apt-get install -y -qq openssl netcat-openbsd wget \
-	&& wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 \
-	&& chmod +x /usr/local/bin/yq \
-	&& rm -rf /var/lib/apt/lists/*
+
+# BuildKit supplies TARGETARCH when building with
+# platforms: linux/amd64,linux/arm64
+ARG TARGETARCH
+
+RUN set -eux; \
+    # Disable the obsolete APISIX/ApiSeven repository whose signing key
+    # is not included in the base image.
+    find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) \
+      -exec grep -Il 'repos.apiseven.com' {} \; \
+      | xargs -r sed -i '/repos\.apiseven\.com/s/^/#/'; \
+    \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      openssl \
+      netcat-openbsd \
+      wget; \
+    \
+    case "$TARGETARCH" in \
+      amd64) YQ_ARCH=amd64 ;; \
+      arm64) YQ_ARCH=arm64 ;; \
+      *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    wget -q -O /usr/local/bin/yq \
+      "https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_${YQ_ARCH}"; \
+    chmod +x /usr/local/bin/yq; \
+    \
+    rm -rf /var/lib/apt/lists/*
+
 USER apisix
 
 # Entrypoint and CMD are inherited from base image
