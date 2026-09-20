@@ -1,25 +1,19 @@
-# Custom APISIX image with required packages
-FROM apache/apisix:3.11.0-debian
+FROM apache/apisix:3.18.0-debian
 
 USER root
 
-# BuildKit supplies TARGETARCH when building with
-# platforms: linux/amd64,linux/arm64
 ARG TARGETARCH
 
 RUN set -eux; \
-    # Disable the obsolete APISIX/ApiSeven repository whose signing key
-    # is not included in the base image.
     find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) \
       -exec grep -Il 'repos.apiseven.com' {} \; \
       | xargs -r sed -i '/repos\.apiseven\.com/s/^/#/'; \
-    \
-    apt-get update; \
+    rm -rf /var/lib/apt/lists/*; \
+    apt-get update -o Acquire::Retries=5; \
     apt-get install -y --no-install-recommends \
       openssl \
       netcat-openbsd \
       wget; \
-    \
     case "$TARGETARCH" in \
       amd64) YQ_ARCH=amd64 ;; \
       arm64) YQ_ARCH=arm64 ;; \
@@ -28,9 +22,6 @@ RUN set -eux; \
     wget -q -O /usr/local/bin/yq \
       "https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_${YQ_ARCH}"; \
     chmod +x /usr/local/bin/yq; \
-    \
     rm -rf /var/lib/apt/lists/*
 
 USER apisix
-
-# Entrypoint and CMD are inherited from base image
