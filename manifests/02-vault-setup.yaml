@@ -214,6 +214,10 @@ spec:
           path "secret/data/api-gateway-*" {
             capabilities = ["read"]
           }
+
+          path "secret/data/directus-backup-gcs" {
+            capabilities = ["read"]
+          }
           EOF
           
           # Configure Kubernetes authentication roles
