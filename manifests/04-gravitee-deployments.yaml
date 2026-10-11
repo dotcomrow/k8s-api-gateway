@@ -898,7 +898,10 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 10
-          failureThreshold: 120
+          # Cold starts can rebuild the NFS-backed Lucene index and scan the
+          # large page_revisions table before the HTTP listener is available.
+          # Allow that recovery to finish instead of restarting and repeating it.
+          failureThreshold: 600
         volumeMounts:
         - name: gravitee-management-config
           mountPath: /opt/graviteeio-management-api/config/gravitee.yml
