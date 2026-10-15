@@ -150,15 +150,25 @@ spec:
             echo "✅ APISIX admin key already exists in Vault; leaving unchanged"
           fi
 
-          # Generate JWT secret for Gravitee
-          JWT_SECRET=$(openssl rand -base64 64)
-          vault kv put secret/gravitee/jwt secret="$JWT_SECRET"
-          echo "🔐 JWT secret stored in Vault"
+          # Generate the Gravitee JWT secret only when it is absent. Rotating it
+          # during every forced Argo sync invalidates tokens held by running pods.
+          if ! vault kv get secret/gravitee/jwt >/dev/null 2>&1; then
+            JWT_SECRET=$(openssl rand -base64 64)
+            vault kv put secret/gravitee/jwt secret="$JWT_SECRET"
+            echo "🔐 JWT secret stored in Vault"
+          else
+            echo "✅ Gravitee JWT secret already exists in Vault; leaving unchanged"
+          fi
 
-          # Generate API properties encryption secret for Gravitee
-          API_PROPERTIES_SECRET=$(openssl rand -hex 32)
-          vault kv put secret/gravitee/api-properties-encryption secret="$API_PROPERTIES_SECRET"
-          echo "🔐 API properties encryption secret stored in Vault"
+          # API property encryption keys must remain stable across deploys so
+          # previously encrypted values remain readable.
+          if ! vault kv get secret/gravitee/api-properties-encryption >/dev/null 2>&1; then
+            API_PROPERTIES_SECRET=$(openssl rand -hex 32)
+            vault kv put secret/gravitee/api-properties-encryption secret="$API_PROPERTIES_SECRET"
+            echo "🔐 API properties encryption secret stored in Vault"
+          else
+            echo "✅ Gravitee API properties encryption secret already exists in Vault; leaving unchanged"
+          fi
           
           # Create Vault policy for Gravitee
           vault policy write gravitee - <<EOF
