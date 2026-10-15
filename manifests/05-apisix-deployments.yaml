@@ -246,6 +246,22 @@ data:
       - mqtt-proxy
       - syslog
 ---
+# APISIX etcd persistent data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: apisix-etcd-data
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
+---
 # APISIX etcd Deployment
 apiVersion: apps/v1
 kind: Deployment
@@ -256,6 +272,8 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: apisix-etcd
@@ -282,6 +300,36 @@ spec:
           value: "etcd=http://apisix-etcd:2380"
         - name: ETCD_NAME
           value: "etcd"
+        - name: ETCD_DATA_DIR
+          value: "/etcd-data"
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 2379
+          failureThreshold: 30
+          periodSeconds: 2
+          timeoutSeconds: 2
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 2379
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 2379
+          periodSeconds: 10
+          timeoutSeconds: 2
+          failureThreshold: 3
+        volumeMounts:
+        - name: data
+          mountPath: /etcd-data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: apisix-etcd-data
 ---
 # APISIX Deployment
 apiVersion: apps/v1
