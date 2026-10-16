@@ -10,6 +10,7 @@ data:
     network.host: 0.0.0.0
     http.port: 9200
     discovery.type: single-node
+    cluster.default_number_of_replicas: 0
     plugins.security.disabled: true
     compatibility.override_main_response_version: false
 ---
@@ -113,6 +114,7 @@ metadata:
   namespace: k8s-api-gateway
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
     linkerd.io/inject: "disabled"
 spec:
   backoffLimit: 3
@@ -150,6 +152,32 @@ spec:
                 sleep 2
               done
 
+              echo "Configuring this single-node cluster for zero replicas..."
+              curl -fsS -X PUT "$OS_URL/_cluster/settings" \
+                -H "Content-Type: application/json" \
+                --data-binary '{"persistent":{"cluster.default_number_of_replicas":"0"}}' >/dev/null
+
+              cat <<'EOF' >/tmp/single-node-zero-replicas-template.json
+              {
+                "order": 1000,
+                "index_patterns": ["*"],
+                "settings": {
+                  "index": {
+                    "number_of_replicas": "0"
+                  }
+                }
+              }
+              EOF
+
+              curl -fsS -X PUT "$OS_URL/_template/single-node-zero-replicas" \
+                -H "Content-Type: application/json" \
+                --data-binary @/tmp/single-node-zero-replicas-template.json >/dev/null
+
+              curl -fsS -X PUT "$OS_URL/_all/_settings?expand_wildcards=all" \
+                -H "Content-Type: application/json" \
+                --data-binary '{"index":{"number_of_replicas":"0"}}' >/dev/null
+              echo "Configured existing and future indices for zero replicas."
+
               echo "Ensuring gravitee-health template includes @timestamp..."
               cat <<'EOF' >/tmp/gravitee-health-template.json
               {
@@ -157,7 +185,7 @@ spec:
                 "settings": {
                   "index": {
                     "number_of_shards": "1",
-                    "number_of_replicas": "1",
+                    "number_of_replicas": "0",
                     "refresh_interval": "5s"
                   }
                 },
