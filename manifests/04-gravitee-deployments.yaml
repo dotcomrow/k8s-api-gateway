@@ -450,7 +450,7 @@ metadata:
   name: gravitee-management-api
   namespace: k8s-api-gateway
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   replicas: 1
   strategy:
@@ -466,6 +466,7 @@ spec:
       labels:
         app: gravitee-management-api
       annotations:
+        platform.suncoast.systems/vault-credentials-revision: "2026-10-29-gravitee-connection"
         linkerd.io/inject: "disabled"
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/agent-init-first: "true"
@@ -926,7 +927,7 @@ metadata:
   name: gravitee-gateway
   namespace: k8s-api-gateway
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "4"
 spec:
   replicas: 2
   selector:
@@ -937,6 +938,7 @@ spec:
       labels:
         app: gravitee-gateway
       annotations:
+        platform.suncoast.systems/vault-credentials-revision: "2026-10-29-gravitee-connection"
         configmap.reloader.stakater.com/reload: "gravitee-gateway-config"
         linkerd.io/inject: "enabled"
         vault.hashicorp.com/agent-inject: "true"
@@ -2036,17 +2038,18 @@ metadata:
   name: configure-gravitee-github
   namespace: k8s-api-gateway
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "4"
     linkerd.io/inject: "disabled"
 spec:
   schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 3
+  # Retain enough failed runs to inspect intermittent failures after the fact.
+  failedJobsHistoryLimit: 12
   jobTemplate:
     spec:
       activeDeadlineSeconds: 600
-      ttlSecondsAfterFinished: 300
+      ttlSecondsAfterFinished: 86400
       template:
         metadata:
           annotations:

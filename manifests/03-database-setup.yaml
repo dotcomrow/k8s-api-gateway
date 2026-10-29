@@ -133,12 +133,26 @@ spec:
             "CREATE SCHEMA IF NOT EXISTS gravitee AUTHORIZATION gravitee_app;"
           
           # Create static credentials for Gravitee
+          # Use a Gravitee-owned connection so another workload cannot remove
+          # gravitee-app by replacing allowed_roles on the shared connection.
+          vault write yugabyte-db/config/gravitee \
+            plugin_name="postgresql-database-plugin" \
+            connection_url="postgresql://{{username}}:{{password}}@$YUGABYTE_HOST:$YUGABYTE_PORT/$YUGABYTE_DATABASE?sslmode=disable" \
+            allowed_roles="gravitee-app" \
+            username="$VAULTADMIN_USER" \
+            password="$VAULT_TOKEN"
+
           vault delete yugabyte-db/static-roles/gravitee-app >/dev/null 2>&1 || true
           vault write yugabyte-db/static-roles/gravitee-app \
-            db_name="yugabyte" \
+            db_name="gravitee" \
             username="gravitee_app" \
             rotation_statements="ALTER ROLE gravitee_app WITH PASSWORD '{{password}}';" \
             rotation_period="720h"
+
+          # Read back the Vault-managed password. On a repeated setup run the
+          # role already exists, so the one generated before CREATE USER is not
+          # necessarily the active database password.
+          GRAVITEE_DB_PASSWORD="$(vault read -field=password yugabyte-db/static-creds/gravitee-app)"
           
 
           # Generate APISIX admin key if missing (avoid rotating on every deploy)
