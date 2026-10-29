@@ -296,31 +296,6 @@ data:
         # Keep local Gravitee (JDBC-backed) auth enabled for console/API basic auth
         - type: gravitee
           password-encoding: bcrypt
-        - type: oauth2
-          id: github
-          name: GitHub
-          clientId: ${CONSOLE_OAUTH_CLIENT_ID}
-          clientSecret: ${CONSOLE_OAUTH_CLIENT_SECRET}
-          color: "#24292F"
-          syncMappings: true
-          scopes:
-            - read:user
-            - read:org
-            - user:email
-          userMapping:
-            condition: "{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access') or #jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
-            id: id
-            lastname: name
-            firstname: name
-            email: email
-            picture: avatar_url
-          groupMapping:
-            - condition: "{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_admin_access')}"
-              groups:
-                - gravitee_admin_access
-            - condition: "{#jsonPath(#profile, '$.teams[*].slug').contains('gravitee_user_access')}"
-              groups:
-                - gravitee_user_access
 
     # Email configuration (for notifications)
     email:
@@ -850,6 +825,10 @@ spec:
               ;;
           esac
 
+          # kafka-quota 1.2.1 is not compatible with the Kafka client bundled by APIM 4.9.10.
+          # No deployed API references this policy, so keep the unusable plugin out of the runtime classloader.
+          rm -f /opt/graviteeio-management-api/plugins/gravitee-policy-kafka-quota-*.zip
+
           echo "🚀 Starting Gravitee Management API..."
           exec ./bin/gravitee
         livenessProbe:
@@ -858,7 +837,7 @@ spec:
             - /bin/sh
             - -c
             - |
-              STATUS=$(curl --max-time 8 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8083/management/platform || echo "000")
+              STATUS=$(curl --max-time 8 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8083/management/platform || true)
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                 exit 0
               fi
@@ -874,7 +853,7 @@ spec:
             - /bin/sh
             - -c
             - |
-              STATUS=$(curl --max-time 8 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8083/management/platform || echo "000")
+              STATUS=$(curl --max-time 8 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8083/management/platform || true)
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                 exit 0
               fi
@@ -890,7 +869,7 @@ spec:
             - /bin/sh
             - -c
             - |
-              STATUS=$(curl --max-time 8 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8083/management/platform || echo "000")
+              STATUS=$(curl --max-time 8 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8083/management/platform || true)
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                 exit 0
               fi
@@ -984,7 +963,7 @@ spec:
           set -e
           echo "🔍 Waiting for Gravitee Management API before starting gateway..."
           while true; do
-            STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
+            STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || true)
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
               echo "✅ Management API responded with HTTP $STATUS, continuing startup."
               break
@@ -1095,7 +1074,7 @@ spec:
         - name: TOKEN_EXCHANGE_TOKEN_ENDPOINT
           value: "https://auth.suncoast.systems/realms/external/protocol/openid-connect/token"
         - name: JAVA_TOOL_OPTIONS
-          value: "-javaagent:/opt/otel/opentelemetry-javaagent.jar -Dreporters.file.enabled=true -Dreporters.file.fileName=/tmp/gravitee-reporter/%s-yyyy_mm_dd -Dreporters.file.output=json -Dreporters.file.retainDays=1"
+          value: "-Dreporters.file.enabled=true -Dreporters.file.fileName=/tmp/gravitee-reporter/%s-yyyy_mm_dd -Dreporters.file.output=json -Dreporters.file.retainDays=1"
         - name: OTEL_SERVICE_NAME
           value: "gravitee-gateway"
         - name: OTEL_RESOURCE_ATTRIBUTES
@@ -1181,6 +1160,10 @@ spec:
           export MANAGEMENT_JDBC_PASSWORD="$YUGABYTE_PASSWORD"
           export MANAGEMENT_JDBC_USERNAME="${MANAGEMENT_JDBC_USERNAME:-gravitee_app}"
 
+          # kafka-quota 1.2.1 is not compatible with the Kafka client bundled by APIM 4.9.10.
+          # No deployed API references this policy, so keep the unusable plugin out of the runtime classloader.
+          rm -f /opt/graviteeio-gateway/plugins/gravitee-policy-kafka-quota-*.zip
+
           echo "🚀 Starting Gravitee Gateway..."
           exec ./bin/gravitee
         livenessProbe:
@@ -1189,7 +1172,7 @@ spec:
             - /bin/sh
             - -c
             - |
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/_node/health || echo "000")
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/_node/health || true)
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                 exit 0
               fi
@@ -1205,7 +1188,7 @@ spec:
             - /bin/sh
             - -c
             - |
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/_node/health || echo "000")
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/_node/health || true)
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                 exit 0
               fi
@@ -1221,7 +1204,7 @@ spec:
             - /bin/sh
             - -c
             - |
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/_node/health || echo "000")
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18082/_node/health || true)
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                 exit 0
               fi
@@ -1307,7 +1290,7 @@ spec:
           set -e
           echo "🔍 Waiting for Gravitee Management API before starting portal..."
           while true; do
-            STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
+            STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || true)
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
               echo "✅ Management API responded with HTTP $STATUS, continuing startup."
               break
@@ -2079,7 +2062,7 @@ spec:
               set -e
               echo "🔍 Waiting for Gravitee Management API before applying configuration..."
               while true; do
-                STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || echo "000")
+                STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || true)
                 if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                   echo "✅ Management API responded with HTTP $STATUS, continuing."
                   break
@@ -2415,10 +2398,14 @@ spec:
                 LOGIN_STATUS=$(curl -s -w "%{http_code}" -o /tmp/login-body \
                   -H "Content-Type: application/json" \
                   -X POST "$endpoint" \
-                  --data "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}" || echo "000")
+                  --data "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}" || true)
                 echo "ℹ️ Login status @ ${endpoint}: '${LOGIN_STATUS}'"
-                echo "ℹ️ Login response body:"
-                cat /tmp/login-body || true
+                echo "ℹ️ Login response summary (tokens omitted):"
+                if jq -e . /tmp/login-body >/dev/null 2>&1; then
+                  jq -c '{status,error,message,has_token: (((.token // .id_token // .access_token // "") | length) > 0)}' /tmp/login-body
+                else
+                  echo "<non-JSON response omitted>"
+                fi
 
                 if [ "$LOGIN_STATUS" = "200" ]; then
                   TOKEN_VALUE=$(jq -r '.token // .id_token // .access_token // empty' /tmp/login-body)
@@ -2476,8 +2463,12 @@ spec:
                 fi
                 USERS_AUTH_STATUS="$(cat /tmp/users-auth-status 2>/dev/null || echo "")"
                 echo "ℹ️ /users HTTP status (with auth): '${USERS_AUTH_STATUS}'"
-                echo "ℹ️ /users response body (with auth):"
-                cat /tmp/users-auth-body || true
+                echo "ℹ️ /users response summary:"
+                if jq -e . /tmp/users-auth-body >/dev/null 2>&1; then
+                  jq -c 'if type == "array" then {count:length} else {page:(.pageNumber // .page),pageSize:(.pageSize // .size),count:((.data // []) | length),error,message} end' /tmp/users-auth-body
+                else
+                  echo "<non-JSON response omitted>"
+                fi
 
                 if [ "$USERS_AUTH_STATUS" != "200" ]; then
                   echo "↻ Authenticated /users call failed (status=${USERS_AUTH_STATUS}); re-ensuring admin user before retry..."
@@ -2547,11 +2538,17 @@ spec:
               build_github_idp "github-console" "GitHub Console" '["CONSOLE"]' \
                 "$GITHUB_CONSOLE_CLIENT_ID" "$GITHUB_CONSOLE_CLIENT_SECRET" "$USERINFO_ENDPOINT" /tmp/github-console-idp.json
 
-              echo "📤 IDP payloads:"
-              echo "  - /tmp/github-portal-idp.json"
-              cat /tmp/github-portal-idp.json || true
-              echo "  - /tmp/github-console-idp.json"
-              cat /tmp/github-console-idp.json || true
+              echo "📤 Prepared IDP payloads (secret fields omitted):"
+              "$JQ_BIN" -c '{id,name,type,enabled,target}' /tmp/github-portal-idp.json
+              "$JQ_BIN" -c '{id,name,type,enabled,target}' /tmp/github-console-idp.json
+
+              log_idp_response() {
+                if "$JQ_BIN" -e . /tmp/idp-response >/dev/null 2>&1; then
+                  "$JQ_BIN" -c '{id,name,type,enabled,target,error,message}' /tmp/idp-response
+                else
+                  echo "<non-JSON response omitted>"
+                fi
+              }
 
               apply_github_idp() {
                 idp_file="$1"
@@ -2565,17 +2562,17 @@ spec:
                   IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
                     -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
                     -X PUT "$config_url/${idp_id}" \
-                    --data-binary @"$idp_file" || echo "000")
+                    --data-binary @"$idp_file" || true)
                 else
                   IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
                     -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
                     -X PUT "$config_url/${idp_id}" \
-                    --data-binary @"$idp_file" || echo "000")
+                    --data-binary @"$idp_file" || true)
                 fi
 
                 echo "ℹ️ PUT /identities/${idp_id} (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
-                echo "ℹ️ PUT response body:"
-                cat /tmp/idp-response || true
+                echo "ℹ️ PUT response summary:"
+                log_idp_response
 
                 if [ "$IDP_HTTP_STATUS" != "200" ]; then
                   echo "⚠️ PUT returned HTTP ${IDP_HTTP_STATUS}, attempting POST for ${scope_label}..."
@@ -2583,17 +2580,17 @@ spec:
                     IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
                       -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
                       -X POST "$config_url" \
-                      --data-binary @"$idp_file" || echo "000")
+                      --data-binary @"$idp_file" || true)
                   else
                     IDP_HTTP_STATUS=$(curl -s -w "%{http_code}" -o /tmp/idp-response \
                       -u "${ADMIN_USERNAME}:${ADMIN_PASSWORD}" -H "Content-Type: application/json" \
                       -X POST "$config_url" \
-                      --data-binary @"$idp_file" || echo "000")
+                      --data-binary @"$idp_file" || true)
                   fi
 
                   echo "ℹ️ POST /identities (${scope_label}) HTTP status: '${IDP_HTTP_STATUS}'"
-                  echo "ℹ️ POST response body:"
-                  cat /tmp/idp-response || true
+                  echo "ℹ️ POST response summary:"
+                  log_idp_response
 
                   if [ "$IDP_HTTP_STATUS" != "201" ] && [ "$IDP_HTTP_STATUS" != "200" ]; then
                     echo "❌ Failed to configure GitHub identity provider for ${scope_label} (status ${IDP_HTTP_STATUS})"

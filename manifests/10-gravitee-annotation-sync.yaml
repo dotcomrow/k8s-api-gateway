@@ -1464,6 +1464,18 @@ data:
         has_paths = any(line == "paths:" or line.startswith("paths:") for line in lines)
         return has_version and has_paths
 
+    def inline_openapi_content(body):
+        text = body.decode("utf-8", errors="replace")
+        try:
+            json.loads(text)
+        except Exception:
+            return text
+        # APIM 4.9 sends OpenAPI page content through FreeMarker while indexing.
+        # Keep JSON semantics intact while preventing placeholders such as
+        # ${taskId} from being interpreted as FreeMarker expressions. A JSON
+        # parser decodes \u007b back to the original opening brace.
+        return text.replace("${", "$\\u007b")
+
     def preflight_openapi_pages(pages, svc_key):
         if not OPENAPI_PREFLIGHT_ENABLED or not isinstance(pages, dict):
             return True, []
@@ -1492,6 +1504,12 @@ data:
                 return False, []
             digest = hashlib.sha256(body).hexdigest()
             fingerprints.append(f"{page_key}:{url}:{digest}")
+            # Gravitee 4.9 creates a page revision every time an http-fetcher runs,
+            # even when the document is unchanged. The controller already compares
+            # the fetched document hash, so publish it inline and clear the fetcher.
+            # This creates one revision per content change instead of one per cron run.
+            page["content"] = inline_openapi_content(body)
+            page["source"] = None
         return True, fingerprints
 
     def append_sync_metadata(metadata_json, fingerprints, search_index_bootstrap_token=None):

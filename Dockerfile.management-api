@@ -26,6 +26,10 @@ RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/post
 # Also copy the JDBC driver to the Gravitee lib directory for classpath loading
 RUN cp /usr/local/lib/postgresql-42.7.4.jar /opt/graviteeio-management-api/lib/postgresql-42.7.4.jar
 
+# APIM 4.9.10 bundles Kafka 3.9, but kafka-quota 1.2.1 expects a different
+# Kafka client surface and cannot activate. No managed API uses this policy.
+RUN rm -f /opt/graviteeio-management-api/plugins/gravitee-policy-kafka-quota-*.zip
+
 # Install OpenTelemetry Logback appender for log export (load from ext classpath).
 RUN wget -q https://repo1.maven.org/maven2/io/opentelemetry/instrumentation/opentelemetry-logback-appender-1.0/${OTEL_LOGBACK_APPENDER_VERSION}/opentelemetry-logback-appender-1.0-${OTEL_LOGBACK_APPENDER_VERSION}.jar \
     -O /opt/graviteeio-management-api/lib/ext/opentelemetry-logback-appender-1.0-${OTEL_LOGBACK_APPENDER_VERSION}.jar \

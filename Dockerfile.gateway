@@ -7,7 +7,6 @@ RUN mvn -q -DskipTests package
 # Gravitee.io Gateway with Enhanced Monitoring
 FROM graviteeio/apim-gateway:4.9.10
 
-ARG OTEL_AGENT_VERSION=1.33.0
 ARG OTEL_LOGBACK_APPENDER_VERSION=1.33.0-alpha
 
 # Switch to root for package installations  
@@ -22,11 +21,10 @@ RUN apk add --no-cache \
 
 RUN wget -q https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar \
     -O /usr/local/lib/postgresql-42.7.4.jar
-# Install OpenTelemetry Java agent for gateway tracing.
-RUN mkdir -p /opt/otel \
-    && wget -q https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${OTEL_AGENT_VERSION}/opentelemetry-javaagent.jar \
-      -O /opt/otel/opentelemetry-javaagent.jar \
-    && chmod 0444 /opt/otel/opentelemetry-javaagent.jar
+
+# APIM 4.9.10 bundles Kafka 3.9, but kafka-quota 1.2.1 expects a different
+# Kafka client surface and cannot activate. No managed API uses this policy.
+RUN rm -f /opt/graviteeio-gateway/plugins/gravitee-policy-kafka-quota-*.zip
 
 # Install OpenTelemetry Logback appender for log export (load from ext classpath).
 RUN wget -q https://repo1.maven.org/maven2/io/opentelemetry/instrumentation/opentelemetry-logback-appender-1.0/${OTEL_LOGBACK_APPENDER_VERSION}/opentelemetry-logback-appender-1.0-${OTEL_LOGBACK_APPENDER_VERSION}.jar \
@@ -47,7 +45,7 @@ EXPOSE 8082
 
 # Enhanced health check for Kubernetes readiness/liveness probes  
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
-    CMD curl -f http://localhost:8082/_node/health || exit 1
+    CMD curl -f http://localhost:18082/_node/health || exit 1
 
 # Set working directory
 WORKDIR /opt/graviteeio-gateway
