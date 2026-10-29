@@ -152,7 +152,9 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      activeDeadlineSeconds: 600
+      # Gravitee Management startup can exceed 10 minutes while its database
+      # initializers run. Allow startup time plus route configuration time.
+      activeDeadlineSeconds: 1800
       ttlSecondsAfterFinished: 300
       template:
         metadata:
@@ -192,35 +194,46 @@ spec:
               exit 1
           - name: wait-for-gravitee
             image: curlimages/curl:8.11.1
+            env:
+            - name: WAIT_TIMEOUT_SECONDS
+              value: "1500"
             command:
             - sh  
             - -c
             - |
               echo "⏳ Waiting for Gravitee services to be ready..."
-              RETRY_COUNT=0
-              MAX_RETRIES=120
-              
-              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              STARTED_AT=$(date +%s)
+
+              while true; do
                 # Check Gravitee Management API
+                GATEWAY_STATUS="not-checked"
                 MANAGEMENT_STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" \
                   http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management/platform || true)
                 if [ "$MANAGEMENT_STATUS" = "200" ] || [ "$MANAGEMENT_STATUS" = "401" ]; then
                   echo "✅ Gravitee Management API is ready"
+                  # The management endpoint on 18082 is bound to loopback inside
+                  # the Gateway container and cannot be reached through Linkerd.
+                  # An application response at the public listener root proves
+                  # that the Gateway HTTP server is accepting requests.
                   GATEWAY_STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" \
-                    http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:18082/_node/health || true)
-                  if [ "$GATEWAY_STATUS" = "200" ]; then
-                    echo "✅ Gravitee Gateway is ready"
-                    echo "✅ Gravitee services are ready"
-                    exit 0
-                  fi
+                    http://gravitee-gateway.k8s-api-gateway.svc.cluster.local:8082/ || true)
+                  case "$GATEWAY_STATUS" in
+                    200|301|302|401|403|404)
+                      echo "✅ Gravitee Gateway is ready (HTTP $GATEWAY_STATUS)"
+                      echo "✅ Gravitee services are ready"
+                      exit 0
+                      ;;
+                  esac
                 fi
-                
-                RETRY_COUNT=$((RETRY_COUNT + 1))
-                echo "⏳ Waiting for Gravitee services... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+
+                ELAPSED_SECONDS=$(($(date +%s) - STARTED_AT))
+                if [ "$ELAPSED_SECONDS" -ge "$WAIT_TIMEOUT_SECONDS" ]; then
+                  echo "❌ Gravitee services did not become ready within ${WAIT_TIMEOUT_SECONDS}s (management=${MANAGEMENT_STATUS:-000}, gateway=${GATEWAY_STATUS:-000})."
+                  exit 1
+                fi
+                echo "⏳ Waiting for Gravitee services... (management=${MANAGEMENT_STATUS:-000}, gateway=${GATEWAY_STATUS:-000}, elapsed=${ELAPSED_SECONDS}s)"
                 sleep 10
               done
-              echo "❌ Gravitee services not ready after $MAX_RETRIES attempts"
-              exit 1
           containers:
           - name: configure-routes
             image: curlimages/curl:8.11.1

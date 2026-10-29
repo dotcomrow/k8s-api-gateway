@@ -2031,7 +2031,10 @@ spec:
   failedJobsHistoryLimit: 12
   jobTemplate:
     spec:
-      activeDeadlineSeconds: 600
+      # Management startup can legitimately exceed 10 minutes while the page
+      # revision initializer scans YugabyteDB. Leave time for that startup plus
+      # the configuration work instead of recording a false DeadlineExceeded.
+      activeDeadlineSeconds: 1800
       ttlSecondsAfterFinished: 86400
       template:
         metadata:
@@ -2056,16 +2059,24 @@ spec:
             env:
             - name: MANAGEMENT_HEALTH_URL
               value: "http://gravitee-management-api.k8s-api-gateway.svc.cluster.local:8083/management/platform"
+            - name: WAIT_TIMEOUT_SECONDS
+              value: "1500"
             command: ["/bin/sh", "-c"]
             args:
             - |
               set -e
               echo "🔍 Waiting for Gravitee Management API before applying configuration..."
+              STARTED_AT=$(date +%s)
               while true; do
                 STATUS=$(curl --max-time 10 -s -o /dev/null -w "%{http_code}" "$MANAGEMENT_HEALTH_URL" || true)
                 if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                   echo "✅ Management API responded with HTTP $STATUS, continuing."
                   break
+                fi
+                ELAPSED_SECONDS=$(($(date +%s) - STARTED_AT))
+                if [ "$ELAPSED_SECONDS" -ge "$WAIT_TIMEOUT_SECONDS" ]; then
+                  echo "❌ Management API did not become ready within ${WAIT_TIMEOUT_SECONDS}s (last status ${STATUS:-000})."
+                  exit 1
                 fi
                 echo "⏳ Management API not ready yet (status $STATUS), retrying in 5s..."
                 sleep 5
