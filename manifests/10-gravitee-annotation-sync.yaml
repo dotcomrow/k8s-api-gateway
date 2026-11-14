@@ -1834,9 +1834,14 @@ data:
                 desired_healthchecks[key] = health_checks
 
         for key, api in desired.items():
-            status = apply_api(api)
-            log(f"{status}: {key[0]}/{key[1]}")
-            ensure_healthchecks(key[0], key[1], desired_healthchecks.get(key, {}))
+            try:
+                status = apply_api(api)
+                log(f"{status}: {key[0]}/{key[1]}")
+                ensure_healthchecks(key[0], key[1], desired_healthchecks.get(key, {}))
+            except Exception as exc:
+                # A malformed definition must not prevent unrelated APIs from
+                # being reconciled during the same pass.
+                log(f"reconcile error for {key[0]}/{key[1]}: {exc}")
 
         existing = list_managed_apis()
         for api in existing:
