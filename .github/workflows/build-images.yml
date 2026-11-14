@@ -110,9 +110,10 @@ jobs:
 
     - name: Run Trivy vulnerability scanner
       id: trivy
-      uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       continue-on-error: true
       with:
+        version: 'v0.70.0'
         image-ref: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/gravitee-${{ matrix.service }}:latest
         format: 'sarif'
         output: 'trivy-results-${{ matrix.service }}.sarif'
