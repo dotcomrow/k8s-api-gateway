@@ -60,7 +60,7 @@ data:
       if [ "$valid" = "false" ]; then
         echo "Removing invalid retention index ${index_name}."
         PGOPTIONS='-c statement_timeout=30min -c lock_timeout=30s' \
-          psql_base -c "DROP INDEX CONCURRENTLY gravitee.${index_name};"
+          psql_base -c "DROP INDEX gravitee.${index_name};"
       fi
 
       echo "Ensuring retention index ${index_name}."

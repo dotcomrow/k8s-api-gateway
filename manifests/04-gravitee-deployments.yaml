@@ -2164,7 +2164,15 @@ spec:
 
               prepare_admin_hash() {
                 echo "🔧 Checking for pgcrypto and preparing bcrypt hash..."
-                if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" --set ON_ERROR_STOP=on -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" >/tmp/pgcrypto.log 2>&1; then
+                PGCRYPTO_EXISTS=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc "SELECT 1 FROM pg_extension WHERE extname = 'pgcrypto';" 2>/dev/null || true)
+                if [ "$PGCRYPTO_EXISTS" != "1" ]; then
+                  echo "🔧 pgcrypto is absent; creating it once."
+                  if PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" --set ON_ERROR_STOP=on -c "CREATE EXTENSION pgcrypto;" >/tmp/pgcrypto.log 2>&1; then
+                    PGCRYPTO_EXISTS=1
+                  fi
+                fi
+
+                if [ "$PGCRYPTO_EXISTS" = "1" ]; then
                   PGCRYPTO_AVAILABLE=1
                   ADMIN_PASSWORD_SQL="$(sql_escape_literal "$ADMIN_PASSWORD")"
                   if ! ADMIN_BCRYPT_HASH=$(PGPASSWORD="$YUGABYTE_PASSWORD" psql -h "$YUGABYTE_HOST" -p "$YUGABYTE_PORT" -U "$YUGABYTE_USER" -d "$YUGABYTE_DATABASE" -Atqc "SELECT crypt('${ADMIN_PASSWORD_SQL}', gen_salt('bf'));"); then
