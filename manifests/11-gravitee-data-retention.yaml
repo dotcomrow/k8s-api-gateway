@@ -1,0 +1,289 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gravitee-data-retention
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  cleanup.sh: |
+    #!/bin/sh
+    set -eu
+
+    if [ -f /vault/secrets/db-creds ]; then
+      # shellcheck disable=SC1091
+      . /vault/secrets/db-creds
+    fi
+
+    : "${YUGABYTE_USER:?Database username not available from Vault}"
+    : "${YUGABYTE_PASSWORD:?Database password not available from Vault}"
+    : "${RETENTION_DAYS:=7}"
+    : "${AUDIT_BATCH_SIZE:=5000}"
+    : "${REVISION_BATCH_SIZE:=250}"
+    : "${MAX_RUNTIME_SECONDS:=1200}"
+
+    for value in "$RETENTION_DAYS" "$AUDIT_BATCH_SIZE" "$REVISION_BATCH_SIZE" "$MAX_RUNTIME_SECONDS"; do
+      case "$value" in
+        ''|*[!0-9]*)
+          echo "Retention settings must be positive integers."
+          exit 1
+          ;;
+      esac
+      if [ "$value" -le 0 ]; then
+        echo "Retention settings must be greater than zero."
+        exit 1
+      fi
+    done
+
+    psql_base() {
+      PGPASSWORD="$YUGABYTE_PASSWORD" psql -X \
+        -h "$YUGABYTE_HOST" \
+        -p "$YUGABYTE_PORT" \
+        -U "$YUGABYTE_USER" \
+        -d "$YUGABYTE_DATABASE" \
+        -v ON_ERROR_STOP=1 \
+        "$@"
+    }
+
+    ensure_index() {
+      index_name="$1"
+      create_sql="$2"
+      valid="$(psql_base -Atqc "
+        SELECT i.indisvalid::text
+          FROM pg_index i
+          JOIN pg_class c ON c.oid = i.indexrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'gravitee'
+           AND c.relname = '${index_name}';
+      ")"
+
+      if [ "$valid" = "false" ]; then
+        echo "Removing invalid retention index ${index_name}."
+        PGOPTIONS='-c statement_timeout=30min -c lock_timeout=30s' \
+          psql_base -c "DROP INDEX CONCURRENTLY gravitee.${index_name};"
+      fi
+
+      echo "Ensuring retention index ${index_name}."
+      PGOPTIONS='-c statement_timeout=30min -c lock_timeout=30s' \
+        psql_base -c "$create_sql"
+    }
+
+    ensure_index \
+      "idx_audits_retention_created_at" \
+      "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audits_retention_created_at ON gravitee.audits (created_at ASC, id ASC);"
+    ensure_index \
+      "idx_page_revisions_retention_created_at" \
+      "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_page_revisions_retention_created_at ON gravitee.page_revisions (created_at ASC, page_id ASC, revision ASC);"
+
+    started_at="$(date +%s)"
+    cutoff="now() - make_interval(days => ${RETENTION_DAYS})"
+
+    delete_audit_batch() {
+      PGOPTIONS='-c statement_timeout=120s -c lock_timeout=5s' psql_base -Atqc "
+          WITH expired AS (
+            SELECT id
+              FROM gravitee.audits
+             WHERE created_at IS NOT NULL
+               AND created_at < ${cutoff}
+             ORDER BY created_at ASC, id ASC
+             LIMIT ${AUDIT_BATCH_SIZE}
+          ), deleted AS (
+            DELETE FROM gravitee.audits a
+             USING expired e
+             WHERE a.id = e.id
+             RETURNING 1
+          )
+          SELECT count(*) FROM deleted;
+        "
+    }
+
+    delete_revision_batch() {
+      PGOPTIONS='-c statement_timeout=120s -c lock_timeout=5s' psql_base -Atqc "
+          WITH expired AS (
+            SELECT page_id, revision
+              FROM gravitee.page_revisions
+             WHERE created_at IS NOT NULL
+               AND created_at < ${cutoff}
+             ORDER BY created_at ASC, page_id ASC, revision ASC
+             LIMIT ${REVISION_BATCH_SIZE}
+          ), deleted AS (
+            DELETE FROM gravitee.page_revisions r
+             USING expired e
+             WHERE r.page_id = e.page_id
+               AND r.revision = e.revision
+             RETURNING 1
+          )
+          SELECT count(*) FROM deleted;
+        "
+    }
+
+    audits_done=false
+    revisions_done=false
+    while [ "$(( $(date +%s) - started_at ))" -lt "$MAX_RUNTIME_SECONDS" ]; do
+      if [ "$audits_done" = "false" ]; then
+        deleted="$(delete_audit_batch)"
+        echo "Deleted ${deleted:-0} audit rows older than ${RETENTION_DAYS} days."
+        [ "${deleted:-0}" -lt "$AUDIT_BATCH_SIZE" ] && audits_done=true
+      fi
+
+      if [ "$revisions_done" = "false" ]; then
+        deleted="$(delete_revision_batch)"
+        echo "Deleted ${deleted:-0} page revision rows older than ${RETENTION_DAYS} days."
+        [ "${deleted:-0}" -lt "$REVISION_BATCH_SIZE" ] && revisions_done=true
+      fi
+
+      if [ "$audits_done" = "true" ] && [ "$revisions_done" = "true" ]; then
+        break
+      fi
+      sleep 1
+    done
+
+    if [ "$audits_done" != "true" ] || [ "$revisions_done" != "true" ]; then
+      echo "Runtime limit reached; the bounded cleanup will continue on the next run."
+    fi
+
+    PGOPTIONS='-c statement_timeout=30s -c lock_timeout=5s' psql_base -P pager=off -c "
+      SELECT 'audits' AS table_name,
+             EXISTS (
+               SELECT 1 FROM gravitee.audits
+                WHERE created_at IS NOT NULL
+                  AND created_at < ${cutoff}
+                LIMIT 1
+             ) AS expired_rows_remain
+      UNION ALL
+      SELECT 'page_revisions',
+             EXISTS (
+               SELECT 1 FROM gravitee.page_revisions
+                WHERE created_at IS NOT NULL
+                  AND created_at < ${cutoff}
+                LIMIT 1
+             );
+    "
+
+    echo "Gravitee data retention run complete."
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gravitee-data-retention
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  schedule: "17 3 * * *"
+  timeZone: America/New_York
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 0
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 2700
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          annotations:
+            linkerd.io/inject: "disabled"
+            vault.hashicorp.com/agent-inject: "true"
+            vault.hashicorp.com/agent-pre-populate-only: "true"
+            vault.hashicorp.com/role: "gravitee"
+            vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
+            vault.hashicorp.com/agent-inject-template-db-creds: |
+              {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
+              export YUGABYTE_USER="gravitee_app"
+              export YUGABYTE_PASSWORD="{{ .Data.password }}"
+              {{- end }}
+        spec:
+          serviceAccountName: gravitee
+          restartPolicy: OnFailure
+          containers:
+          - name: cleanup
+            image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260920-213020
+            imagePullPolicy: IfNotPresent
+            command: ["/bin/sh", "/scripts/cleanup.sh"]
+            env:
+            - name: YUGABYTE_HOST
+              value: yb-tserver-service.yugabyte.svc.cluster.local
+            - name: YUGABYTE_PORT
+              value: "5433"
+            - name: YUGABYTE_DATABASE
+              value: gravitee
+            - name: RETENTION_DAYS
+              value: "7"
+            - name: AUDIT_BATCH_SIZE
+              value: "5000"
+            - name: REVISION_BATCH_SIZE
+              value: "250"
+            - name: MAX_RUNTIME_SECONDS
+              value: "1200"
+            volumeMounts:
+            - name: cleanup-script
+              mountPath: /scripts
+              readOnly: true
+          volumes:
+          - name: cleanup-script
+            configMap:
+              name: gravitee-data-retention
+              defaultMode: 0555
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gravitee-data-retention-bootstrap
+  namespace: k8s-api-gateway
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  activeDeadlineSeconds: 3600
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      annotations:
+        linkerd.io/inject: "disabled"
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-pre-populate-only: "true"
+        vault.hashicorp.com/role: "gravitee"
+        vault.hashicorp.com/agent-inject-secret-db-creds: "yugabyte-db/static-creds/gravitee-app"
+        vault.hashicorp.com/agent-inject-template-db-creds: |
+          {{- with secret "yugabyte-db/static-creds/gravitee-app" -}}
+          export YUGABYTE_USER="gravitee_app"
+          export YUGABYTE_PASSWORD="{{ .Data.password }}"
+          {{- end }}
+    spec:
+      serviceAccountName: gravitee
+      restartPolicy: OnFailure
+      containers:
+      - name: cleanup
+        image: ghcr.io/dotcomrow/gravitee-management-api:ts-20260920-213020
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "/scripts/cleanup.sh"]
+        env:
+        - name: YUGABYTE_HOST
+          value: yb-tserver-service.yugabyte.svc.cluster.local
+        - name: YUGABYTE_PORT
+          value: "5433"
+        - name: YUGABYTE_DATABASE
+          value: gravitee
+        - name: RETENTION_DAYS
+          value: "7"
+        - name: AUDIT_BATCH_SIZE
+          value: "5000"
+        - name: REVISION_BATCH_SIZE
+          value: "250"
+        - name: MAX_RUNTIME_SECONDS
+          value: "1200"
+        volumeMounts:
+        - name: cleanup-script
+          mountPath: /scripts
+          readOnly: true
+      volumes:
+      - name: cleanup-script
+        configMap:
+          name: gravitee-data-retention
+          defaultMode: 0555
