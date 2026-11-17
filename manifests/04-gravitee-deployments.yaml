@@ -2005,9 +2005,10 @@ metadata:
 spec:
   schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 1
-  # Retain enough failed runs to inspect intermittent failures after the fact.
-  failedJobsHistoryLimit: 12
+  # Completed runs are observable through centralized logs; do not spend scarce
+  # cluster storage retaining their pod and Job objects.
+  successfulJobsHistoryLimit: 0
+  failedJobsHistoryLimit: 0
   jobTemplate:
     spec:
       # Management startup can legitimately exceed 10 minutes while the page
